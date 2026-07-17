@@ -1506,6 +1506,11 @@ img.tile__logo {
     font-weight: 600;
     min-height: 16px;
 }
+.focus-tile__pnl--profit { color: var(--buy-green); }
+.focus-tile__pnl--loss { color: var(--sell-red); }
+
+.focus-candle-up { fill: var(--buy-green); stroke: var(--buy-green); }
+.focus-candle-down { fill: var(--sell-red); stroke: var(--sell-red); }
 
 .focus-tile__qty-row {
     display: flex;

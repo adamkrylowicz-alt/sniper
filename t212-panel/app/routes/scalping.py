@@ -317,6 +317,29 @@ def sparkline():
     return jsonify(ok=True, ticker=ticker, closes=closes)
 
 
+@scalping_bp.route("/candles", methods=["GET"])
+@login_required
+def candles():
+    """
+    Dane OHLC (open/high/low/close) do swiecowego wykresu w Focus Mode -
+    patrz finnhub_client.py::get_candles. Osobny endpoint od /sparkline
+    (tamten zwraca same zamkniecia, wciaz uzywany np. przez mini-wykresy
+    Smart Virtual Pie) - Focus Mode chce pelnego OHLC do swiec.
+    """
+    from ..extensions import finnhub
+    ticker = request.args.get("ticker", "").strip()
+    if not ticker:
+        return jsonify(ok=False, error="Brak tickera."), 400
+    if not finnhub:
+        return jsonify(ok=False, error="Finnhub nie skonfigurowany."), 503
+
+    data = finnhub.get_candles(ticker)
+    if not data:
+        return jsonify(ok=False, error=f"Brak danych świecowych dla {ticker}."), 404
+
+    return jsonify(ok=True, ticker=ticker, candles=data)
+
+
 @scalping_bp.route("/focus", methods=["GET"])
 @login_required
 def focus_view():

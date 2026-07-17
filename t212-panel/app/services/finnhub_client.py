@@ -67,6 +67,36 @@ def _fetch_yahoo_candles(symbol: str, days: int) -> list[float] | None:
     return closes[-days:]
 
 
+def _fetch_yahoo_ohlc(symbol: str, days: int) -> list[dict] | None:
+    """
+    Jak _fetch_yahoo_candles(), ale zwraca pelne OHLC (open/high/low/close)
+    zamiast samych zamkniec - do rysowania swiec (get_candles()), nie
+    liniowego sparkline. Yahoo Finance Chart API, bez klucza.
+    """
+    try:
+        resp = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+            params={"range": "1mo", "interval": "1d"},
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            return None
+        quote = resp.json()["chart"]["result"][0]["indicators"]["quote"][0]
+        opens, highs, lows, closes = quote["open"], quote["high"], quote["low"], quote["close"]
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+    candles = [
+        {"o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
+        for o, h, l, c in zip(opens, highs, lows, closes)
+        if None not in (o, h, l, c)
+    ]
+    if len(candles) < 2:
+        return None
+    return candles[-days:]
+
+
 def t212_to_finnhub(ticker: str) -> str | None:
     """
     Konwertuje ticker T212 na symbol Finnhub.
@@ -93,6 +123,7 @@ class FinnhubClient:
         self.api_key = api_key
         self._quote_cache: dict[str, tuple[dict, float]] = {}   # symbol -> (data, timestamp)
         self._candle_cache: dict[str, tuple[list, float]] = {}  # symbol -> (data, timestamp)
+        self._ohlc_cache: dict[str, tuple[list, float]] = {}    # symbol -> (data, timestamp)
         self._profile_cache: dict[str, tuple[dict, float]] = {} # symbol -> (data, timestamp)
 
         self.QUOTE_TTL = 2       # sekundy - nadpisywane przez JS z dynamicznym interwałem
@@ -175,6 +206,47 @@ class FinnhubClient:
         if closes:
             self._candle_cache[symbol] = (closes, time.time())
         return closes
+
+    def get_candles(self, t212_ticker: str, days: int = 30) -> list[dict] | None:
+        """
+        Zwraca liste OHLC ({"o","h","l","c"}) do rysowania swiec w Focus Mode
+        (patrz focus.js::drawCandles). Finnhub /stock/candle jako glowne
+        zrodlo (zwraca tez open/high/low, nie tylko close jak get_sparkline
+        wykorzystuje), Yahoo jako fallback - identyczny wzorzec co
+        get_sparkline(). NIE dla wszystkich tickerow - jesli Yahoo tez nie ma
+        pokrycia (mniej plynne/egzotyczne spolki), zwraca None i UI Focus
+        Mode ma pokazac czytelny brak danych zamiast pustego wykresu.
+        """
+        symbol = t212_to_finnhub(t212_ticker)
+        if not symbol:
+            return None
+
+        cached, ts = self._ohlc_cache.get(symbol, (None, 0))
+        if cached and time.time() - ts < self.CANDLE_TTL:
+            return cached
+
+        now = int(time.time())
+        from_ts = now - days * 86400
+
+        data = self._get("stock/candle", {
+            "symbol": symbol,
+            "resolution": "D",
+            "from": from_ts,
+            "to": now,
+        })
+
+        if data and data.get("s") == "ok" and data.get("c"):
+            candles = [
+                {"o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
+                for o, h, l, c in zip(data["o"], data["h"], data["l"], data["c"])
+            ]
+            self._ohlc_cache[symbol] = (candles, time.time())
+            return candles
+
+        candles = _fetch_yahoo_ohlc(symbol, days)
+        if candles:
+            self._ohlc_cache[symbol] = (candles, time.time())
+        return candles
 
     def get_profile(self, t212_ticker: str) -> dict | None:
         """

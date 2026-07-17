@@ -62,26 +62,37 @@ document.querySelectorAll(".focus-dot").forEach((dot, i) => {
     });
 });
 
-// --- Sparkline SVG ---
+// --- Swiece OHLC (SVG) ---
+// Kolory przez klasy CSS (.focus-candle-up/--down, patrz style.css) zamiast
+// twardo wpisanych hexow - podazaja za aktualnym motywem (Signal Room itp.)
+// zamiast zamrozonych na starej palecie.
 
-function drawSparkline(svgEl, closes) {
-    if (!closes || closes.length < 2) return;
+function drawCandles(svgEl, candles) {
+    if (!candles || candles.length < 2) return;
 
     const W = 200, H = 60, PAD = 4;
-    const min = Math.min(...closes);
-    const max = Math.max(...closes);
-    const range = max - min || 1;
+    const min = Math.min(...candles.map((c) => c.l));
+    const max = Math.max(...candles.map((c) => c.h));
+    const range = (max - min) || 1;
+    const y = (v) => H - PAD - ((v - min) / range) * (H - PAD * 2);
 
-    const points = closes.map((v, i) => {
-        const x = PAD + (i / (closes.length - 1)) * (W - PAD * 2);
-        const y = H - PAD - ((v - min) / range) * (H - PAD * 2);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" ");
+    const n = candles.length;
+    const slot = (W - PAD * 2) / n;
+    const bodyWidth = Math.max(1.2, slot * 0.6);
 
-    const trend = closes[closes.length - 1] >= closes[0];
-    const color = trend ? "#33C17B" : "#E5484D";
+    const parts = candles.map((c, i) => {
+        const x = PAD + slot * i + slot / 2;
+        const cls = c.c >= c.o ? "focus-candle-up" : "focus-candle-down";
+        const yOpen = y(c.o), yClose = y(c.c);
+        const bodyTop = Math.min(yOpen, yClose);
+        const bodyH = Math.max(0.8, Math.abs(yClose - yOpen));
+        return (
+            `<line class="${cls}" x1="${x.toFixed(1)}" y1="${y(c.h).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(c.l).toFixed(1)}" stroke-width="1"/>` +
+            `<rect class="${cls}" x="${(x - bodyWidth / 2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyWidth.toFixed(1)}" height="${bodyH.toFixed(1)}"/>`
+        );
+    }).join("");
 
-    svgEl.innerHTML = `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`;
+    svgEl.innerHTML = parts;
 }
 
 // --- Cena live ---
@@ -126,15 +137,50 @@ async function refreshQuotes() {
     }
 }
 
-async function loadSparkline(ticker) {
+async function loadCandles(ticker) {
     try {
-        const resp = await fetch(`/warp/sparkline?ticker=${encodeURIComponent(ticker)}`);
+        const resp = await fetch(`/warp/candles?ticker=${encodeURIComponent(ticker)}`);
+        const data = await resp.json();
+        const svgEl = document.getElementById(`spark-${ticker}`);
+        if (!svgEl) return;
+        if (!data.ok) {
+            svgEl.innerHTML = '<text x="100" y="35" text-anchor="middle" fill="#7C868C" font-size="10" font-family="monospace">brak danych</text>';
+            return;
+        }
+        drawCandles(svgEl, data.candles);
+    } catch (err) {
+        console.error("Candles error:", ticker, err);
+    }
+}
+
+/*
+Zysk/strata z faktycznej pozycji (jesli posiadasz dany ticker) - JEDNORAZOWO
+przy wejsciu na strone, NIE na interwale (T212 ma bardzo waski rate limit na
+/equity/portfolio, patrz warp.js::MIN_LOAD_GAP_MS - Focus Mode nie powinien
+dokladac wlasnych, niezaleznych requestow do tego samego, juz napietego
+budzetu). Dla tickerow bez pozycji zostaje puste, bez zgadywania.
+*/
+async function loadFocusPnl() {
+    try {
+        const resp = await fetch("/warp/account");
         const data = await resp.json();
         if (!data.ok) return;
-        const svgEl = document.getElementById(`spark-${ticker}`);
-        if (svgEl) drawSparkline(svgEl, data.closes);
+
+        const positionsByTicker = {};
+        (data.positions || []).forEach((p) => { positionsByTicker[p.ticker] = p; });
+
+        document.querySelectorAll(".focus-tile").forEach((tile) => {
+            const pnlEl = document.getElementById(`pnl-${tile.dataset.ticker}`);
+            const position = positionsByTicker[tile.dataset.ticker];
+            if (!pnlEl || !position) return;
+
+            const ppl = Number(position.ppl);
+            const sign = ppl >= 0 ? "+" : "";
+            pnlEl.textContent = `${position.quantity} szt. · ${sign}${ppl.toFixed(2)}`;
+            pnlEl.className = "focus-tile__pnl " + (ppl >= 0 ? "focus-tile__pnl--profit" : "focus-tile__pnl--loss");
+        });
     } catch (err) {
-        console.error("Sparkline error:", ticker, err);
+        console.error("Focus P&L error:", err);
     }
 }
 
@@ -211,10 +257,12 @@ document.querySelectorAll(".focus-tile").forEach(tile => {
 // Inicjalizacja karuzelki
 updateCarousel();
 
-// Ladowanie sparklines dla wszystkich przy starcie (dane dzienne, cache 1h)
+// Ladowanie swiec dla wszystkich przy starcie (dane dzienne, cache 1h) +
+// zysk/strata JEDNORAZOWO (patrz docstring loadFocusPnl - rate limit T212).
 document.querySelectorAll(".focus-tile").forEach(tile => {
-    loadSparkline(tile.dataset.ticker);
+    loadCandles(tile.dataset.ticker);
 });
+loadFocusPnl();
 
 // Odswiezanie cen live co dynamicznie obliczony interwal
 refreshQuotes();
