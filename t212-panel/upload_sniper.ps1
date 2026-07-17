@@ -131,7 +131,7 @@ if ($wipeDatabase) {
 
 Write-Host ""
 Write-Host "=== Wysylanie skryptow migracji (jednorazowe, idempotentne) ===" -ForegroundColor Cyan
-$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_entry_amount.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py")
+$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_entry_amount.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py", "migrate_add_active_trade_is_paper.py")
 foreach ($mig in $migScripts) {
     $migLocal = Join-Path $PSScriptRoot $mig
     if (Test-Path $migLocal) {

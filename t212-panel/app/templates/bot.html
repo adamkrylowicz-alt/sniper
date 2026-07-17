@@ -14,7 +14,7 @@
 
     <div class="pie-fx-banner {{ '' if credentials_active else 'pie-fx-banner--hidden' }}" id="bot-status-banner">
         {% if credentials_active %}
-        Bot AKTYWNY (poświadczenia w pamięci serwera) — {{ "Paper Trading" if settings.is_paper_trading else "LIVE (nieużywane w tej części)" }}.
+        Bot AKTYWNY (poświadczenia w pamięci serwera) — {{ "Paper Trading (symulacja)" if settings.is_paper_trading else "REALNE zlecenia na demo T212" }}.
         {% endif %}
     </div>
     {% if settings.is_bot_active and not credentials_active %}
@@ -125,8 +125,13 @@
     </div>
     <label class="auth-form__checkbox">
         <input type="checkbox" id="bot-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
-        Paper Trading (symulacja, bez realnych zleceń) — zalecane dopóki nie ma jeszcze logiki wejścia
+        Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)
     </label>
+    <p class="auth-box__hint">
+        Odznaczone = bot wysyła prawdziwe zlecenia na konto demo T212 (wciąż
+        zero ryzyka finansowego, to demo, ale realne API). Zaznaczone = tylko
+        loguje co by zrobił, bez żadnego requestu do T212.
+    </p>
 
     <button type="button" id="btn-bot-save-settings" class="auth-form__submit" style="max-width:260px; margin-top:16px">
         Zapisz ustawienia

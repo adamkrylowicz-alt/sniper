@@ -419,6 +419,12 @@ class ActiveTrade(db.Model):
 
     status = db.Column(db.String(10), nullable=False, default="OPEN")
 
+    # Prawdziwe zlecenie na T212 (False) vs symulacja bez wysylki do T212
+    # (True) - patrz services/bot_engine.py::_enter_position. Reconciliation
+    # Loop MUSI pomijac pozycje papierowe (nie ma czego uzgadniac z T212,
+    # zadne zlecenie tam nigdy nie trafilo).
+    is_paper = db.Column(db.Boolean, nullable=False, default=False)
+
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)
 

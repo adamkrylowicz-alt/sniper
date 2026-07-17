@@ -88,9 +88,11 @@ def reconcile(user_id: int) -> None:
         _log(user_id, "ERROR", "Reconciliation: brak zapisanego klucza API demo, pomijam.")
         return
 
-    open_trades = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").all()
+    # is_paper=False - pozycje papierowe nigdy nie trafily do T212, wiec nie
+    # ma czego z nim uzgadniac (patrz models.py::ActiveTrade.is_paper).
+    open_trades = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False).all()
     if not open_trades:
-        _log(user_id, "INFO", "Reconciliation: brak otwartych pozycji do sprawdzenia.")
+        _log(user_id, "INFO", "Reconciliation: brak otwartych pozycji (realnych) do sprawdzenia.")
         return
 
     client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
@@ -196,6 +198,32 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
         _log(user_id, "ERROR", f"{asset.ticker}: wyliczona ilość <= 0 (kwota {asset.entry_amount} / cena {price}).")
         return
 
+    buy_price = price
+    allocated_value = quantity * buy_price
+    target_price = (allocated_value + settings.take_profit_usd) / quantity
+    position_group_id = str(uuid.uuid4())
+
+    if settings.is_paper_trading:
+        # Symulacja - ZERO requestow do T212, tylko zapis do ActiveTrade z
+        # syntetycznymi ID zleceń. Reconcile() musi pomijac is_paper=True
+        # (nie ma czego uzgadniac - zadne zlecenie nigdzie nie poszlo).
+        trade = ActiveTrade(
+            user_id=user_id, bot_asset_id=asset.id, position_group_id=position_group_id,
+            ticker=asset.ticker, currency=asset.currency,
+            buy_order_id=f"PAPER-{uuid.uuid4()}", sell_order_id=f"PAPER-{uuid.uuid4()}",
+            buy_price=buy_price, quantity=quantity, allocated_value=allocated_value,
+            average_price=buy_price, dca_level=0, status="OPEN", is_paper=True,
+        )
+        db.session.add(trade)
+        db.session.commit()
+        _log(
+            user_id, "BUY",
+            f"[PAPER] {asset.ticker}: symulowane wejście {quantity} @ ~{buy_price}, "
+            f"symulowany target {target_price:.4f} - ŻADNE zlecenie nie poszło do T212.",
+            position_group_id,
+        )
+        return
+
     client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
 
     try:
@@ -208,11 +236,6 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
     # z odpowiedzi - używamy ceny SPRZED zlecenia jako przybliżenia. Źródło
     # niewielkiej nieścisłości w target_price przy realnym poślizgu (slippage) -
     # akceptowalne przy mikro-kwotach z PRD, ale świadomie odnotowane.
-    buy_price = price
-    allocated_value = quantity * buy_price
-    target_price = (allocated_value + settings.take_profit_usd) / quantity
-
-    position_group_id = str(uuid.uuid4())
     sell_order_id = None
     try:
         sell_result = client.place_limit_order(asset.ticker, -quantity, target_price)
@@ -229,7 +252,7 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
         ticker=asset.ticker, currency=asset.currency,
         buy_order_id=buy_result.order_id, sell_order_id=sell_order_id,
         buy_price=buy_price, quantity=quantity, allocated_value=allocated_value,
-        average_price=buy_price, dca_level=0, status="OPEN",
+        average_price=buy_price, dca_level=0, status="OPEN", is_paper=False,
     )
     db.session.add(trade)
     db.session.commit()
