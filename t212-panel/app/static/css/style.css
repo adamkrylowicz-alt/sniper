@@ -170,7 +170,8 @@ html[data-theme="light"] .topbar__theme-toggle .icon--moon { display: block; }
 main {
     padding: 24px;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
+    align-items: center;
 }
 
 /*
@@ -907,7 +908,9 @@ img.tile__logo {
     font-size: 12px;
     padding: 8px 12px;
     margin-bottom: 6px;
+    transition: opacity 0.4s ease;
 }
+.flash-bar__msg--fade { opacity: 0; }
 
 /* --- Watchlist (ulubione + wyszukiwarka) --- */
 .watchlist-favorites {

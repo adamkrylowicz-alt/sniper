@@ -48,7 +48,7 @@ function renderResults(results) {
         label.className = "watchlist-results__label";
 
         const mainLine = document.createElement("span");
-        mainLine.textContent = `${r.ticker} — ${r.name}`;
+        mainLine.textContent = `${r.name} — ${r.ticker.split("_")[0]}`;
         label.appendChild(mainLine);
 
         // Rozszerzony opis (typ + waluta) - patrz common.js::instrumentTypeLabel.

@@ -23,7 +23,7 @@ from ..extensions import db
 from ..models import UserSettings
 from ..services import instrument_cache, logo_cache
 from ..services.t212_client import T212APIError
-from ..utils import avatar_hue, current_user_id, login_required
+from ..utils import avatar_hue, current_user_id, friendly_name, login_required
 from .scalping import _get_client
 
 settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
@@ -113,7 +113,7 @@ def watchlist_view():
     # surowych tickerów bez kontekstu na liście ulubionych.
     from ..models import Instrument
     cached = (
-        {i.ticker: i.name for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers)).all()}
+        {i.ticker: friendly_name(i.name) for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers)).all()}
         if favorite_tickers else {}
     )
 
@@ -172,7 +172,7 @@ def watchlist_search():
     return jsonify(ok=True, results=[
         {
             "ticker": r.ticker,
-            "name": r.name,
+            "name": friendly_name(r.name),
             "type": r.instrument_type,
             "currency": r.currency_code,
             "is_leveraged": r.is_leveraged,

@@ -16,6 +16,7 @@ Użycie w dowolnym blueprint:
 
 from __future__ import annotations
 
+import re
 from functools import wraps
 
 from flask import g, jsonify, redirect, request, url_for
@@ -70,6 +71,24 @@ def current_user_id() -> int:
 def current_master_key() -> bytes:
     """Wygodny skrót - wywoływać TYLKO wewnątrz widoku chronionego @login_required."""
     return g.master_key
+
+
+_LEGAL_SUFFIX_RE = re.compile(
+    r",?\s+(Incorporated|Inc|Corporation|Corp|Company|Co|Limited|Ltd|PLC|LLC|L\.P\.|LP|S\.A\.|SA|N\.V\.|NV|AG|ASA|Oyj|SE)\.?$",
+    re.IGNORECASE,
+)
+
+
+def friendly_name(name: str | None) -> str | None:
+    """
+    Ucina formalne/prawne koncowki z nazwy instrumentu (np. "Apple Inc" ->
+    "Apple") - T212 dostarcza formalne nazwy, appka ma pokazywac "potoczne".
+    Celowo NIE tnie slow jak "Trust"/"Group"/"Holdings"/"ETF" - te czesto sa
+    czescia rozpoznawalnej nazwy (np. ETF-y), nie tylko formalnoscia prawna.
+    """
+    if not name:
+        return name
+    return _LEGAL_SUFFIX_RE.sub("", name).strip()
 
 
 def avatar_hue(ticker: str) -> int:

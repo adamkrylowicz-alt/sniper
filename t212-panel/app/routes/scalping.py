@@ -29,7 +29,7 @@ from ..models import OrderLog
 from ..services import logo_cache
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
-from ..utils import avatar_hue, current_master_key, current_user_id, login_required
+from ..utils import avatar_hue, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
 
 scalping_bp = Blueprint("scalping", __name__, url_prefix="/warp")
@@ -127,7 +127,7 @@ def warp_view():
     grid_set = set(tickers)
     from ..models import Instrument
     cached_names = (
-        {i.ticker: i.name for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers_raw)).all()}
+        {i.ticker: friendly_name(i.name) for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers_raw)).all()}
         if favorite_tickers_raw else {}
     )
     favorites = [

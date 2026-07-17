@@ -77,6 +77,17 @@ function confirmDialog(message) {
 }
 
 /*
+Komunikaty flash (patrz base.html) znikaja same po kilku sekundach zamiast
+czekac w nieskonczonosc na kolejna akcje/przeladowanie strony.
+*/
+document.querySelectorAll(".flash-bar__msg").forEach((msg) => {
+    setTimeout(() => {
+        msg.classList.add("flash-bar__msg--fade");
+        setTimeout(() => msg.remove(), 400);
+    }, 4500);
+});
+
+/*
 === Przechwytywanie błędów JS (do automatycznego dołączania w zgłoszeniach) ===
 Prosty ring buffer - trzyma ostatnie 10 błędów z tej sesji przeglądarki
 (nie zapisywane nigdzie trwale, znikają przy odświeżeniu strony - to
