@@ -37,9 +37,15 @@
                     data-in-grid="{{ 'true' if f.in_grid else 'false' }}"
                     title="{{ 'Kliknij aby usunąć z siatki' if f.in_grid else 'Kliknij aby dodać do siatki' }}"
                 >
+                    {% if f.logo_filename %}
+                    <img class="sidebar-favorites__avatar sidebar-favorites__avatar--logo"
+                         src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
+                         alt="{{ f.ticker }}">
+                    {% else %}
                     <span class="sidebar-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
                         {{ f.initial }}
                     </span>
+                    {% endif %}
                     <span class="sidebar-favorites__info">
                         <span class="sidebar-favorites__name">{{ f.name or f.ticker }}</span>
                         <span class="sidebar-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
@@ -74,22 +80,29 @@
 
     <div class="warp-center">
         <div class="warp-grid" id="warp-grid">
-            {% for ticker in tickers %}
-            <div class="tile" data-ticker="{{ ticker }}">
+            {% for tile in tickers %}
+            <div class="tile" data-ticker="{{ tile.ticker }}">
                 <div class="tile__corner tile__corner--tl"></div>
                 <div class="tile__corner tile__corner--tr"></div>
                 <div class="tile__corner tile__corner--bl"></div>
                 <div class="tile__corner tile__corner--br"></div>
 
                 <div class="tile__header">
-                    <span class="tile__ticker">{{ ticker.split('_')[0] }}</span>
+                    <span class="tile__ticker-wrap">
+                        {% if tile.logo_filename %}
+                        <img class="tile__logo" src="{{ url_for('static', filename='logos/' + tile.logo_filename) }}" alt="{{ tile.ticker }}">
+                        {% else %}
+                        <span class="tile__logo tile__logo--fallback" style="background: hsl({{ tile.hue }}, 55%, 38%);">{{ tile.initial }}</span>
+                        {% endif %}
+                        <span class="tile__ticker">{{ tile.ticker.split('_')[0] }}</span>
+                    </span>
                     <input
                         type="number"
                         class="tile__price"
                         placeholder="cena (ręcznie)"
                         step="0.01"
                         min="0"
-                        aria-label="Cena wpisana ręcznie dla {{ ticker }}"
+                        aria-label="Cena wpisana ręcznie dla {{ tile.ticker }}"
                     >
                 </div>
 
@@ -97,7 +110,7 @@
 
                 <div class="tile__qty-row">
                     <span class="tile__qty-label">ILOŚĆ</span>
-                    <div class="tile__qty-presets" role="group" aria-label="Presety ilości dla {{ ticker }}">
+                    <div class="tile__qty-presets" role="group" aria-label="Presety ilości dla {{ tile.ticker }}">
                         <button type="button" class="tile__preset" data-qty="0.1">0.1</button>
                         <button type="button" class="tile__preset" data-qty="0.5">0.5</button>
                         <button type="button" class="tile__preset tile__preset--active" data-qty="1">1</button>
@@ -108,7 +121,7 @@
                         class="tile__qty-custom-input tile__qty-custom-input--hidden"
                         min="0"
                         step="0.0001"
-                        aria-label="Własna ilość dla {{ ticker }}"
+                        aria-label="Własna ilość dla {{ tile.ticker }}"
                     >
                 </div>
 

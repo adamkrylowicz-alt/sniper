@@ -41,6 +41,37 @@ function refreshAllPct() {
         const pct = sum > 0 ? (w / sum) * 100 : 0;
         row.querySelector("[data-weight-pct]").textContent = `${pct.toFixed(1)}%`;
     });
+    updateDonut();
+}
+
+/*
+Wykres kolowy (donut) alokacji koszyka - conic-gradient zamiast SVG/biblioteki
+(zero zaleznosci, latwe do przeliczenia na kazdej zmianie wagi). Kolor
+kazdego segmentu = ten sam hsl() co awatar danego wiersza (patrz
+pie_detail.html), wiec kolory w wykresie i na liscie ponizej sie zgadzaja -
+lista pelni role legendy, bez potrzeby osobnego komponentu.
+*/
+function updateDonut() {
+    const donut = document.getElementById("pie-donut");
+    if (!donut) return;
+
+    const sum = weightSum();
+    const rows = document.querySelectorAll(".pie-asset-row");
+    if (sum <= 0 || rows.length === 0) {
+        donut.style.background = "var(--hairline)";
+        return;
+    }
+
+    let angle = 0;
+    const stops = [];
+    rows.forEach((row) => {
+        const w = Number(row.querySelector("[data-weight-slider]").value) || 0;
+        const color = row.querySelector(".pie-asset-row__avatar").style.background || "#888";
+        const deg = (w / sum) * 360;
+        stops.push(`${color} ${angle.toFixed(2)}deg ${(angle + deg).toFixed(2)}deg`);
+        angle += deg;
+    });
+    donut.style.background = `conic-gradient(${stops.join(", ")})`;
 }
 
 function recomputeAmountQty(row) {

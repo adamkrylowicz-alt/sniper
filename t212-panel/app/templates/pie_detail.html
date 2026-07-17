@@ -37,6 +37,14 @@
     {% if not assets %}
     <p class="auth-box__hint">Koszyk jest pusty — dodaj aktywa powyżej.</p>
     {% else %}
+    <div class="pie-donut-wrap">
+        <div class="pie-donut" id="pie-donut"></div>
+        <div class="pie-donut__center">
+            <span class="pie-donut__count">{{ assets|length }}</span>
+            <span class="pie-donut__label">{{ "aktywo" if assets|length == 1 else "aktywów" }}</span>
+        </div>
+    </div>
+
     <div class="pie-assets" id="pie-assets">
         {% for a in assets %}
         <div class="pie-asset-row"

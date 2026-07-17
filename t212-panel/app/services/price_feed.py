@@ -87,6 +87,33 @@ def _fetch_candles(api_key: str, ticker: str, days: int) -> list[float] | None:
     return [round(float(v), 4) for v in closes]
 
 
+def _fetch_yahoo_candles(ticker: str, days: int) -> list[float] | None:
+    """
+    Fallback dla get_mini_chart() gdy Finnhub /stock/candle nie jest
+    dostepny na danym planie (potwierdzone 17.07.2026 - darmowy klucz
+    dostaje "You don't have access to this resource"). Yahoo Finance Chart
+    API, bez klucza - ten sam mapping tickera co _fetch_yahoo_quote nizej.
+    """
+    try:
+        resp = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{_to_finnhub_symbol(ticker)}",
+            params={"range": "3mo", "interval": "1d"},
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            return None
+        result = resp.json()["chart"]["result"][0]
+        raw_closes = result["indicators"]["quote"][0]["close"]
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+    closes = [round(float(c), 4) for c in raw_closes if c is not None]
+    if len(closes) < 2:
+        return None
+    return closes[-days:]
+
+
 def get_mini_chart(api_key: str | None, ticker: str, days: int = 30) -> list[float] | None:
     """
     Zwraca listę cen zamknięcia (najstarsza -> najnowsza) dla ostatnich `days`
@@ -104,6 +131,10 @@ def get_mini_chart(api_key: str | None, ticker: str, days: int = 30) -> list[flo
         return cached[1]
 
     closes = _fetch_candles(api_key, ticker, days)
+    if not closes:
+        # Finnhub /stock/candle odmowil (darmowy tier) - Yahoo Finance jako
+        # zapasowe zrodlo, bez klucza.
+        closes = _fetch_yahoo_candles(ticker, days)
     _cache[key] = (now, closes)
     return closes
 

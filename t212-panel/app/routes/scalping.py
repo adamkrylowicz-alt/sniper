@@ -20,10 +20,11 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, current_app, jsonify, render_template, request
 
 from ..extensions import db
 from ..models import OrderLog
+from ..services import logo_cache
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
 from ..utils import avatar_hue, current_master_key, current_user_id, login_required
@@ -124,8 +125,22 @@ def warp_view():
             "initial": (cached_names.get(t) or t)[0].upper(),
             "hue": avatar_hue(t),
             "in_grid": t in grid_set,
+            "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),
         }
         for t in favorite_tickers_raw
+    ]
+
+    # Kafelki siatki wzbogacone o logo/awatar - ten sam wzorzec co favorites
+    # wyzej i watchlist.html (logo z dysku jesli jest, inaczej kolorowy
+    # awatar z inicjalem).
+    grid_tiles = [
+        {
+            "ticker": t,
+            "initial": t.split("_")[0][0].upper(),
+            "hue": avatar_hue(t),
+            "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),
+        }
+        for t in tickers
     ]
 
     recent_orders = (
@@ -137,7 +152,7 @@ def warp_view():
     )
 
     return render_template(
-        "warp.html", tickers=tickers, recent_orders=recent_orders, favorites=favorites
+        "warp.html", tickers=grid_tiles, recent_orders=recent_orders, favorites=favorites
     )
 
 

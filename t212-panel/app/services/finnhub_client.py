@@ -40,6 +40,33 @@ TICKER_MAP: dict[str, str] = {
 }
 
 
+def _fetch_yahoo_candles(symbol: str, days: int) -> list[float] | None:
+    """
+    Fallback dla get_sparkline() gdy Finnhub /stock/candle nie jest dostepny
+    na danym planie (potwierdzone 17.07.2026 - darmowy klucz dostaje
+    "You don't have access to this resource"). Yahoo Finance Chart API, bez
+    klucza - ten sam symbol co t212_to_finnhub() (US ticker bez sufiksu).
+    """
+    try:
+        resp = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+            params={"range": "1mo", "interval": "1d"},
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            return None
+        result = resp.json()["chart"]["result"][0]
+        raw_closes = result["indicators"]["quote"][0]["close"]
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+    closes = [round(float(c), 4) for c in raw_closes if c is not None]
+    if len(closes) < 2:
+        return None
+    return closes[-days:]
+
+
 def t212_to_finnhub(ticker: str) -> str | None:
     """
     Konwertuje ticker T212 na symbol Finnhub.
@@ -141,7 +168,13 @@ class FinnhubClient:
             closes = data["c"]
             self._candle_cache[symbol] = (closes, time.time())
             return closes
-        return None
+
+        # Finnhub /stock/candle odmowil (darmowy tier) - Yahoo Finance jako
+        # zapasowe zrodlo, bez klucza.
+        closes = _fetch_yahoo_candles(symbol, days)
+        if closes:
+            self._candle_cache[symbol] = (closes, time.time())
+        return closes
 
     def get_profile(self, t212_ticker: str) -> dict | None:
         """
