@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Odzyskaj dostęp{% endblock %}
+
+{% block content %}
+<div class="auth-box">
+    <h1 class="auth-box__title">ODZYSKAJ DOSTĘP</h1>
+
+    {% if error %}
+    <div class="auth-box__error">{{ error }}</div>
+    {% endif %}
+
+    <p class="auth-box__hint">
+        Podaj swój kod odzyskiwania (dostałeś go raz, przy rejestracji albo
+        przy poprzednim odzyskiwaniu) i ustaw nowe hasło.
+    </p>
+
+    <form method="post" class="auth-form">
+        <label class="auth-form__label" for="username">Użytkownik</label>
+        <input class="auth-form__input" type="text" id="username" name="username" required autofocus>
+
+        <label class="auth-form__label" for="recovery_code">Kod odzyskiwania</label>
+        <input class="auth-form__input" type="text" id="recovery_code" name="recovery_code" required>
+
+        <label class="auth-form__label" for="new_password">Nowe hasło (min. 10 znaków)</label>
+        <input class="auth-form__input" type="password" id="new_password" name="new_password" required minlength="10">
+
+        <label class="auth-form__label" for="new_password_confirm">Powtórz nowe hasło</label>
+        <input class="auth-form__input" type="password" id="new_password_confirm" name="new_password_confirm" required minlength="10">
+
+        <button class="auth-form__submit" type="submit">USTAW NOWE HASŁO</button>
+    </form>
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('auth.login_view') }}">← Wróć do logowania</a>
+    </p>
+</div>
+{% endblock %}

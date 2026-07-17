@@ -1,0 +1,27 @@
+# Lokalna konfiguracja narzedzia (per-maszyna, nie kod aplikacji)
+.claude/settings.local.json
+
+# Sekrety - NIGDY nie commitowac
+pliki/sshkey.txt
+t212-panel/.env
+t212-panel/instance/
+
+# Zrzuty ekranu, logi bledow, pliki tymczasowe - nie sa czescia kodu
+pliki/*.png
+pliki/error.txt
+t212-panel/nohup.out
+
+# Stary, popsuty backup z 17.07 - nie wersjonujemy
+backup 17 07 2026/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Przypadkowe 0-bajtowe pliki naglowkow z pomylonego curl
+t212-panel/Accept_
+t212-panel/Authorization_
+t212-panel/GET
+t212-panel/Host_
+t212-panel/User-Agent_

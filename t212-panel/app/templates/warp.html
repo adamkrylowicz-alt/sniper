@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Warp{% endblock %}
+
+{% block content %}
+<div class="warp-layout">
+
+    <aside class="warp-sidebar warp-sidebar--left">
+        <div class="sidebar-widget">
+            <div class="sidebar-widget__title">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="6" width="20" height="14" rx="2"/>
+                    <path d="M2 10h20"/><circle cx="17" cy="15" r="1.5" fill="currentColor" stroke="none"/>
+                </svg>
+                SALDO
+            </div>
+            <div class="sidebar-widget__balance" id="account-balance">saldo: —</div>
+            <button id="btn-refresh" class="account-bar__btn">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>
+                </svg>
+                Odśwież
+            </button>
+            <div class="account-bar__status" id="account-status"></div>
+        </div>
+
+        <div class="sidebar-widget">
+            <div class="sidebar-widget__title">ULUBIONE</div>
+            {% if not favorites %}
+            <p class="sidebar-widget__empty">Brak ulubionych.</p>
+            {% else %}
+            <div class="sidebar-favorites">
+                {% for f in favorites %}
+                <button
+                    type="button"
+                    class="sidebar-favorites__item {{ 'sidebar-favorites__item--active' if f.in_grid else '' }}"
+                    data-ticker="{{ f.ticker }}"
+                    data-in-grid="{{ 'true' if f.in_grid else 'false' }}"
+                    title="{{ 'Kliknij aby usunąć z siatki' if f.in_grid else 'Kliknij aby dodać do siatki' }}"
+                >
+                    <span class="sidebar-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
+                        {{ f.initial }}
+                    </span>
+                    <span class="sidebar-favorites__info">
+                        <span class="sidebar-favorites__name">{{ f.name or f.ticker }}</span>
+                        <span class="sidebar-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
+                    </span>
+                </button>
+                {% endfor %}
+            </div>
+            {% endif %}
+            <p class="sidebar-widget__hint" id="grid-toggle-status"></p>
+            <a href="{{ url_for('settings.watchlist_view') }}" class="sidebar-widget__link">Zarządzaj →</a>
+        </div>
+
+        <div class="sidebar-widget">
+            <div class="sidebar-widget__title">HISTORIA</div>
+            {% if not recent_orders %}
+            <p class="sidebar-widget__empty">Brak zleceń.</p>
+            {% else %}
+            <ul class="sidebar-mini-list sidebar-mini-list--history">
+                {% for o in recent_orders %}
+                <li>
+                    <span class="history-table__side history-table__side--{{ o.side }}">
+                        {{ "K" if o.side == "buy" else "S" }}
+                    </span>
+                    {{ o.ticker.split('_')[0] }} · {{ o.quantity }}
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            <a href="{{ url_for('scalping.history_view') }}" class="sidebar-widget__link">Zobacz całą →</a>
+        </div>
+    </aside>
+
+    <div class="warp-center">
+        <div class="warp-grid" id="warp-grid">
+            {% for ticker in tickers %}
+            <div class="tile" data-ticker="{{ ticker }}">
+                <div class="tile__corner tile__corner--tl"></div>
+                <div class="tile__corner tile__corner--tr"></div>
+                <div class="tile__corner tile__corner--bl"></div>
+                <div class="tile__corner tile__corner--br"></div>
+
+                <div class="tile__header">
+                    <span class="tile__ticker">{{ ticker.split('_')[0] }}</span>
+                    <input
+                        type="number"
+                        class="tile__price"
+                        placeholder="cena (ręcznie)"
+                        step="0.01"
+                        min="0"
+                        aria-label="Cena wpisana ręcznie dla {{ ticker }}"
+                    >
+                </div>
+
+                <div class="tile__pnl" aria-live="polite"></div>
+
+                <div class="tile__qty-row">
+                    <span class="tile__qty-label">ILOŚĆ</span>
+                    <div class="tile__qty-presets" role="group" aria-label="Presety ilości dla {{ ticker }}">
+                        <button type="button" class="tile__preset" data-qty="0.1">0.1</button>
+                        <button type="button" class="tile__preset" data-qty="0.5">0.5</button>
+                        <button type="button" class="tile__preset tile__preset--active" data-qty="1">1</button>
+                        <button type="button" class="tile__preset tile__preset--custom" data-qty="custom">wł.</button>
+                    </div>
+                    <input
+                        type="number"
+                        class="tile__qty-custom-input tile__qty-custom-input--hidden"
+                        min="0"
+                        step="0.0001"
+                        aria-label="Własna ilość dla {{ ticker }}"
+                    >
+                </div>
+
+                <div class="tile__flash"></div>
+                <div class="tile__status"></div>
+
+                <div class="tile__actions">
+                    <button class="tile__btn tile__btn--buy" data-side="buy">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 19V5M5 12l7-7 7 7"/>
+                        </svg>
+                        KUP
+                    </button>
+                    <button class="tile__btn tile__btn--sell" data-side="sell">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 5v14M5 12l7 7 7-7"/>
+                        </svg>
+                        SPRZEDAJ
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <aside class="warp-sidebar warp-sidebar--right">
+        <div class="sidebar-widget">
+            <div class="sidebar-widget__title">OTWARTE ZLECENIA</div>
+            <button id="btn-load-pending" class="account-bar__btn">Pokaż</button>
+            <div id="pending-orders-list" class="pending-orders-list"></div>
+        </div>
+
+        <div class="sidebar-widget">
+            <div class="sidebar-widget__title">ANULUJ ZBIORCZO</div>
+            <div class="sidebar-widget__actions">
+                <button id="btn-cancel-buy" class="account-bar__btn account-bar__btn--buy" title="Anuluj wszystkie oczekujące zlecenia KUP">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
+                    </svg>
+                    Anuluj KUP
+                </button>
+                <button id="btn-cancel-sell" class="account-bar__btn account-bar__btn--sell" title="Anuluj wszystkie oczekujące zlecenia SPRZEDAJ">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
+                    </svg>
+                    Anuluj SPRZEDAJ
+                </button>
+            </div>
+        </div>
+    </aside>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/warp.js') }}"></script>
+{% endblock %}

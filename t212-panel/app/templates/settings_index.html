@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Ustawienia{% endblock %}
+
+{% block content %}
+<div class="history-box">
+    <h1 class="auth-box__title">USTAWIENIA</h1>
+
+    <div class="settings-links">
+        <a href="{{ url_for('scalping.focus_view') }}" class="settings-links__item">
+            <span class="settings-links__title">Focus Mode</span>
+            <span class="settings-links__desc">Duże kafelki, karuzela strzałkami, cena live z Finnhub.</span>
+        </a>
+        <a href="{{ url_for('api_keys.view') }}" class="settings-links__item">
+            <span class="settings-links__title">Klucze API</span>
+            <span class="settings-links__desc">Zapisz/zmień klucz i sekret T212 (demo/live), zaszyfrowane Twoim hasłem.</span>
+        </a>
+        <a href="{{ url_for('settings.watchlist_view') }}" class="settings-links__item">
+            <span class="settings-links__title">Watchlist</span>
+            <span class="settings-links__desc">Wyszukaj instrumenty i ustaw listę ulubionych (max 9) dla Warp Mode.</span>
+        </a>
+    </div>
+
+    <hr class="watchlist-divider">
+    <h2 class="auth-box__title" style="font-size:12px">FOCUS MODE — LICZBA KAFELKÓW</h2>
+    <p class="auth-box__hint">
+        Ile kafelków widać jednocześnie (1–9). Odświeżanie ceny live dopasowuje się
+        automatycznie żeby nie przekroczyć limitu Finnhub (60 req/min).
+    </p>
+    <form method="post" action="{{ url_for('settings.set_focus_tiles') }}" style="display:flex;gap:8px;align-items:center">
+        <select name="focus_tiles" class="auth-form__input" style="width:auto;padding:6px 10px">
+            {% for n in range(1, 10) %}
+            <option value="{{ n }}">{{ n }}</option>
+            {% endfor %}
+        </select>
+        <button type="submit" class="account-bar__btn">Zapisz</button>
+    </form>
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
+    </p>
+</div>
+{% endblock %}

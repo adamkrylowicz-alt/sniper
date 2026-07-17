@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Focus Mode{% endblock %}
+
+{% block content %}
+<div class="focus-layout">
+
+    <div class="focus-nav">
+        <button class="focus-nav__btn" id="focus-prev" title="Poprzedni (←)">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M15 18l-6-6 6-6"/>
+            </svg>
+        </button>
+
+        <div class="focus-tiles-track" id="focus-track">
+            {% for ticker in tickers %}
+            <div class="focus-tile" data-ticker="{{ ticker }}" data-index="{{ loop.index0 }}">
+                <div class="focus-tile__header">
+                    <span class="focus-tile__ticker">{{ ticker.split('_')[0] }}</span>
+                    <div class="focus-tile__price-wrap">
+                        <span class="focus-tile__price" id="price-{{ ticker }}">—</span>
+                        <span class="focus-tile__change" id="change-{{ ticker }}"></span>
+                    </div>
+                </div>
+
+                <div class="focus-tile__sparkline-wrap">
+                    <svg class="focus-tile__sparkline" id="spark-{{ ticker }}" viewBox="0 0 200 60" preserveAspectRatio="none">
+                        <text x="100" y="35" text-anchor="middle" fill="#7C868C" font-size="10" font-family="monospace">ładowanie...</text>
+                    </svg>
+                </div>
+
+                <div class="focus-tile__pnl" id="pnl-{{ ticker }}"></div>
+
+                <div class="focus-tile__qty-row">
+                    <span class="tile__qty-label">ILOŚĆ</span>
+                    <div class="focus-tile__qty-presets">
+                        <button type="button" class="tile__preset" data-qty="0.1">0.1</button>
+                        <button type="button" class="tile__preset" data-qty="0.5">0.5</button>
+                        <button type="button" class="tile__preset tile__preset--active" data-qty="1">1</button>
+                        <button type="button" class="tile__preset tile__preset--custom" data-qty="custom">wł.</button>
+                    </div>
+                    <input type="number" class="tile__qty-custom-input tile__qty-custom-input--hidden" min="0" step="0.0001">
+                </div>
+
+                <div class="focus-tile__flash"></div>
+                <div class="focus-tile__status"></div>
+
+                <div class="focus-tile__actions">
+                    <button class="focus-tile__btn focus-tile__btn--buy" data-side="buy">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 19V5M5 12l7-7 7 7"/>
+                        </svg>
+                        KUP
+                    </button>
+                    <button class="focus-tile__btn focus-tile__btn--sell" data-side="sell">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M12 5v14M5 12l7 7 7-7"/>
+                        </svg>
+                        SPRZEDAJ
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <button class="focus-nav__btn" id="focus-next" title="Następny (→)">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M9 18l6-6-6-6"/>
+            </svg>
+        </button>
+    </div>
+
+    <div class="focus-dots" id="focus-dots">
+        {% for ticker in tickers %}
+        <span class="focus-dot" data-index="{{ loop.index0 }}"></span>
+        {% endfor %}
+    </div>
+
+    <div class="focus-footer">
+        <a href="{{ url_for('scalping.warp_view') }}" class="topbar__link">← Warp Mode</a>
+        <span class="focus-footer__info" id="focus-refresh-info">
+            Odświeżanie co {{ (refresh_interval_ms // 1000) }}s · {{ focus_tiles }} kafelek/kafelki
+        </span>
+        <a href="{{ url_for('settings.index') }}" class="topbar__link">Ustawienia →</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const FOCUS_TILES = {{ focus_tiles }};
+    const REFRESH_INTERVAL_MS = {{ refresh_interval_ms }};
+    const TOTAL_TICKERS = {{ tickers | length }};
+</script>
+<script src="{{ url_for('static', filename='js/focus.js') }}"></script>
+{% endblock %}

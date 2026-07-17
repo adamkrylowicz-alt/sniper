@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Micro-Grid Bot{% endblock %}
+
+{% block content %}
+<div class="history-box" id="bot-panel">
+    <h1 class="auth-box__title">MICRO-GRID BOT</h1>
+    <p class="auth-box__hint">
+        Bot ma WŁASNĄ listę aktywów (niżej) — całkowicie niezależną od
+        koszyków Virtual Pie. Umie na razie tylko wejście (kupno + LIMIT
+        SELL) — pętla DCA/Cancel-Replace/Fail-Safe to kolejny etap. Działa
+        wyłącznie na koncie <strong>demo</strong> — T212 nie wspiera zleceń
+        LIMIT (na których opiera się cała strategia) na koncie live.
+    </p>
+
+    <div class="pie-fx-banner {{ '' if credentials_active else 'pie-fx-banner--hidden' }}" id="bot-status-banner">
+        {% if credentials_active %}
+        Bot AKTYWNY (poświadczenia w pamięci serwera) — {{ "Paper Trading" if settings.is_paper_trading else "LIVE (nieużywane w tej części)" }}.
+        {% endif %}
+    </div>
+    {% if settings.is_bot_active and not credentials_active %}
+    <div class="pie-fx-banner">
+        Baza mówi że bot jest aktywny, ale poświadczenia wygasły (restart appki
+        czyści je celowo, patrz uwaga w services/bot_credentials.py) — kliknij
+        "Uruchom bota" ponownie, żeby faktycznie ruszył.
+    </div>
+    {% endif %}
+
+    <div class="pie-detail__add-asset">
+        <label class="auth-form__label" for="bot-password">Hasło (do aktywacji bota)</label>
+        <input type="password" id="bot-password" class="auth-form__input" autocomplete="current-password">
+        <div style="display:flex; gap:8px; margin-top:8px">
+            <button type="button" id="btn-bot-activate" class="account-bar__btn account-bar__btn--buy">Uruchom bota</button>
+            <button type="button" id="btn-bot-deactivate" class="account-bar__btn account-bar__btn--sell">Wyłącz bota</button>
+        </div>
+        <p class="auth-box__hint" id="bot-activate-status"></p>
+    </div>
+
+    <h2 class="auth-box__title" style="font-size:13px; margin-top:24px">AKTYWA BOTA</h2>
+    <p class="auth-box__hint">
+        Własna, niezależna lista tickerów bota — dodanie tickera tutaj nie ma
+        żadnego związku z koszykami Virtual Pie (i odwrotnie).
+    </p>
+
+    <div class="pie-detail__add-asset">
+        <label class="auth-form__label" for="bot-asset-default-amount">Kwota wejścia dla nowo dodawanych pozycji</label>
+        <input type="number" id="bot-asset-default-amount" class="auth-form__input" min="0" step="0.01" placeholder="np. 1.00 (wymagane przed dodaniem)">
+
+        <label class="auth-form__label" for="bot-asset-search" style="margin-top:12px; display:block">Dodaj aktywo</label>
+        <input
+            type="text" id="bot-asset-search" class="auth-form__input"
+            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..." autocomplete="off"
+        >
+        <div id="bot-asset-tabs" class="tabs" role="tablist"></div>
+        <div id="bot-asset-results" class="watchlist-results watchlist-results--browse"></div>
+        <button type="button" id="bot-asset-load-more" class="account-bar__btn" style="margin-top:8px; display:none">
+            Załaduj więcej
+        </button>
+        <p class="auth-box__hint" id="bot-asset-status"></p>
+    </div>
+
+    {% if not bot_assets %}
+    <p class="auth-box__hint">Lista bota jest pusta — dodaj aktywa powyżej.</p>
+    {% else %}
+    <div class="pie-assets" id="bot-assets-list">
+        {% for a in bot_assets %}
+        <div class="pie-asset-row" data-asset-id="{{ a.id }}" data-ticker="{{ a.ticker }}">
+            <span class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);">
+                {{ a.display_ticker[0] }}
+            </span>
+
+            <div class="pie-asset-row__main">
+                <div class="pie-asset-row__title-line">
+                    <span class="pie-asset-row__ticker">{{ a.display_ticker }}</span>
+                    <span class="pie-asset-row__currency">{{ a.currency }}</span>
+                </div>
+                <div class="pie-asset-row__fields">
+                    <label>Kwota wejścia
+                        <input type="number" min="0" step="0.01" value="{{ a.entry_amount }}" data-entry-amount>
+                    </label>
+                </div>
+                <div class="auth-box__hint" data-price-hint style="margin:6px 0 0">sprawdzanie ceny…</div>
+            </div>
+
+            <div class="pie-asset-row__actions">
+                <button type="button" class="pie-asset-row__icon-btn pie-asset-row__icon-btn--warn {{ 'pie-asset-row__icon-btn--active' if a.is_penny_stock else '' }}"
+                        data-penny-toggle title="Oznacz jako penny stock (blokuje wejście bota)">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1.4 1.3-2.5 3-2.5s3 .8 3 2c0 2-6 1.5-6 4 0 1.2 1.3 2 3 2s3-1 3-2.5"/>
+                    </svg>
+                </button>
+                <button type="button" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--danger"
+                        data-remove title="Usuń z listy bota">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="pie-asset-row__status" data-status style="grid-column: 1 / -1"></div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <h2 class="auth-box__title" style="font-size:13px; margin-top:24px">USTAWIENIA RYZYKA</h2>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-dca-scenario">Scenariusz DCA (mnożniki po przecinku)</label>
+        <input type="text" id="bot-dca-scenario" class="auth-form__input" value="{{ settings.dca_scenario }}">
+    </div>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-max-dca">Maksymalna liczba poziomów DCA</label>
+        <input type="number" id="bot-max-dca" class="auth-form__input" min="1" step="1" value="{{ settings.max_dca_levels }}">
+    </div>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-max-spread">Maks. spread (ułamek, np. 0.05 = 5%)</label>
+        <input type="number" id="bot-max-spread" class="auth-form__input" min="0" step="0.0001" value="{{ settings.max_spread_pct }}">
+    </div>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-take-profit">Docelowy zysk z serii (waluta konta)</label>
+        <input type="number" id="bot-take-profit" class="auth-form__input" min="0" step="0.01" value="{{ settings.take_profit_usd }}">
+    </div>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-max-daily-loss">Maksymalna dzienna strata</label>
+        <input type="number" id="bot-max-daily-loss" class="auth-form__input" min="0" step="0.01" value="{{ settings.max_daily_loss }}">
+    </div>
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="bot-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
+        Paper Trading (symulacja, bez realnych zleceń) — zalecane dopóki nie ma jeszcze logiki wejścia
+    </label>
+
+    <button type="button" id="btn-bot-save-settings" class="auth-form__submit" style="max-width:260px; margin-top:16px">
+        Zapisz ustawienia
+    </button>
+    <p class="auth-box__hint" id="bot-settings-status"></p>
+
+    <h2 class="auth-box__title" style="font-size:13px; margin-top:24px">DZIENNIK BOTA (ostatnie 50)</h2>
+    {% if not logs %}
+    <p class="auth-box__hint">Brak wpisów.</p>
+    {% else %}
+    <table class="history-table">
+        <thead>
+            <tr>
+                <th>Czas</th>
+                <th>Typ</th>
+                <th>Wiadomość</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for l in logs %}
+            <tr>
+                <td>{{ l.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td class="history-table__status history-table__status--{{ l.action_type|lower }}">{{ l.action_type }}</td>
+                <td>{{ l.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('pie.list_view') }}">← Virtual Pie</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/bot.js') }}"></script>
+{% endblock %}

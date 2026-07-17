@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Klucze API{% endblock %}
+
+{% block content %}
+<div class="auth-box auth-box--wide">
+    <h1 class="auth-box__title">KLUCZE API T212</h1>
+
+    {% if error %}
+    <div class="auth-box__error">{{ error }}</div>
+    {% endif %}
+
+    <p class="auth-box__hint">
+        Status: DEMO {{ "✅ zapisany" if has_demo else "— brak" }} &nbsp;|&nbsp;
+        LIVE {{ "✅ zapisany" if has_live else "— brak" }}
+    </p>
+
+    <form method="post" action="{{ url_for('api_keys.save') }}" class="auth-form">
+        <label class="auth-form__label" for="environment">Środowisko</label>
+        <select class="auth-form__input" id="environment" name="environment" required>
+            <option value="demo">demo</option>
+            <option value="live">live</option>
+        </select>
+
+        <label class="auth-form__label" for="api_key">API Key</label>
+        <input class="auth-form__input" type="text" id="api_key" name="api_key" required>
+
+        <label class="auth-form__label" for="api_secret">API Secret</label>
+        <input class="auth-form__input" type="text" id="api_secret" name="api_secret" required>
+
+        <p class="auth-box__hint">
+            Wygeneruj w aplikacji T212: Ustawienia → API (Beta). Wartości są
+            szyfrowane Twoim kluczem prywatnym zanim trafią do bazy — admin
+            tej appki nie ma do nich dostępu.
+        </p>
+
+        <button class="auth-form__submit" type="submit">ZAPISZ (ZASZYFROWANE)</button>
+    </form>
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('settings.index') }}">← Wróć do Ustawień</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
+    </p>
+</div>
+{% endblock %}

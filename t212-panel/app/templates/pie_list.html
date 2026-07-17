@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Smart Virtual Pie{% endblock %}
+
+{% block content %}
+<div class="history-box">
+    <h1 class="auth-box__title">SMART VIRTUAL PIE</h1>
+    <p class="auth-box__hint">
+        Prywatne wirtualne koszyki (ETF) — dokupuj kilka spółek naraz z
+        proporcjonalnymi wagami, bez opłaty FX 0.15% od pojedynczych zleceń.
+    </p>
+
+    {% if not pies %}
+    <p class="auth-box__hint">Brak koszyków — utwórz pierwszy poniżej.</p>
+    {% else %}
+    <div class="settings-links">
+        {% for p in pies %}
+        <a href="{{ url_for('pie.detail', pie_id=p.id) }}" class="settings-links__item">
+            <span class="settings-links__title">{{ p.name }}</span>
+            <span class="settings-links__desc">
+                {{ p.assets|length }} aktyw{{ 'o' if p.assets|length == 1 else 'a' }}
+                · utworzono {{ p.created_at.strftime("%Y-%m-%d") }}
+            </span>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('pie.create') }}" class="auth-form" style="margin-top:24px">
+        <label class="auth-form__label" for="pie-name">Nowy koszyk</label>
+        <input
+            type="text" id="pie-name" name="name" class="auth-form__input"
+            placeholder="np. Big Tech" required autocomplete="off"
+        >
+        <button type="submit" class="auth-form__submit">Utwórz koszyk</button>
+    </form>
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('settings.index') }}">Ustawienia</a>
+    </p>
+</div>
+{% endblock %}

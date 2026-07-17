@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Logowanie{% endblock %}
+
+{% block content %}
+<div class="auth-box">
+    <h1 class="auth-box__title">LOGOWANIE</h1>
+
+    {% if error %}
+    <div class="auth-box__error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" class="auth-form">
+        <input type="hidden" name="next" value="{{ next or '' }}">
+
+        <label class="auth-form__label" for="username">Użytkownik</label>
+        <input class="auth-form__input" type="text" id="username" name="username" required autofocus>
+
+        <label class="auth-form__label" for="password">Hasło</label>
+        <input class="auth-form__input" type="password" id="password" name="password" required>
+
+        <label class="auth-form__checkbox">
+            <input type="checkbox" name="remember_me">
+            Zapamiętaj mnie (30 dni)
+        </label>
+
+        <button class="auth-form__submit" type="submit">ZALOGUJ</button>
+    </form>
+
+    <p class="auth-box__footer">
+        Nie masz konta? <a href="{{ url_for('auth.register_view') }}">Zarejestruj się</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('auth.recover_view') }}">Zapomniałem hasła</a>
+    </p>
+</div>
+{% endblock %}

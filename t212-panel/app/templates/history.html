@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Historia{% endblock %}
+
+{% block content %}
+<div class="history-box">
+    <h1 class="auth-box__title">HISTORIA ZLECEŃ (ostatnie 100)</h1>
+
+    {% if not entries %}
+    <p class="auth-box__hint">Brak zleceń do pokazania.</p>
+    {% else %}
+    <table class="history-table">
+        <thead>
+            <tr>
+                <th>Czas</th>
+                <th>Ticker</th>
+                <th>Kierunek</th>
+                <th>Ilość</th>
+                <th>Cena ręczna</th>
+                <th>Status</th>
+                <th>Szczegóły</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in entries %}
+            <tr>
+                <td>{{ e.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td>{{ e.ticker }}</td>
+                <td class="history-table__side history-table__side--{{ e.side }}">
+                    {{ "KUP" if e.side == "buy" else "SPRZEDAJ" }}
+                </td>
+                <td>{{ e.quantity }}</td>
+                <td>{{ e.price_snapshot or "—" }}</td>
+                <td class="history-table__status history-table__status--{{ e.status }}">
+                    {{ e.status }}
+                </td>
+                <td class="history-table__details">
+                    {% if e.t212_order_id %}#{{ e.t212_order_id }}{% endif %}
+                    {% if e.block_reason %}{{ e.block_reason }}{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
+    </p>
+</div>
+{% endblock %}

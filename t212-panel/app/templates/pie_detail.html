@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — {{ pie.name }}{% endblock %}
+
+{% block content %}
+<div class="history-box pie-detail" data-pie-id="{{ pie.id }}">
+
+    <div class="pie-detail__header">
+        <form method="post" action="{{ url_for('pie.rename', pie_id=pie.id) }}" class="pie-detail__rename">
+            <input type="text" name="name" value="{{ pie.name }}" class="auth-form__input pie-detail__name-input" autocomplete="off">
+            <button type="submit" class="account-bar__btn">Zapisz nazwę</button>
+        </form>
+        <button type="button" id="btn-delete-pie" class="account-bar__btn account-bar__btn--sell">Usuń koszyk</button>
+    </div>
+    <form id="delete-pie-form" method="post" action="{{ url_for('pie.delete', pie_id=pie.id) }}" style="display:none"></form>
+
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="pie-budget">Budżet do zainwestowania (tylko do liczenia, nie zapisywany)</label>
+        <input type="number" id="pie-budget" class="auth-form__input" min="0" step="0.01" placeholder="0.00">
+    </div>
+
+    <div id="fx-guard-banner" class="pie-fx-banner pie-fx-banner--hidden"></div>
+    <button type="button" id="btn-fx-check" class="account-bar__btn">Sprawdź środki (Smart FX Guard)</button>
+
+    <div class="pie-detail__add-asset">
+        <label class="auth-form__label" for="pie-asset-search">Dodaj aktywo</label>
+        <input
+            type="text" id="pie-asset-search" class="auth-form__input"
+            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..." autocomplete="off"
+        >
+        <div id="pie-asset-tabs" class="tabs" role="tablist"></div>
+        <div id="pie-asset-results" class="watchlist-results watchlist-results--browse"></div>
+        <button type="button" id="pie-asset-load-more" class="account-bar__btn" style="margin-top:8px; display:none">
+            Załaduj więcej
+        </button>
+    </div>
+
+    {% if not assets %}
+    <p class="auth-box__hint">Koszyk jest pusty — dodaj aktywa powyżej.</p>
+    {% else %}
+    <div class="pie-assets" id="pie-assets">
+        {% for a in assets %}
+        <div class="pie-asset-row"
+             data-asset-id="{{ a.id }}"
+             data-ticker="{{ a.ticker }}"
+             data-currency="{{ a.currency }}"
+             data-weight="{{ a.target_weight }}">
+
+            <span class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);">
+                {{ a.display_ticker[0] }}
+            </span>
+
+            <div class="pie-asset-row__main">
+                <div class="pie-asset-row__title-line">
+                    <span class="pie-asset-row__ticker">{{ a.display_ticker }}</span>
+                    <span class="pie-asset-row__currency">{{ a.currency }}</span>
+                    <span class="pie-asset-row__weight-pct" data-weight-pct>—</span>
+                </div>
+
+                <svg class="pie-asset-row__spark" viewBox="0 0 100 30" preserveAspectRatio="none" data-spark></svg>
+
+                <div class="pie-asset-row__weight-line">
+                    <input type="range" class="pie-asset-row__slider" min="0.1" max="10" step="0.1" value="{{ a.target_weight }}" data-weight-slider>
+                </div>
+
+                <div class="pie-asset-row__fields">
+                    <label>Kwota
+                        <input type="number" class="pie-asset-row__amount" min="0" step="0.01" data-amount>
+                    </label>
+                    <label>Ilość
+                        <input type="number" class="pie-asset-row__qty" min="0" step="0.0001" data-qty>
+                    </label>
+                    <label>Cena ref.
+                        <input type="number" class="pie-asset-row__price" min="0" step="0.01" data-price>
+                    </label>
+                </div>
+            </div>
+
+            <div class="pie-asset-row__actions">
+                <form method="post" action="{{ url_for('pie.remove_asset', asset_id=a.id) }}">
+                    <button type="submit" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--danger" title="Usuń z koszyka">
+                        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/>
+                        </svg>
+                    </button>
+                </form>
+            </div>
+
+            <div class="pie-asset-row__buy">
+                <button type="button" class="account-bar__btn account-bar__btn--buy" data-buy>KUP</button>
+                <div class="pie-asset-row__status" data-status></div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <button type="button" id="btn-buy-all" class="auth-form__submit" style="max-width:260px">Kup całość</button>
+    {% endif %}
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('pie.list_view') }}">← Wróć do koszyków</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pie.js') }}"></script>
+{% endblock %}
