@@ -15,15 +15,13 @@ instrument_cache.py).
 
 let searchTimeout = null;
 let activeCategory = "stock";
-let currentOffset = 0;
 let cachedCounts = null;
-const PAGE_SIZE = 20;
 
-function renderResults(results, append) {
+function renderResults(results) {
     const container = document.getElementById("watchlist-results");
-    if (!append) container.innerHTML = "";
+    container.innerHTML = "";
 
-    if (!append && results.length === 0) {
+    if (results.length === 0) {
         container.innerHTML = '<p class="auth-box__hint">Brak wyników.</p>';
         return;
     }
@@ -31,6 +29,20 @@ function renderResults(results, append) {
     results.forEach((r) => {
         const row = document.createElement("div");
         row.className = "watchlist-results__item";
+
+        if (r.logo_filename) {
+            const img = document.createElement("img");
+            img.className = "watchlist-results__avatar watchlist-results__avatar--logo";
+            img.src = `/static/logos/${r.logo_filename}`;
+            img.alt = r.ticker;
+            row.appendChild(img);
+        } else {
+            const avatar = document.createElement("span");
+            avatar.className = "watchlist-results__avatar";
+            avatar.style.background = `hsl(${avatarHue(r.ticker)}, 55%, 38%)`;
+            avatar.textContent = r.ticker[0].toUpperCase();
+            row.appendChild(avatar);
+        }
 
         const label = document.createElement("span");
         label.className = "watchlist-results__label";
@@ -67,21 +79,15 @@ function renderResults(results, append) {
     });
 }
 
-async function loadResults(append) {
+async function loadResults() {
     const query = document.getElementById("watchlist-search").value.trim();
-    const offset = append ? currentOffset : 0;
-    const loadMoreBtn = document.getElementById("watchlist-load-more");
 
     try {
         const resp = await fetch(
-            `/settings/watchlist/search?q=${encodeURIComponent(query)}&category=${activeCategory}&offset=${offset}`
+            `/settings/watchlist/search?q=${encodeURIComponent(query)}&category=${activeCategory}`
         );
         const data = await resp.json();
-        const results = data.results || [];
-
-        renderResults(results, append);
-        currentOffset = offset + results.length;
-        loadMoreBtn.style.display = results.length < PAGE_SIZE ? "none" : "";
+        renderResults(data.results || []);
     } catch (err) {
         console.error("Błąd wyszukiwania:", err);
     }
@@ -90,7 +96,7 @@ async function loadResults(append) {
 function selectCategory(catId) {
     activeCategory = catId;
     renderCategoryTabs(document.getElementById("watchlist-tabs"), cachedCounts, activeCategory, selectCategory);
-    loadResults(false);
+    loadResults();
 }
 
 async function addToWatchlist(ticker) {
@@ -141,15 +147,13 @@ loadFavoritesPnl();
 
 document.getElementById("watchlist-search").addEventListener("input", () => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => loadResults(false), 300);
+    searchTimeout = setTimeout(() => loadResults(), 300);
 });
-
-document.getElementById("watchlist-load-more").addEventListener("click", () => loadResults(true));
 
 (async () => {
     cachedCounts = await fetchCategoryCounts();
     renderCategoryTabs(document.getElementById("watchlist-tabs"), cachedCounts, activeCategory, selectCategory);
-    loadResults(false);
+    loadResults();
 })();
 
 /*

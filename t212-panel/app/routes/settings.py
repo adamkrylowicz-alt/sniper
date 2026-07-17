@@ -151,18 +151,19 @@ def watchlist_search():
     """
     AJAX - JSON, czyta WYŁĄCZNIE lokalny cache, zero requestów do T212.
     Pusty ?q= + wybrana ?category= = przeglądanie tej zakładki alfabetycznie
-    (panel "Wszystkie instrumenty"). ?offset= do paginacji "Załaduj więcej".
+    (panel "Wszystkie instrumenty"). Bez paginacji - limit ustawiony powyżej
+    najliczniejszej kategorii (STOCK ~9.3k), więc jedno wywołanie zwraca
+    komplet od razu (patrz watchlist.js - świadomie zrezygnowano z "Załaduj
+    więcej" na rzecz pełnej listy).
     ?category= jedna z instrument_cache.CATEGORIES (stock/etf/leveraged/warrant) -
     nierozpoznana/brakująca wartość = bez filtra kategorii.
 
-    Dokłada is_favorite/is_grid do każdego wyniku, żeby JS mógł pokazać
-    właściwy stan przycisków ("+ Ulubione" vs "✓ W ulubionych" itd.) bez
-    dodatkowego requestu.
+    Dokłada is_favorite/is_grid/logo_filename do każdego wyniku, żeby JS mógł
+    pokazać właściwy stan przycisków i logo bez dodatkowego requestu.
     """
     query = request.args.get("q", "")
-    offset = request.args.get("offset", 0, type=int)
     category = request.args.get("category") or None
-    results = instrument_cache.search_instruments(query, limit=20, offset=offset, category=category)
+    results = instrument_cache.search_instruments(query, limit=10000, category=category)
 
     settings = _get_or_create_settings(current_user_id())
     favorites = set(_get_favorites(settings))
@@ -175,6 +176,7 @@ def watchlist_search():
             "type": r.instrument_type,
             "currency": r.currency_code,
             "is_leveraged": r.is_leveraged,
+            "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, r.ticker),
             "is_favorite": r.ticker in favorites,
             "is_grid": r.ticker in grid,
         }

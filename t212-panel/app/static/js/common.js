@@ -12,6 +12,19 @@ reużywa też playSuccess/playError zamiast duplikować logikę dźwięku).
 */
 
 /*
+avatarHue(ticker) - JS odpowiednik utils.py::avatar_hue(), ten sam wzór
+(suma kodów znaków % 360), żeby kolor awatara fallback dla tego samego
+tickera ZAWSZE wychodził identyczny czy liczony po stronie serwera
+(Jinja, przy renderze strony) czy tutaj (JS, przy dorenderowaniu wyników
+wyszukiwania bez przeładowania strony).
+*/
+function avatarHue(ticker) {
+    let sum = 0;
+    for (let i = 0; i < ticker.length; i++) sum += ticker.charCodeAt(i);
+    return sum % 360;
+}
+
+/*
 Dźwięki - bez zewnętrznych plików audio (error.mp3/success.mp3 z pierwotnego
 pomysłu Gemini), generowane na żywo przez Web Audio API (prosty oscylator),
 żeby appka nie zależała od dodatkowych plików binarnych do wgrania na NAS.

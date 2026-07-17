@@ -53,16 +53,27 @@ html, body {
     min-height: 100vh;
 }
 
-/* Subtelny tor siatki w tle - ambient "control room", tylko w dark mode
-   (na jasnym tle wygladalby jak brud/artefakt, nie efekt). */
-body {
+/* Perspektywiczny tor siatki w tle - "podloga" control roomu uciekajaca w
+   glab, przypieta do viewportu (position: fixed), z maska zanikajaca ku
+   dolowi zeby nie bila po oczach pod panelami. Tylko dark mode - na jasnym
+   tle wygladalby jak brud/artefakt, nie efekt. */
+body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
     background-image:
-        linear-gradient(rgba(147, 84, 255, 0.035) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(147, 84, 255, 0.035) 1px, transparent 1px);
-    background-size: 28px 28px;
+        linear-gradient(rgba(147, 84, 255, 0.16) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(147, 84, 255, 0.16) 1px, transparent 1px);
+    background-size: 44px 44px;
+    transform: perspective(420px) rotateX(62deg) scale(2.4);
+    transform-origin: 50% 0%;
+    mask-image: linear-gradient(to bottom, black, transparent 75%);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent 75%);
 }
-html[data-theme="light"] body {
-    background-image: none;
+html[data-theme="light"] body::before {
+    display: none;
 }
 
 .topbar__mark {
@@ -999,6 +1010,24 @@ img.tile__logo {
     max-height: 260px;
     overflow-y: auto;
 }
+.watchlist-results__avatar {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 700;
+    font-size: 11px;
+}
+.watchlist-results__avatar--logo {
+    background: #fff;
+    object-fit: contain;
+    padding: 3px;
+}
+
 .watchlist-results__item {
     display: flex;
     align-items: center;

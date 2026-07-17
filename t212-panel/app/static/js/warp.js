@@ -59,6 +59,44 @@ function getEstimatedPrice(tile) {
     return priceInput.value || null; // puste pole -> null, risk_guard przechodzi w tryb post-check
 }
 
+/*
+=== Cena live z Finnhub (auto-wypelniana, ale nadpisywalna recznie) ===
+tile__price bylo czysto reczne pole (T212 nie zwraca ceny w API zlecen) -
+teraz domyslnie wypelniane z /warp/quote (ten sam endpoint co Focus Mode).
+Jesli user sam wpisze wartosc, przestajemy nadpisywac TO KONKRETNE pole
+(dataset.autoFilled) - reczna kontrola ma pierwszenstwo, live-cena to tylko
+wygodny domyslny start.
+*/
+document.querySelectorAll(".tile__price").forEach((input) => {
+    input.dataset.autoFilled = "true";
+    input.addEventListener("input", () => { input.dataset.autoFilled = "false"; });
+});
+
+async function refreshTilePrices() {
+    for (const tile of document.querySelectorAll(".tile")) {
+        const priceInput = tile.querySelector(".tile__price");
+        if (priceInput.dataset.autoFilled === "false") continue; // user nadpisal recznie - nie ruszamy
+
+        const ticker = tile.dataset.ticker;
+        try {
+            const resp = await fetch(`/warp/quote?ticker=${encodeURIComponent(ticker)}`);
+            const data = await resp.json();
+            if (data.ok) {
+                priceInput.value = Number(data.quote.c).toFixed(2);
+                priceInput.dataset.autoFilled = "true"; // .value= nie odpala 'input', flaga zostaje true
+            }
+        } catch (err) {
+            console.error("Cena live:", ticker, err);
+        }
+    }
+}
+
+// Interwal skalowany liczba kafelkow (ten sam pomysl co Focus Mode) - zeby
+// nie przekroczyc 60 req/min limitu Finnhub nawet przy pelnej siatce 9x9.
+const priceRefreshMs = Math.max(8000, document.querySelectorAll(".tile").length * 1200);
+refreshTilePrices();
+setInterval(refreshTilePrices, priceRefreshMs);
+
 let cachedMaxOrderValue = null; // null = brak skonfigurowanego Hard Cap (jeszcze)
 const CONFIRM_THRESHOLD_RATIO = 0.7; // pytamy o potwierdzenie od 70% limitu wzwyż
 

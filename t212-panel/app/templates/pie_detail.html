@@ -13,29 +13,8 @@
     </div>
     <form id="delete-pie-form" method="post" action="{{ url_for('pie.delete', pie_id=pie.id) }}" style="display:none"></form>
 
-    <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="pie-budget">Budżet do zainwestowania (tylko do liczenia, nie zapisywany)</label>
-        <input type="number" id="pie-budget" class="auth-form__input" min="0" step="0.01" placeholder="0.00">
-    </div>
-
-    <div id="fx-guard-banner" class="pie-fx-banner pie-fx-banner--hidden"></div>
-    <button type="button" id="btn-fx-check" class="account-bar__btn">Sprawdź środki (Smart FX Guard)</button>
-
-    <div class="pie-detail__add-asset">
-        <label class="auth-form__label" for="pie-asset-search">Dodaj aktywo</label>
-        <input
-            type="text" id="pie-asset-search" class="auth-form__input"
-            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..." autocomplete="off"
-        >
-        <div id="pie-asset-tabs" class="tabs" role="tablist"></div>
-        <div id="pie-asset-results" class="watchlist-results watchlist-results--browse"></div>
-        <button type="button" id="pie-asset-load-more" class="account-bar__btn" style="margin-top:8px; display:none">
-            Załaduj więcej
-        </button>
-    </div>
-
     {% if not assets %}
-    <p class="auth-box__hint">Koszyk jest pusty — dodaj aktywa powyżej.</p>
+    <p class="auth-box__hint">Koszyk jest pusty — dodaj aktywa poniżej.</p>
     {% else %}
     <div class="pie-donut-wrap">
         <div class="pie-donut" id="pie-donut"></div>
@@ -103,6 +82,27 @@
 
     <button type="button" id="btn-buy-all" class="auth-form__submit" style="max-width:260px">Kup całość</button>
     {% endif %}
+
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="pie-budget">Budżet do zainwestowania (tylko do liczenia, nie zapisywany)</label>
+        <input type="number" id="pie-budget" class="auth-form__input" min="0" step="0.01" placeholder="0.00">
+    </div>
+
+    <div id="fx-guard-banner" class="pie-fx-banner pie-fx-banner--hidden"></div>
+    <button type="button" id="btn-fx-check" class="account-bar__btn">Sprawdź środki (Smart FX Guard)</button>
+
+    <div class="pie-detail__add-asset">
+        <label class="auth-form__label" for="pie-asset-search">Dodaj aktywo</label>
+        <input
+            type="text" id="pie-asset-search" class="auth-form__input"
+            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..." autocomplete="off"
+        >
+        <div id="pie-asset-tabs" class="tabs" role="tablist"></div>
+        <div id="pie-asset-results" class="watchlist-results watchlist-results--browse"></div>
+        <button type="button" id="pie-asset-load-more" class="account-bar__btn" style="margin-top:8px; display:none">
+            Załaduj więcej
+        </button>
+    </div>
 
     <p class="auth-box__footer">
         <a href="{{ url_for('pie.list_view') }}">← Wróć do koszyków</a>

@@ -10,10 +10,12 @@ T212_DEMO_API_KEY_TEMP, teraz gdy auth.py + api_keys.py istnieją.
 
 UPROSZCZENIA POZOSTAŁE DO POPRAWY:
 ------------------------------------
-1. Siatka 3x3 na sztywno w DEFAULT_WARP_GRID zamiast z UserSettings.warp_grid -
-   do podpięcia w routes/settings.py.
-2. Cena szacowana (estimated_price) NIE jest pobierana automatycznie (bo T212
-   API jej nie udostępnia) - klient JS wysyła to co user ręcznie wpisał.
+1. [ZROBIONE] Siatka pobierana z UserSettings.warp_grid, DEFAULT_WARP_GRID to
+   już tylko fallback dla nowych userów bez zapisanej siatki.
+2. [ZROBIONE] Cena szacowana (estimated_price) jest teraz auto-wypełniana z
+   Finnhub (warp.js::refreshTilePrices, endpoint /warp/quote) - T212 nadal
+   nie daje jej w API zleceń, ale mamy niezależne źródło. User może nadal
+   nadpisać ją ręcznie - patrz dataset.autoFilled w warp.js.
 """
 
 from __future__ import annotations
@@ -109,6 +111,16 @@ def warp_view():
             favorite_tickers_raw = json.loads(settings.favorites) or []
         except (ValueError, TypeError):
             pass
+
+    # Automatyczne (ograniczone) dociaganie brakujacych logo dla siatki +
+    # ulubionych - ten sam wzorzec co watchlist_view(), inaczej tickery
+    # dodane spoza Watchlist (np. wprost do siatki) nigdy nie dostawaly
+    # szansy na pobranie logo.
+    logo_cache.ensure_logos_auto(
+        current_app.static_folder,
+        current_app.config.get("LOGO_DEV_API_KEY"),
+        list(dict.fromkeys(tickers + favorite_tickers_raw)),
+    )
 
     # Hydratacja: pełna nazwa + kolor awatara + czy aktualnie w siatce -
     # do klikalnej listy w sidebarze (klik = dodaj/usuń z siatki 3x3).
