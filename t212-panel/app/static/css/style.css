@@ -1,13 +1,14 @@
 /*
-Token system:
-  bg            #0B0D0F  - tło główne, prawie czarne
-  panel         #14181B  - tło kafelka
-  hairline      #262C30  - cienkie linie/obramowania
-  text-bright   #EDEFF0  - główny tekst (tickery, liczby)
-  text-muted    #7C868C  - etykiety, drugorzędne info
-  accent-amber  #FFB000  - akcent interaktywny (focus, cooldown, mark)
-  buy-green     #33C17B
-  sell-red      #E5484D
+Token system ("Signal Room" - wybrany 17.07.2026, tymczasowo do potwierdzenia):
+  bg            #08090A  - tło główne, prawie czarne
+  panel         #101214  - tło kafelka
+  hairline      #24262B  - cienkie linie/obramowania
+  text-bright   #ECEEF0  - główny tekst (tickery, liczby)
+  text-muted    #7A7F87  - etykiety, drugorzędne info
+  accent-amber  #9354FF  - fioletowy sygnał celownika (nazwa zmiennej zostaje
+                            z poprzedniej wersji - viz. Sniper/HUD, nie amber)
+  buy-green     #2FD98A
+  sell-red      #FF5C5C
 
 Typografia: IBM Plex Mono wszędzie - to nie jest estetyczny wybór na wyrost,
 tickery/ceny/ilości w prawdziwych terminalach handlowych ZAWSZE są w foncie
@@ -17,14 +18,14 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 
 :root {
-    --bg: #0B0D0F;
-    --panel: #14181B;
-    --hairline: #262C30;
-    --text-bright: #EDEFF0;
-    --text-muted: #7C868C;
-    --accent-amber: #FFB000;
-    --buy-green: #33C17B;
-    --sell-red: #E5484D;
+    --bg: #08090A;
+    --panel: #101214;
+    --hairline: #24262B;
+    --text-bright: #ECEEF0;
+    --text-muted: #7A7F87;
+    --accent-amber: #9354FF;
+    --buy-green: #2FD98A;
+    --sell-red: #FF5C5C;
 }
 
 /* Motyw jasny - nadpisuje te same zmienne na <html data-theme="light">.
@@ -36,7 +37,7 @@ html[data-theme="light"] {
     --hairline: #DDE1E4;
     --text-bright: #14181B;
     --text-muted: #6B7280;
-    --accent-amber: #B45309;
+    --accent-amber: #6D28D9;
     --buy-green: #15803D;
     --sell-red: #DC2626;
 }
@@ -50,6 +51,25 @@ html, body {
     color: var(--text-bright);
     font-family: 'IBM Plex Mono', monospace;
     min-height: 100vh;
+}
+
+/* Subtelny tor siatki w tle - ambient "control room", tylko w dark mode
+   (na jasnym tle wygladalby jak brud/artefakt, nie efekt). */
+body {
+    background-image:
+        linear-gradient(rgba(147, 84, 255, 0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(147, 84, 255, 0.035) 1px, transparent 1px);
+    background-size: 28px 28px;
+}
+html[data-theme="light"] body {
+    background-image: none;
+}
+
+.topbar__mark {
+    text-shadow: 0 0 16px rgba(147, 84, 255, 0.45);
+}
+html[data-theme="light"] .topbar__mark {
+    text-shadow: none;
 }
 
 .topbar {
@@ -362,9 +382,9 @@ tekst błędu, obok osobno siatka.
     position: absolute;
     width: 10px;
     height: 10px;
-    border: 1px solid var(--hairline);
-    opacity: 0.6;
-    transition: border-color 0.15s ease, opacity 0.15s ease;
+    border: 1.5px solid var(--accent-amber);
+    opacity: 0.45;
+    transition: border-color 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
 }
 .tile__corner--tl { top: 4px; left: 4px; border-right: none; border-bottom: none; }
 .tile__corner--tr { top: 4px; right: 4px; border-left: none; border-bottom: none; }
@@ -372,8 +392,8 @@ tekst błędu, obok osobno siatka.
 .tile__corner--br { bottom: 4px; right: 4px; border-left: none; border-top: none; }
 
 .tile:hover .tile__corner {
-    border-color: var(--accent-amber);
     opacity: 1;
+    filter: drop-shadow(0 0 3px var(--accent-amber));
 }
 
 .tile__header {
