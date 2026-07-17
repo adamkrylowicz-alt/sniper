@@ -1,5 +1,5 @@
-# Lokalna konfiguracja narzedzia (per-maszyna, nie kod aplikacji)
-.claude/settings.local.json
+# Lokalna konfiguracja/stan narzedzia (per-maszyna, nie kod aplikacji)
+.claude/
 
 # Sekrety - NIGDY nie commitowac
 pliki/sshkey.txt
