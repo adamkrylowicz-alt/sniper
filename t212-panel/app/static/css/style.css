@@ -1,12 +1,15 @@
 /*
 Token system ("Signal Room" - wybrany 17.07.2026, tymczasowo do potwierdzenia):
   bg            #08090A  - tło główne, prawie czarne
-  panel         #101214  - tło kafelka
-  hairline      #24262B  - cienkie linie/obramowania
+  panel         #14171C  - tło kafelka (jaśniejsze niż bg - wyraźna separacja warstw)
+  hairline      #2C2F36  - cienkie linie/obramowania
   text-bright   #ECEEF0  - główny tekst (tickery, liczby)
   text-muted    #7A7F87  - etykiety, drugorzędne info
-  accent-amber  #9354FF  - fioletowy sygnał celownika (nazwa zmiennej zostaje
-                            z poprzedniej wersji - viz. Sniper/HUD, nie amber)
+  accent-amber  #A855FF  - fioletowy sygnał celownika, jaśniejszy/bardziej
+                            nasycony niż poprzednia wersja (nazwa zmiennej
+                            zostaje z historycznych powodów - viz. Sniper/HUD)
+  accent-glow   rgba odcień accentu do poświat/cieni - żeby nie powtarzać
+                            tej samej wartości rgba w kilkunastu miejscach
   buy-green     #2FD98A
   sell-red      #FF5C5C
 
@@ -19,11 +22,12 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
 
 :root {
     --bg: #08090A;
-    --panel: #101214;
-    --hairline: #24262B;
+    --panel: #14171C;
+    --hairline: #2C2F36;
     --text-bright: #ECEEF0;
     --text-muted: #7A7F87;
-    --accent-amber: #9354FF;
+    --accent-amber: #A855FF;
+    --accent-glow: rgba(168, 85, 255, 0.35);
     --buy-green: #2FD98A;
     --sell-red: #FF5C5C;
 }
@@ -38,11 +42,35 @@ html[data-theme="light"] {
     --text-bright: #14181B;
     --text-muted: #6B7280;
     --accent-amber: #6D28D9;
+    --accent-glow: rgba(109, 40, 217, 0.2);
     --buy-green: #15803D;
     --sell-red: #DC2626;
 }
 
 * { box-sizing: border-box; }
+
+/* Głębia warstw - subtelny "top highlight" na głównych kartach/panelach,
+   żeby odróżniały się od tła nawet gdy --panel jest blisko --bg. */
+.tile,
+.sidebar-widget,
+.account-bar,
+.focus-tile,
+.auth-box,
+.history-box,
+.settings-links__item,
+.pie-asset-row {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+html[data-theme="light"] .tile,
+html[data-theme="light"] .sidebar-widget,
+html[data-theme="light"] .account-bar,
+html[data-theme="light"] .focus-tile,
+html[data-theme="light"] .auth-box,
+html[data-theme="light"] .history-box,
+html[data-theme="light"] .settings-links__item,
+html[data-theme="light"] .pie-asset-row {
+    box-shadow: inset 0 1px 0 rgba(0, 0, 0, 0.02);
+}
 
 html, body {
     margin: 0;
@@ -64,20 +92,20 @@ body::before {
     z-index: -1;
     pointer-events: none;
     background-image:
-        linear-gradient(rgba(147, 84, 255, 0.16) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(147, 84, 255, 0.16) 1px, transparent 1px);
+        linear-gradient(rgba(168, 85, 255, 0.3) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(168, 85, 255, 0.3) 1px, transparent 1px);
     background-size: 44px 44px;
     transform: perspective(420px) rotateX(62deg) scale(2.4);
     transform-origin: 50% 0%;
-    mask-image: linear-gradient(to bottom, black, transparent 75%);
-    -webkit-mask-image: linear-gradient(to bottom, black, transparent 75%);
+    mask-image: linear-gradient(to bottom, black, transparent 80%);
+    -webkit-mask-image: linear-gradient(to bottom, black, transparent 80%);
 }
 html[data-theme="light"] body::before {
     display: none;
 }
 
 .topbar__mark {
-    text-shadow: 0 0 16px rgba(147, 84, 255, 0.45);
+    text-shadow: 0 0 20px var(--accent-glow), 0 0 4px var(--accent-glow);
 }
 html[data-theme="light"] .topbar__mark {
     text-shadow: none;
@@ -298,7 +326,8 @@ tekst błędu, obok osobno siatka.
 
 .sidebar-favorites__item--active {
     border-color: var(--accent-amber);
-    background: rgba(255, 176, 0, 0.06);
+    background: rgba(168, 85, 255, 0.08);
+    box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .sidebar-favorites__avatar--logo {
@@ -392,10 +421,11 @@ tekst błędu, obok osobno siatka.
    pojawiają się wyraźniej przy aktywnym/hover stanie kafelka. */
 .tile__corner {
     position: absolute;
-    width: 10px;
-    height: 10px;
-    border: 1.5px solid var(--accent-amber);
-    opacity: 0.45;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--accent-amber);
+    opacity: 0.75;
+    filter: drop-shadow(0 0 2px var(--accent-glow));
     transition: border-color 0.15s ease, opacity 0.15s ease, filter 0.15s ease;
 }
 .tile__corner--tl { top: 4px; left: 4px; border-right: none; border-bottom: none; }
@@ -405,7 +435,7 @@ tekst błędu, obok osobno siatka.
 
 .tile:hover .tile__corner {
     opacity: 1;
-    filter: drop-shadow(0 0 3px var(--accent-amber));
+    filter: drop-shadow(0 0 4px var(--accent-amber));
 }
 
 .tile__header {
@@ -495,7 +525,8 @@ img.tile__logo {
 .tile__preset--active {
     border-color: var(--accent-amber);
     color: var(--accent-amber);
-    background: rgba(255, 176, 0, 0.08);
+    background: rgba(168, 85, 255, 0.1);
+    box-shadow: 0 0 8px var(--accent-glow);
 }
 
 .tile__qty-custom-input {
@@ -745,7 +776,7 @@ img.tile__logo {
     text-decoration: none;
     display: block;
 }
-.auth-form__submit:hover { background: rgba(255, 176, 0, 0.12); }
+.auth-form__submit:hover { background: rgba(168, 85, 255, 0.14); box-shadow: 0 0 10px var(--accent-glow); }
 
 .auth-form__checkbox {
     display: flex;
@@ -822,11 +853,11 @@ img.tile__logo {
 .modal-box__btn--cancel:hover { border-color: var(--text-bright); color: var(--text-bright); }
 
 .modal-box__btn--confirm {
-    background: rgba(255, 176, 0, 0.12);
+    background: rgba(168, 85, 255, 0.14);
     border: 1px solid var(--accent-amber);
     color: var(--accent-amber);
 }
-.modal-box__btn--confirm:hover { background: rgba(255, 176, 0, 0.22); }
+.modal-box__btn--confirm:hover { background: rgba(168, 85, 255, 0.24); box-shadow: 0 0 10px var(--accent-glow); }
 
 .modal-box--wide { max-width: 420px; }
 
@@ -902,7 +933,7 @@ img.tile__logo {
     margin: 12px auto 0;
 }
 .flash-bar__msg {
-    background: rgba(255, 176, 0, 0.1);
+    background: rgba(168, 85, 255, 0.1);
     border: 1px solid var(--accent-amber);
     color: var(--accent-amber);
     font-size: 12px;
@@ -1069,7 +1100,7 @@ img.tile__logo {
     padding: 3px 10px;
     border-radius: 2px;
 }
-.watchlist-results__add:hover { background: rgba(255, 176, 0, 0.12); }
+.watchlist-results__add:hover { background: rgba(168, 85, 255, 0.12); }
 
 /* --- Layout strony Watchlist: przeglądanie (lewo) | ulubione (prawo) --- */
 .watchlist-layout {
@@ -1209,7 +1240,7 @@ img.tile__logo {
 }
 
 .pie-fx-banner {
-    background: rgba(255, 176, 0, 0.1);
+    background: rgba(168, 85, 255, 0.1);
     border: 1px solid var(--accent-amber);
     color: var(--accent-amber);
     font-size: 12px;
@@ -1390,7 +1421,7 @@ img.tile__logo {
     border-radius: 999px;
     padding: 1px 6px;
 }
-.tab--active { color: var(--accent-amber); border-bottom-color: var(--accent-amber); }
+.tab--active { color: var(--accent-amber); border-bottom-color: var(--accent-amber); box-shadow: 0 1px 8px var(--accent-glow); }
 .tab--active .tab__count { color: var(--accent-amber); }
 .tab--risk.tab--active { color: var(--sell-red); border-bottom-color: var(--sell-red); }
 .tab--risk.tab--active .tab__count { color: var(--sell-red); }
