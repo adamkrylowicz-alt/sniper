@@ -20,6 +20,22 @@
                 </svg>
                 Odśwież
             </button>
+
+            <div class="sidebar-widget__actions" style="margin-top: 10px;">
+                <button id="btn-cancel-buy" class="account-bar__btn account-bar__btn--buy" title="Anuluj wszystkie oczekujące zlecenia KUP">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
+                    </svg>
+                    Anuluj KUP
+                </button>
+                <button id="btn-cancel-sell" class="account-bar__btn account-bar__btn--sell" title="Anuluj wszystkie oczekujące zlecenia SPRZEDAJ">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
+                    </svg>
+                    Anuluj SPRZEDAJ
+                </button>
+            </div>
+
             <div class="account-bar__status" id="account-status"></div>
         </div>
 
@@ -152,24 +168,6 @@
             <div class="sidebar-widget__title">OTWARTE ZLECENIA</div>
             <button id="btn-load-pending" class="account-bar__btn">Pokaż</button>
             <div id="pending-orders-list" class="pending-orders-list"></div>
-        </div>
-
-        <div class="sidebar-widget">
-            <div class="sidebar-widget__title">ANULUJ ZBIORCZO</div>
-            <div class="sidebar-widget__actions">
-                <button id="btn-cancel-buy" class="account-bar__btn account-bar__btn--buy" title="Anuluj wszystkie oczekujące zlecenia KUP">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
-                    </svg>
-                    Anuluj KUP
-                </button>
-                <button id="btn-cancel-sell" class="account-bar__btn account-bar__btn--sell" title="Anuluj wszystkie oczekujące zlecenia SPRZEDAJ">
-                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
-                    </svg>
-                    Anuluj SPRZEDAJ
-                </button>
-            </div>
         </div>
     </aside>
 
