@@ -366,9 +366,27 @@ def focus_view():
     import math
     refresh_interval_s = math.ceil(focus_tiles * 1.2)
 
+    # Pełna nazwa spółki + waluta notowania pod tickerem (na życzenie Adama,
+    # 18.07.2026 - sam skrót typu "IPOE" nic nie mówi kto to). Ten sam
+    # wzorzec co grid_tiles w warp_view() wyżej.
+    from ..models import Instrument
+    instruments_by_ticker = (
+        {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
+        if tickers else {}
+    )
+    tile_data = [
+        {
+            "ticker": t,
+            "name": friendly_name(instruments_by_ticker[t].name) if t in instruments_by_ticker else "",
+            "currency": instruments_by_ticker[t].currency_code if t in instruments_by_ticker else "",
+        }
+        for t in tickers
+    ]
+
     return render_template(
         "focus.html",
         tickers=tickers,
+        tile_data=tile_data,
         focus_tiles=focus_tiles,
         refresh_interval_ms=refresh_interval_s * 1000,
     )

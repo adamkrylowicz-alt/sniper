@@ -338,15 +338,15 @@ tekst błędu, obok osobno siatka.
 
 .sidebar-favorites__avatar {
     flex-shrink: 0;
-    width: 24px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
     font-weight: 700;
-    font-size: 10px;
+    font-size: 13px;
 }
 
 .sidebar-favorites__info {
@@ -452,8 +452,8 @@ tekst błędu, obok osobno siatka.
 
 .tile__logo {
     flex-shrink: 0;
-    width: 22px;
-    height: 22px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -463,7 +463,7 @@ tekst błędu, obok osobno siatka.
 .tile__logo--fallback {
     color: #fff;
     font-weight: 700;
-    font-size: 10px;
+    font-size: 13px;
 }
 
 img.tile__logo {
@@ -961,15 +961,15 @@ img.tile__logo {
 
 .watchlist-favorites__avatar {
     flex-shrink: 0;
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 15px;
 }
 .watchlist-favorites__avatar--logo {
     background: #fff; /* logotypy zwykle mają przezroczyste tło - białe podłoże, żeby nie znikały na dark mode */
@@ -1046,15 +1046,15 @@ img.tile__logo {
 }
 .watchlist-results__avatar {
     flex-shrink: 0;
-    width: 26px;
-    height: 26px;
+    width: 34px;
+    height: 34px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #fff;
     font-weight: 700;
-    font-size: 11px;
+    font-size: 13px;
 }
 .watchlist-results__avatar--logo {
     background: #fff;
@@ -1275,15 +1275,15 @@ img.tile__logo {
 }
 
 .pie-asset-row__avatar {
-    width: 32px;
-    height: 32px;
+    width: 40px;
+    height: 40px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #0B0D0F;
     font-weight: 700;
-    font-size: 13px;
+    font-size: 15px;
     flex-shrink: 0;
 }
 
@@ -1503,6 +1503,13 @@ img.tile__logo {
     font-weight: 700;
     color: var(--text-bright);
     letter-spacing: 0.05em;
+}
+
+.focus-tile__subtitle {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
 }
 
 .focus-tile__price-wrap {
