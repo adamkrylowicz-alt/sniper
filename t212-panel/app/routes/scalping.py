@@ -10,11 +10,10 @@ T212_DEMO_API_KEY_TEMP, teraz gdy auth.py + api_keys.py istnieją.
 
 UPROSZCZENIA POZOSTAŁE DO POPRAWY:
 ------------------------------------
-1. [ZROBIONE] Siatka pobierana z UserSettings.warp_grid. Nowe konta startują
-   z PUSTĄ siatką (na życzenie Adama, 18.07.2026 - wcześniej siatka była
-   wstępnie wypełniona DEFAULT_WARP_GRID, co myliło: wyglądało jakby te
-   tickery były "zahardkodowane" na stałe). DEFAULT_WARP_GRID zostaje jako
-   fallback tylko dla Focus Mode (gdy user nie ma jeszcze ulubionych).
+1. [ZROBIONE] Siatka (warp_grid) i tickery Focus Mode (favorites) - obie
+   PUSTE domyślnie dla nowych kont (na życzenie Adama, 18.07.2026 - dawniej
+   obie miały fallback do sztywnej listy popularnych spółek, co myliło:
+   wyglądało jakby te tickery były "zahardkodowane" na stałe).
 2. [ZROBIONE] Cena szacowana (estimated_price) jest teraz auto-wypełniana z
    Finnhub (warp.js::refreshTilePrices, endpoint /warp/quote) - T212 nadal
    nie daje jej w API zleceń, ale mamy niezależne źródło. User może nadal
@@ -37,15 +36,6 @@ from .api_keys import get_decrypted_credentials
 
 scalping_bp = Blueprint("scalping", __name__, url_prefix="/warp")
 
-# Tymczasowa, sztywna siatka - do zastąpienia UserSettings.warp_grid
-# UWAGA: "META_US_EQ" nie istnieje w T212 - spółka Meta Platforms jest tam
-# nadal pod starym symbolem sprzed rebrandingu z Facebooka. Zweryfikowane
-# przez client.get_instruments() na koncie demo.
-DEFAULT_WARP_GRID = [
-    "AAPL_US_EQ", "MSFT_US_EQ", "NVDA_US_EQ",
-    "TSLA_US_EQ", "AMZN_US_EQ", "GOOGL_US_EQ",
-    "FB_US_EQ", "AMD_US_EQ", "NFLX_US_EQ",
-]
 
 # Per-user guardy w pamięci procesu - {user_id: RiskGuard}. Naprawione z
 # pierwotnej wersji (jeden globalny _guard), bo kod bota Micro-Grid (Etap 2)
@@ -85,7 +75,7 @@ def warp_view():
     """
     Renderuje siatkę - z ulubionych użytkownika (UserSettings.warp_grid,
     ustawianych w /settings/watchlist). Jeśli user jeszcze nic nie wybrał,
-    siatka jest PUSTA (celowo, nie fallback do DEFAULT_WARP_GRID) - dopiero
+    siatka jest PUSTA (celowo, bez zahardkodowanego fallbacku) - dopiero
     zaznaczenie tickerów w widgecie ULUBIONE dodaje je do siatki. Pusty stan
     ma czytelny komunikat w warp.html.
 
@@ -349,13 +339,17 @@ def focus_view():
     """
     Focus Mode - duże kafelki, karuzela strzałkami, cena live z Finnhub.
     Liczba jednoczesnych kafelków z UserSettings.focus_tiles (domyślnie 1).
+    Tickery z UserSettings.favorites (ta sama lista co ULUBIONE w Warp Mode) -
+    PUSTE dla nowych kont, tak samo jak siatka Warp (na życzenie Adama,
+    18.07.2026 - wcześniej fallback do sztywnej listy popularnych spółek
+    wyglądał jak zahardkodowane tickery, ta sama myląca sytuacja co w Warp).
     """
     import json
     from ..models import UserSettings
 
     settings = UserSettings.query.filter_by(user_id=current_user_id()).first()
 
-    tickers = DEFAULT_WARP_GRID
+    tickers = []
     if settings and settings.favorites:
         try:
             saved = json.loads(settings.favorites)

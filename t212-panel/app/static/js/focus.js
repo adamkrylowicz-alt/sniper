@@ -47,8 +47,10 @@ function navigate(dir) {
     updateCarousel();
 }
 
-document.getElementById("focus-prev").addEventListener("click", () => navigate(-1));
-document.getElementById("focus-next").addEventListener("click", () => navigate(1));
+// Strzalki nie istnieja w DOM gdy TOTAL_TICKERS===0 (pusty stan w focus.html
+// nie renderuje karuzeli w ogole) - stad ?. zamiast zalozenia ze zawsze sa.
+document.getElementById("focus-prev")?.addEventListener("click", () => navigate(-1));
+document.getElementById("focus-next")?.addEventListener("click", () => navigate(1));
 
 document.addEventListener("keydown", (e) => {
     if (e.key === "ArrowLeft") navigate(-1);

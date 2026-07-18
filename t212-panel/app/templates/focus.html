@@ -4,6 +4,15 @@
 {% block content %}
 <div class="focus-layout">
 
+    {% if not tickers %}
+    <div class="sidebar-widget" style="max-width: 360px;">
+        <div class="sidebar-widget__title">BRAK AKTYWÓW</div>
+        <p class="sidebar-widget__empty">
+            Wybierz aktywa w <a href="{{ url_for('settings.watchlist_view') }}">Ustawienia → Watchlist</a>
+            (ta sama lista ulubionych co w Warp Mode), żeby pojawiły się tutaj kafelki.
+        </p>
+    </div>
+    {% else %}
     <div class="focus-nav">
         <button class="focus-nav__btn" id="focus-prev" title="Poprzedni (←)">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -74,11 +83,12 @@
         <span class="focus-dot" data-index="{{ loop.index0 }}"></span>
         {% endfor %}
     </div>
+    {% endif %}
 
     <div class="focus-footer">
         <a href="{{ url_for('scalping.warp_view') }}" class="topbar__link">← Warp Mode</a>
         <span class="focus-footer__info" id="focus-refresh-info">
-            Odświeżanie co {{ (refresh_interval_ms // 1000) }}s · {{ focus_tiles }} kafelek/kafelki
+            {% if tickers %}Odświeżanie co {{ (refresh_interval_ms // 1000) }}s · {{ focus_tiles }} kafelek/kafelki{% endif %}
         </span>
         <a href="{{ url_for('settings.watchlist_view') }}" class="topbar__link">Zmień aktywa (Watchlist) →</a>
     </div>
