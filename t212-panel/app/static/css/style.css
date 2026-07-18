@@ -1310,8 +1310,6 @@ img.tile__logo {
     display: block;
     margin-bottom: 8px;
 }
-.pie-asset-row__spark-line--up { stroke: var(--buy-green); }
-.pie-asset-row__spark-line--down { stroke: var(--sell-red); }
 
 .pie-asset-row__weight-line { margin-bottom: 10px; }
 .pie-asset-row__slider {

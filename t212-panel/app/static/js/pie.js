@@ -51,24 +51,39 @@ kazdego segmentu = ten sam hsl() co awatar danego wiersza (patrz
 pie_detail.html), wiec kolory w wykresie i na liscie ponizej sie zgadzaja -
 lista pelni role legendy, bez potrzeby osobnego komponentu.
 */
+// Szerokosc cienkiej kreski (koloru tla) miedzy segmentami donuta - bez niej
+// dwa aktywa o zblizonym hue (avatar_hue to prosty hash sumy kodow znakow,
+// kolizje sa latwe - np. anagramy tickerow daja identyczny kolor) zlewaja
+// sie wizualnie w jeden ksztalt. Dzielimy TYLKO wewnetrzne granice (miedzy
+// kolejnymi aktywami), nie ostatnia->pierwsza (zamykajaca okrag) - zeby nie
+// bawic sie w zawijanie kata powyzej 360deg w conic-gradient.
+const DONUT_DIVIDER_DEG = 1.4;
+
 function updateDonut() {
     const donut = document.getElementById("pie-donut");
     if (!donut) return;
 
     const sum = weightSum();
-    const rows = document.querySelectorAll(".pie-asset-row");
+    const rows = Array.from(document.querySelectorAll(".pie-asset-row"));
     if (sum <= 0 || rows.length === 0) {
         donut.style.background = "var(--hairline)";
         return;
     }
 
+    const half = DONUT_DIVIDER_DEG / 2;
     let angle = 0;
     const stops = [];
-    rows.forEach((row) => {
+    rows.forEach((row, i) => {
         const w = Number(row.querySelector("[data-weight-slider]").value) || 0;
         const color = row.querySelector(".pie-asset-row__avatar").style.background || "#888";
         const deg = (w / sum) * 360;
-        stops.push(`${color} ${angle.toFixed(2)}deg ${(angle + deg).toFixed(2)}deg`);
+        const isLast = i === rows.length - 1;
+        const segStart = angle + (i > 0 ? half : 0);
+        const segEnd = Math.max(segStart, angle + deg - (isLast ? 0 : half));
+        stops.push(`${color} ${segStart.toFixed(2)}deg ${segEnd.toFixed(2)}deg`);
+        if (!isLast) {
+            stops.push(`var(--bg) ${segEnd.toFixed(2)}deg ${(angle + deg + half).toFixed(2)}deg`);
+        }
         angle += deg;
     });
     donut.style.background = `conic-gradient(${stops.join(", ")})`;
@@ -143,23 +158,37 @@ async function saveWeight(row) {
 /*
 === Mini-wykresy (Finnhub, przez /pie/<id>/charts) ===
 Jedno wywołanie na cały widok, nie per-wiersz - patrz price_feed.py.
+Świece OHLC zamiast linii (na życzenie Adama, 18.07.2026) - ten sam wzorzec
+rysowania co focus.js::drawCandles(), tylko przeskalowany na maly viewBox
+"0 0 100 30" wiersza koszyka (patrz pie_detail.html [data-spark]). Reuzywa
+klas .focus-candle-up/--down zamiast duplikowac kolory swiec w CSS.
 */
-function renderSparkline(svg, closes) {
-    if (!closes || closes.length < 2) {
+function renderCandles(svg, candles) {
+    if (!candles || candles.length < 2) {
         svg.innerHTML = "";
         return;
     }
-    const min = Math.min(...closes);
-    const max = Math.max(...closes);
-    const range = max - min || 1;
-    const stepX = 100 / (closes.length - 1);
-    const points = closes
-        .map((c, i) => `${(i * stepX).toFixed(1)},${(29 - ((c - min) / range) * 28).toFixed(1)}`)
-        .join(" ");
-    const cls = closes[closes.length - 1] >= closes[0]
-        ? "pie-asset-row__spark-line--up"
-        : "pie-asset-row__spark-line--down";
-    svg.innerHTML = `<polyline class="${cls}" points="${points}" fill="none" stroke-width="1.5"/>`;
+    const W = 100, H = 30, PAD = 2;
+    const min = Math.min(...candles.map((c) => c.l));
+    const max = Math.max(...candles.map((c) => c.h));
+    const range = (max - min) || 1;
+    const y = (v) => H - PAD - ((v - min) / range) * (H - PAD * 2);
+
+    const n = candles.length;
+    const slot = (W - PAD * 2) / n;
+    const bodyWidth = Math.max(0.6, slot * 0.6);
+
+    svg.innerHTML = candles.map((c, i) => {
+        const x = PAD + slot * i + slot / 2;
+        const cls = c.c >= c.o ? "focus-candle-up" : "focus-candle-down";
+        const yOpen = y(c.o), yClose = y(c.c);
+        const bodyTop = Math.min(yOpen, yClose);
+        const bodyH = Math.max(0.5, Math.abs(yClose - yOpen));
+        return (
+            `<line class="${cls}" x1="${x.toFixed(1)}" y1="${y(c.h).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(c.l).toFixed(1)}" stroke-width="0.6"/>` +
+            `<rect class="${cls}" x="${(x - bodyWidth / 2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyWidth.toFixed(1)}" height="${bodyH.toFixed(1)}"/>`
+        );
+    }).join("");
 }
 
 async function loadCharts() {
@@ -169,12 +198,12 @@ async function loadCharts() {
         if (!data.ok) return;
 
         document.querySelectorAll(".pie-asset-row").forEach((row) => {
-            const closes = data.charts[row.dataset.ticker];
-            renderSparkline(row.querySelector("[data-spark]"), closes);
+            const candles = data.charts[row.dataset.ticker];
+            renderCandles(row.querySelector("[data-spark]"), candles);
 
             const priceInput = row.querySelector("[data-price]");
-            if (!priceInput.value && closes && closes.length) {
-                priceInput.value = closes[closes.length - 1];
+            if (!priceInput.value && candles && candles.length) {
+                priceInput.value = candles[candles.length - 1].c;
             }
         });
     } catch (err) {

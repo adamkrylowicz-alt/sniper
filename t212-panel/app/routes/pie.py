@@ -262,11 +262,12 @@ def charts(pie_id):
     Batch - jedno wywołanie JS->Flask dla WSZYSTKICH aktywów koszyka naraz,
     zamiast N osobnych requestów. Dane z Finnhub (services/price_feed.py),
     kompletnie niezależne od T212 - zero ryzyka zjedzenia jego rate limitu.
+    Pełne OHLC (nie same zamknięcia) - pie.js rysuje świece, nie linię.
     """
     pie = _get_owned_pie(pie_id)
     tickers = [a.ticker for a in pie.assets]
     api_key = current_app.config.get("FINNHUB_API_KEY")
-    data = price_feed.get_mini_charts(api_key, tickers)
+    data = price_feed.get_mini_charts_ohlc(api_key, tickers)
     return jsonify(ok=True, charts=data, has_api_key=bool(api_key))
 
 

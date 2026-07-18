@@ -96,6 +96,18 @@
 
     <div class="warp-center">
         <div class="warp-grid" id="warp-grid">
+            {% if not tickers %}
+            <div style="grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--hairline); display: flex; align-items: center; justify-content: center; text-align: center; padding: 32px 24px;">
+                <div>
+                    <p style="color: var(--text-bright); font-weight: 600; margin: 0 0 8px;">Siatka jest pusta</p>
+                    <p class="sidebar-widget__empty" style="margin: 0;">
+                        Wybierz aktywa w widgecie ULUBIONE po lewej (albo dodaj nowe w
+                        <a href="{{ url_for('settings.watchlist_view') }}">Ustawienia → Watchlist</a>),
+                        żeby pojawiły się tutaj jako kafelki.
+                    </p>
+                </div>
+            </div>
+            {% else %}
             {% for tile in tickers %}
             <div class="tile" data-ticker="{{ tile.ticker }}">
                 <div class="tile__corner tile__corner--tl"></div>
@@ -160,14 +172,16 @@
                 </div>
             </div>
             {% endfor %}
+            {% endif %}
         </div>
     </div>
 
     <aside class="warp-sidebar warp-sidebar--right">
         <div class="sidebar-widget">
             <div class="sidebar-widget__title">OTWARTE ZLECENIA</div>
-            <button id="btn-load-pending" class="account-bar__btn">Pokaż</button>
-            <div id="pending-orders-list" class="pending-orders-list"></div>
+            <div id="pending-orders-list" class="pending-orders-list">
+                <p class="sidebar-widget__empty">ładowanie…</p>
+            </div>
         </div>
     </aside>
 

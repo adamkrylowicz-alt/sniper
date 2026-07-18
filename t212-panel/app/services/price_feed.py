@@ -36,7 +36,7 @@ FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
 REQUEST_TIMEOUT = 10  # sekund
 
 CACHE_TTL_SECONDS = 30 * 60  # dane do MINI-wykresu, nie do decyzji tradingowych
-_cache: dict[str, tuple[float, list[float] | None]] = {}  # {"AAPL_US_EQ:30": (monotonic_ts, closes)}
+_cache_ohlc: dict[str, tuple[float, list[dict] | None]] = {}  # {"AAPL_US_EQ:30": (monotonic_ts, candles)}
 
 _KNOWN_SUFFIXES = ("_US_EQ", "_EQ")
 
@@ -49,7 +49,8 @@ def _to_finnhub_symbol(t212_ticker: str) -> str:
     return symbol
 
 
-def _fetch_candles(api_key: str, ticker: str, days: int) -> list[float] | None:
+def _fetch_candles_ohlc(api_key: str, ticker: str, days: int) -> list[dict] | None:
+    """Pobiera pełne OHLC (open/high/low/close) z Finnhub /stock/candle - do świec."""
     now = int(time.time())
     frm = now - days * 86400
 
@@ -66,11 +67,11 @@ def _fetch_candles(api_key: str, ticker: str, days: int) -> list[float] | None:
             timeout=REQUEST_TIMEOUT,
         )
     except requests.RequestException as exc:
-        logger.warning("Finnhub: błąd sieci dla %s: %s", ticker, exc)
+        logger.warning("Finnhub OHLC: błąd sieci dla %s: %s", ticker, exc)
         return None
 
     if resp.status_code != 200:
-        logger.warning("Finnhub: HTTP %s dla %s", resp.status_code, ticker)
+        logger.warning("Finnhub OHLC: HTTP %s dla %s", resp.status_code, ticker)
         return None
 
     try:
@@ -78,22 +79,20 @@ def _fetch_candles(api_key: str, ticker: str, days: int) -> list[float] | None:
     except ValueError:
         return None
 
-    # "no_data" - Finnhub nie ma pokrycia dla tego symbolu/giełdy (darmowy tier
-    # bywa ograniczony do wybranych rynków) - traktujemy jak brak danych, nie błąd.
     if payload.get("s") != "ok":
         return None
 
-    closes = payload.get("c") or []
-    return [round(float(v), 4) for v in closes]
+    opens, highs, lows, closes = payload.get("o"), payload.get("h"), payload.get("l"), payload.get("c")
+    if not (opens and highs and lows and closes):
+        return None
+    return [
+        {"o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
+        for o, h, l, c in zip(opens, highs, lows, closes)
+    ]
 
 
-def _fetch_yahoo_candles(ticker: str, days: int) -> list[float] | None:
-    """
-    Fallback dla get_mini_chart() gdy Finnhub /stock/candle nie jest
-    dostepny na danym planie (potwierdzone 17.07.2026 - darmowy klucz
-    dostaje "You don't have access to this resource"). Yahoo Finance Chart
-    API, bez klucza - ten sam mapping tickera co _fetch_yahoo_quote nizej.
-    """
+def _fetch_yahoo_candles_ohlc(ticker: str, days: int) -> list[dict] | None:
+    """Fallback OHLC (Yahoo Finance Chart API, bez klucza) gdy Finnhub odmówi."""
     try:
         resp = requests.get(
             f"https://query1.finance.yahoo.com/v8/finance/chart/{_to_finnhub_symbol(ticker)}",
@@ -103,22 +102,26 @@ def _fetch_yahoo_candles(ticker: str, days: int) -> list[float] | None:
         )
         if resp.status_code != 200:
             return None
-        result = resp.json()["chart"]["result"][0]
-        raw_closes = result["indicators"]["quote"][0]["close"]
+        quote = resp.json()["chart"]["result"][0]["indicators"]["quote"][0]
+        opens, highs, lows, closes = quote["open"], quote["high"], quote["low"], quote["close"]
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
         return None
 
-    closes = [round(float(c), 4) for c in raw_closes if c is not None]
-    if len(closes) < 2:
+    candles = [
+        {"o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
+        for o, h, l, c in zip(opens, highs, lows, closes)
+        if None not in (o, h, l, c)
+    ]
+    if len(candles) < 2:
         return None
-    return closes[-days:]
+    return candles[-days:]
 
 
-def get_mini_chart(api_key: str | None, ticker: str, days: int = 30) -> list[float] | None:
+def get_mini_chart_ohlc(api_key: str | None, ticker: str, days: int = 30) -> list[dict] | None:
     """
-    Zwraca listę cen zamknięcia (najstarsza -> najnowsza) dla ostatnich `days`
-    dni, albo None gdy brak danych/klucza/połączenia - wywołujący (routes/pie.py)
-    pokazuje wtedy "brak danych" zamiast wywalać cały widok koszyka.
+    Zwraca listę OHLC (open/high/low/close, najstarsza -> najnowsza) dla
+    ostatnich `days` dni, albo None gdy brak danych/klucza/połączenia - do
+    rysowania świec w Smart Virtual Pie (routes/pie.py::charts).
     """
     if not api_key:
         logger.warning("FINNHUB_API_KEY nie ustawiony w .env - mini-wykresy wyłączone.")
@@ -126,24 +129,22 @@ def get_mini_chart(api_key: str | None, ticker: str, days: int = 30) -> list[flo
 
     key = f"{ticker}:{days}"
     now = time.monotonic()
-    cached = _cache.get(key)
+    cached = _cache_ohlc.get(key)
     if cached and (now - cached[0]) < CACHE_TTL_SECONDS:
         return cached[1]
 
-    closes = _fetch_candles(api_key, ticker, days)
-    if not closes:
-        # Finnhub /stock/candle odmowil (darmowy tier) - Yahoo Finance jako
-        # zapasowe zrodlo, bez klucza.
-        closes = _fetch_yahoo_candles(ticker, days)
-    _cache[key] = (now, closes)
-    return closes
+    candles = _fetch_candles_ohlc(api_key, ticker, days)
+    if not candles:
+        candles = _fetch_yahoo_candles_ohlc(ticker, days)
+    _cache_ohlc[key] = (now, candles)
+    return candles
 
 
-def get_mini_charts(
+def get_mini_charts_ohlc(
     api_key: str | None, tickers: list[str], days: int = 30
-) -> dict[str, list[float] | None]:
+) -> dict[str, list[dict] | None]:
     """Wygodny batch - jedno wywołanie JS->Flask na cały widok Pie zamiast N osobnych requestów."""
-    return {t: get_mini_chart(api_key, t, days) for t in tickers}
+    return {t: get_mini_chart_ohlc(api_key, t, days) for t in tickers}
 
 
 # -- Cena "na żywo" do decyzji bota (Etap 2, services/bot_engine.py) --------

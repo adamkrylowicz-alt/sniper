@@ -307,9 +307,11 @@ document.getElementById("btn-cancel-sell").addEventListener("click", () => cance
 
 /*
 === Panel "Otwarte zlecenia" (prawy sidebar) ===
-Ładowane WYŁĄCZNIE na żądanie (przycisk "Pokaż"), nie automatycznie -
-to kolejny request do wąskiego rate limitu T212 (/equity/orders), więc
-nie chcemy go odpalać przy każdym wejściu na stronę.
+Ładowane automatycznie przy wejściu na stronę (na życzenie Adama, 18.07.2026 -
+wcześniej wymagało kliknięcia "Pokaż", co było mylące skoro widget i tak jest
+zawsze widoczny). To trzeci automatyczny request do wąskiego rate limitu T212
+obok loadAccount()/loadLimits() - stąd 1.5s opóźnienia poniżej, żeby nie
+strzelały wszystkie trzy jednym batchem w tej samej milisekundzie.
 */
 async function loadPendingOrders() {
     const container = document.getElementById("pending-orders-list");
@@ -345,13 +347,6 @@ async function loadPendingOrders() {
     }
 }
 
-document.getElementById("btn-load-pending").addEventListener("click", async (event) => {
-    const btn = event.currentTarget;
-    btn.disabled = true;
-    await loadPendingOrders();
-    setTimeout(() => { btn.disabled = false; }, 10000); // ten sam powód co przy Odśwież
-});
-
 // Ładowanie od razu przy wejściu na stronę + auto-odświeżanie co 90s.
 // UWAGA: było 20s, ale rate limit T212 na /equity/portfolio jest znacznie
 // węższy niż zakładaliśmy (patrz komentarz przy MIN_LOAD_GAP_MS wyżej) -
@@ -359,6 +354,7 @@ document.getElementById("btn-load-pending").addEventListener("click", async (eve
 // T212 faktycznie toleruje.
 loadAccount();
 loadLimits();
+setTimeout(loadPendingOrders, 1500);
 setInterval(loadAccount, 90000);
 
 /*

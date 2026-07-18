@@ -131,7 +131,7 @@ if ($wipeDatabase) {
 
 Write-Host ""
 Write-Host "=== Wysylanie skryptow migracji (jednorazowe, idempotentne) ===" -ForegroundColor Cyan
-$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_entry_amount.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py", "migrate_add_active_trade_is_paper.py")
+$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py", "migrate_add_active_trade_is_paper.py", "migrate_drop_pie_asset_bot_columns.py")
 foreach ($mig in $migScripts) {
     $migLocal = Join-Path $PSScriptRoot $mig
     if (Test-Path $migLocal) {
@@ -166,8 +166,8 @@ Write-Host ""
 Write-Host "  3. Uruchom skrypty migracji:" -ForegroundColor Yellow
 Write-Host "     python3 migrate_add_pie_id.py" -ForegroundColor Yellow
 Write-Host "     python3 migrate_add_is_leveraged.py" -ForegroundColor Yellow
-Write-Host "     python3 migrate_add_bot_entry_amount.py" -ForegroundColor Yellow
 Write-Host "     python3 migrate_add_bot_assets.py" -ForegroundColor Yellow
+Write-Host "     python3 migrate_drop_pie_asset_bot_columns.py" -ForegroundColor Yellow
 Write-Host ""
 Write-Host "  4. Jesli APScheduler jeszcze nie zainstalowany (Micro-Grid Bot):" -ForegroundColor Yellow
 Write-Host "     python3 -m pip install --user APScheduler==3.10.4" -ForegroundColor Yellow

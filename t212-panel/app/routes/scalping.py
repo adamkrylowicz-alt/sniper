@@ -10,8 +10,11 @@ T212_DEMO_API_KEY_TEMP, teraz gdy auth.py + api_keys.py istnieją.
 
 UPROSZCZENIA POZOSTAŁE DO POPRAWY:
 ------------------------------------
-1. [ZROBIONE] Siatka pobierana z UserSettings.warp_grid, DEFAULT_WARP_GRID to
-   już tylko fallback dla nowych userów bez zapisanej siatki.
+1. [ZROBIONE] Siatka pobierana z UserSettings.warp_grid. Nowe konta startują
+   z PUSTĄ siatką (na życzenie Adama, 18.07.2026 - wcześniej siatka była
+   wstępnie wypełniona DEFAULT_WARP_GRID, co myliło: wyglądało jakby te
+   tickery były "zahardkodowane" na stałe). DEFAULT_WARP_GRID zostaje jako
+   fallback tylko dla Focus Mode (gdy user nie ma jeszcze ulubionych).
 2. [ZROBIONE] Cena szacowana (estimated_price) jest teraz auto-wypełniana z
    Finnhub (warp.js::refreshTilePrices, endpoint /warp/quote) - T212 nadal
    nie daje jej w API zleceń, ale mamy niezależne źródło. User może nadal
@@ -81,9 +84,10 @@ def _get_client(environment: str = "demo") -> T212Client:
 def warp_view():
     """
     Renderuje siatkę - z ulubionych użytkownika (UserSettings.warp_grid,
-    ustawianych w /settings/watchlist), a jeśli user jeszcze nic nie wybrał -
-    fallback do DEFAULT_WARP_GRID, żeby ekran nie był pusty od pierwszego
-    logowania.
+    ustawianych w /settings/watchlist). Jeśli user jeszcze nic nie wybrał,
+    siatka jest PUSTA (celowo, nie fallback do DEFAULT_WARP_GRID) - dopiero
+    zaznaczenie tickerów w widgecie ULUBIONE dodaje je do siatki. Pusty stan
+    ma czytelny komunikat w warp.html.
 
     Dodatkowo: ostatnie 5 zleceń do mini-widgetu "Historia" w lewym sidebarze.
     To zapytanie do WŁASNEJ bazy (OrderLog), nie do T212 - zero kosztu
@@ -93,7 +97,7 @@ def warp_view():
     from ..models import UserSettings
 
     settings = UserSettings.query.filter_by(user_id=current_user_id()).first()
-    tickers = DEFAULT_WARP_GRID
+    tickers = []
     if settings and settings.warp_grid:
         try:
             saved = json.loads(settings.warp_grid)
@@ -173,9 +177,8 @@ def warp_view():
 def pending_orders():
     """
     Lista oczekujących (niewykonanych) zleceń - do prawego panelu.
-    Wywoływane RĘCZNIE przyciskiem "Pokaż" w UI (nie automatycznie przy
-    ładowaniu strony) - to kolejny request do wąskiego rate limitu T212,
-    więc nie chcemy go odpalać bez wyraźnej akcji użytkownika.
+    Wywoływane automatycznie przy wejściu na /warp (patrz warp.js -
+    loadPendingOrders() z opóźnieniem 1.5s), nie na żądanie przyciskiem.
     """
     try:
         client = _get_client()
