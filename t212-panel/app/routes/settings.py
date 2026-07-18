@@ -155,7 +155,7 @@ def watchlist_search():
     najliczniejszej kategorii (STOCK ~9.3k), więc jedno wywołanie zwraca
     komplet od razu (patrz watchlist.js - świadomie zrezygnowano z "Załaduj
     więcej" na rzecz pełnej listy).
-    ?category= jedna z instrument_cache.CATEGORIES (stock/other) -
+    ?category= jedna z instrument_cache.CATEGORIES (stock_usd/stock_eur/other) -
     nierozpoznana/brakująca wartość = bez filtra kategorii.
 
     Dokłada is_favorite/is_grid/logo_filename do każdego wyniku, żeby JS mógł

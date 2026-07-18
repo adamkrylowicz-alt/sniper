@@ -28,7 +28,7 @@ MIN_REFRESH_INTERVAL = dt.timedelta(hours=1)
 # "3x", "-5x", "2X" itp. - dopasowane tylko w obrębie ETF (patrz docstring modułu).
 _LEVERAGE_PATTERN = re.compile(r"-?\d+x\b", re.IGNORECASE)
 
-CATEGORIES = ("stock", "other")
+CATEGORIES = ("stock_usd", "stock_eur", "other")
 
 
 class RefreshTooSoonError(Exception):
@@ -104,18 +104,21 @@ def _category_filter(category: str | None):
     (category=None albo nierozpoznana wartość - traktujemy jak brak filtra,
     nie błąd, żeby literówka w query stringu nie wywalała 500).
 
-    Tylko dwie zakładki (na życzenie Adama, 18.07.2026 - poprzedni podział
-    ETF-y/ETP-y z dźwignią/Warranty na osobne zakładki był zbędny, "i tak nie
-    będzie z tego korzystał"): "stock" i "other" (wszystko poza akcjami -
-    ETF, ETF z dźwignią, Warrant, cokolwiek pojawi się w przyszłości).
+    Trzy zakładki (poprawione 18.07.2026 - Adam chciał podział WALUTOWY akcji,
+    nie tylko akcje/nie-akcje): "stock_usd" (akcje USD - NASDAQ/NYSE),
+    "stock_eur" (akcje EUR - głównie giełdy europejskie) i "other" (WOREK -
+    ETF, ETF z dźwignią, Warrant, akcje w innych walutach np. GBX/CAD/CHF).
     Plakietka "DŹWIGNIA" przy pojedynczych wynikach wyszukiwania (patrz
     Instrument.is_leveraged, common.js/watchlist.js) zostaje bez zmian - to
     osobne, ważniejsze ostrzeżenie per-instrument, nie zakładka.
     """
-    if category == "stock":
-        return Instrument.instrument_type == "STOCK"
+    is_stock = Instrument.instrument_type == "STOCK"
+    if category == "stock_usd":
+        return db.and_(is_stock, Instrument.currency_code == "USD")
+    if category == "stock_eur":
+        return db.and_(is_stock, Instrument.currency_code == "EUR")
     if category == "other":
-        return Instrument.instrument_type != "STOCK"
+        return db.not_(db.and_(is_stock, Instrument.currency_code.in_(("USD", "EUR"))))
     return None
 
 

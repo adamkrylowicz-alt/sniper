@@ -14,7 +14,7 @@ instrument_cache.py).
 */
 
 let searchTimeout = null;
-let activeCategory = "stock";
+let activeCategory = "stock_usd";
 let cachedCounts = null;
 
 function renderResults(results) {

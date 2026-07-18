@@ -216,19 +216,22 @@ function setConnDot(status) {
 }
 
 /*
-=== Zakładki kategorii instrumentów (Akcje / ETF-y i inne) ===
+=== Zakładki kategorii instrumentów (Akcje USD / Akcje EUR / Pozostałe) ===
 Współdzielone między watchlist.js (panel "Wszystkie instrumenty"), pie.js
 (wyszukiwarka "Dodaj aktywo" w Smart Virtual Pie) i bot.js - wszystkie czytają
 ten sam lokalny cache instrumentów (services/instrument_cache.py), więc ten
-sam zestaw zakładek i te same liczniki mają sens wszędzie. Tylko 2 zakładki
-(uproszczone 18.07.2026, na życzenie Adama) - poprzedni podział ETF-y/ETP-y z
-dźwignią/Warranty na trzy osobne zakładki był zbędny. Plakietka "DŹWIGNIA"
-przy pojedynczych wynikach (Instrument.is_leveraged) zostaje bez zmian - to
-ostrzeżenie per-instrument, nie kategoria zakładki.
+sam zestaw zakładek i te same liczniki mają sens wszędzie. Podział WALUTOWY
+akcji (poprawione 18.07.2026 - pierwsza wersja scaliła akcje w jedną
+zakładkę, ale Adamowi chodziło o rozróżnienie USD/EUR, nie akcje/nie-akcje).
+"Pozostałe" to worek na wszystko inne: ETF, ETF z dźwignią, Warrant, akcje w
+innych walutach (GBX/CAD/CHF itd.). Plakietka "DŹWIGNIA" przy pojedynczych
+wynikach (Instrument.is_leveraged) zostaje bez zmian - to ostrzeżenie
+per-instrument, nie kategoria zakładki.
 */
 const INSTRUMENT_CATEGORIES = [
-    { id: "stock", label: "Akcje" },
-    { id: "other", label: "ETF-y i inne" },
+    { id: "stock_usd", label: "Akcje USD" },
+    { id: "stock_eur", label: "Akcje EUR" },
+    { id: "other", label: "Pozostałe" },
 ];
 
 /*

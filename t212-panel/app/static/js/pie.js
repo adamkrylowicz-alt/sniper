@@ -330,7 +330,7 @@ async function checkFx() {
     z watchlist.js, patrz common.js. ===
 */
 let assetSearchTimeout = null;
-let assetActiveCategory = "stock";
+let assetActiveCategory = "stock_usd";
 let assetCurrentOffset = 0;
 let assetCachedCounts = null;
 const ASSET_PAGE_SIZE = 20;

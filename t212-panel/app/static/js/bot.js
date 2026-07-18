@@ -120,7 +120,7 @@ document.addEventListener("DOMContentLoaded", () => {
     w odróżnieniu od Pie, tu nie ma stanu pośredniego "dodane bez kwoty".
     */
     let botAssetSearchTimeout = null;
-    let botAssetActiveCategory = "stock";
+    let botAssetActiveCategory = "stock_usd";
     let botAssetCurrentOffset = 0;
     let botAssetCachedCounts = null;
     const BOT_ASSET_PAGE_SIZE = 20;
