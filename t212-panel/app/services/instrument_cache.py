@@ -28,7 +28,7 @@ MIN_REFRESH_INTERVAL = dt.timedelta(hours=1)
 # "3x", "-5x", "2X" itp. - dopasowane tylko w obrębie ETF (patrz docstring modułu).
 _LEVERAGE_PATTERN = re.compile(r"-?\d+x\b", re.IGNORECASE)
 
-CATEGORIES = ("stock", "etf", "leveraged", "warrant")
+CATEGORIES = ("stock", "other")
 
 
 class RefreshTooSoonError(Exception):
@@ -103,15 +103,19 @@ def _category_filter(category: str | None):
     Zwraca warunek SQLAlchemy dla danej zakładki, albo None dla "bez filtra"
     (category=None albo nierozpoznana wartość - traktujemy jak brak filtra,
     nie błąd, żeby literówka w query stringu nie wywalała 500).
+
+    Tylko dwie zakładki (na życzenie Adama, 18.07.2026 - poprzedni podział
+    ETF-y/ETP-y z dźwignią/Warranty na osobne zakładki był zbędny, "i tak nie
+    będzie z tego korzystał"): "stock" i "other" (wszystko poza akcjami -
+    ETF, ETF z dźwignią, Warrant, cokolwiek pojawi się w przyszłości).
+    Plakietka "DŹWIGNIA" przy pojedynczych wynikach wyszukiwania (patrz
+    Instrument.is_leveraged, common.js/watchlist.js) zostaje bez zmian - to
+    osobne, ważniejsze ostrzeżenie per-instrument, nie zakładka.
     """
     if category == "stock":
         return Instrument.instrument_type == "STOCK"
-    if category == "etf":
-        return db.and_(Instrument.instrument_type == "ETF", Instrument.is_leveraged.is_(False))
-    if category == "leveraged":
-        return db.and_(Instrument.instrument_type == "ETF", Instrument.is_leveraged.is_(True))
-    if category == "warrant":
-        return Instrument.instrument_type == "WARRANT"
+    if category == "other":
+        return Instrument.instrument_type != "STOCK"
     return None
 
 

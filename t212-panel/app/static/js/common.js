@@ -216,17 +216,19 @@ function setConnDot(status) {
 }
 
 /*
-=== Zakładki kategorii instrumentów (Akcje/ETF-y/ETP-y z dźwignią/Warranty) ===
-Współdzielone między watchlist.js (panel "Wszystkie instrumenty") i pie.js
-(wyszukiwarka "Dodaj aktywo" w Smart Virtual Pie) - obie czytają ten sam
-lokalny cache instrumentów (services/instrument_cache.py), więc ten sam
-zestaw zakładek i te same liczniki mają sens w obu miejscach.
+=== Zakładki kategorii instrumentów (Akcje / ETF-y i inne) ===
+Współdzielone między watchlist.js (panel "Wszystkie instrumenty"), pie.js
+(wyszukiwarka "Dodaj aktywo" w Smart Virtual Pie) i bot.js - wszystkie czytają
+ten sam lokalny cache instrumentów (services/instrument_cache.py), więc ten
+sam zestaw zakładek i te same liczniki mają sens wszędzie. Tylko 2 zakładki
+(uproszczone 18.07.2026, na życzenie Adama) - poprzedni podział ETF-y/ETP-y z
+dźwignią/Warranty na trzy osobne zakładki był zbędny. Plakietka "DŹWIGNIA"
+przy pojedynczych wynikach (Instrument.is_leveraged) zostaje bez zmian - to
+ostrzeżenie per-instrument, nie kategoria zakładki.
 */
 const INSTRUMENT_CATEGORIES = [
     { id: "stock", label: "Akcje" },
-    { id: "etf", label: "ETF-y" },
-    { id: "leveraged", label: "ETP-y z dźwignią", risk: true },
-    { id: "warrant", label: "Warranty" },
+    { id: "other", label: "ETF-y i inne" },
 ];
 
 /*
