@@ -89,18 +89,12 @@ function renderPortfolio(positions, totalValue, totalPpl) {
 }
 
 function showRetry(message) {
+    // Bez przycisku "Sprobuj ponownie" (na zyczenie Adama, 20.07.2026) -
+    // sam krotki, spokojny komunikat. Dzwiek/wizualne potwierdzenie i tak
+    // jest zwiazane z SUKCESEM odswiezenia (renderPortfolio -> puls +
+    // playUpdate), nie z tym stanem bledu.
     const statusEl = document.getElementById("portfolio-refresh-status");
-    if (!statusEl) return;
-    statusEl.textContent = "";
-    statusEl.appendChild(document.createTextNode(`${message} `));
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "account-bar__btn";
-    btn.textContent = "Spróbuj ponownie";
-    // Recznie, nie automatycznie - T212 demo ma bardzo waski rate limit,
-    // automatyczny retry-loop tylko dobijalby ten sam limit w kolko.
-    btn.addEventListener("click", refreshPortfolio);
-    statusEl.appendChild(btn);
+    if (statusEl) statusEl.textContent = message;
 }
 
 async function refreshPortfolio() {
