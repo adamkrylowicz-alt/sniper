@@ -117,8 +117,17 @@ def _fetch_yahoo_ohlc(symbol: str, days: int) -> list[dict] | None:
 
 def t212_to_finnhub(ticker: str) -> str | None:
     """
-    Konwertuje ticker T212 na symbol Finnhub.
-    Priorytet: TICKER_MAP (ręczne wyjątki) -> automatyczne dla US -> None dla reszty.
+    Konwertuje ticker T212 na symbol do zapytan cenowych.
+    Priorytet: TICKER_MAP (reczne wyjatki) -> automatyczne dla US -> leniwie
+    rozwiazany symbol Yahoo (services/yahoo_resolver.py) -> None.
+
+    UWAGA: dla tickerow spoza US zwracany symbol jest w PRZESTRZENI YAHOO,
+    nie Finnhub (np. "HAS.L") - Finnhub i tak dla wiekszosci gield spoza USA
+    nie ma pokrycia na tym kluczu, wiec wywolanie Finnhub z takim symbolem po
+    prostu nic nie zwroci i kod przejdzie do fallbacku Yahoo (_fetch_yahoo_*),
+    gdzie ten symbol faktycznie zadziala. To swiadomy kompromis - dwie osobne
+    przestrzenie symboli (Finnhub-natywna vs Yahoo) komplikowalyby kod bez
+    realnej korzysci, skoro Finnhub i tak jest tu w praktyce martwy dla EU.
     """
     if ticker in TICKER_MAP:
         return TICKER_MAP[ticker]
@@ -127,8 +136,10 @@ def t212_to_finnhub(ticker: str) -> str | None:
     if "_US_EQ" in ticker:
         return ticker.split("_US_EQ")[0]
 
-    # Nieznane - zwracamy None, UI pokaże fallback
-    return None
+    # Wszystko inne (gielda spoza USA) - lenive rozwiazanie przez Yahoo,
+    # zapisywane na stale przy pierwszym uzyciu (patrz yahoo_resolver.py).
+    from . import yahoo_resolver
+    return yahoo_resolver.resolve(ticker)
 
 
 class FinnhubClient:

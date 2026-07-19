@@ -169,6 +169,29 @@ class InstrumentCacheMeta(db.Model):
     last_synced_at = db.Column(db.DateTime, nullable=True)
 
 
+class YahooSymbolMap(db.Model):
+    """
+    Cache rozwiazanych symboli Yahoo Finance dla tickerow T212, ktorych
+    finnhub_client.py::t212_to_finnhub() nie potrafi zmapowac automatycznie
+    (nic poza wzorcem _US_EQ i recznymi wyjatkami w TICKER_MAP - w praktyce
+    wiekszosc tickerow spoza gield USA, np. europejskich). Rozwiazywane
+    LENIWIE przez services/yahoo_resolver.py przy PIERWSZYM realnym uzyciu
+    danego tickera (klik w aktywo, dodanie do watchlisty itp.), nie hurtowo
+    dla calej bazy - i tak zapisane na stale, zeby kolejne proby byly
+    natychmiastowe zamiast odpytywac (nieoficjalne) API wyszukiwania Yahoo
+    za kazdym razem.
+
+    yahoo_symbol=NULL oznacza "probowano, nie znaleziono zweryfikowanego
+    dopasowania" - TEZ cache'owane (inaczej appka dobijalaby Yahoo przy
+    kazdym wejsciu na strone tickera bez pokrycia).
+    """
+    __tablename__ = "yahoo_symbol_map"
+
+    ticker = db.Column(db.String(30), primary_key=True)
+    yahoo_symbol = db.Column(db.String(30), nullable=True)
+    resolved_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
+
+
 class UserSettings(db.Model):
     """
     Ustawienia trybu Normal i Warp per użytkownik.
