@@ -66,6 +66,7 @@ $relFiles = @(
     "static\js\bot.js"
     "static\js\focus.js"
     "static\js\instrument.js"
+    "static\js\portfolio.js"
     "templates\focus.html"
     "templates\instrument_detail.html"
     "templates\api_keys.html"

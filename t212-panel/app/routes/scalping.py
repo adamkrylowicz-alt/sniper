@@ -43,6 +43,12 @@ scalping_bp = Blueprint("scalping", __name__, url_prefix="/warp")
 # guard oznaczałby, że cooldown/Hard Cap jednego usera wpływa na drugiego.
 _guards: dict[int, RiskGuard] = {}
 
+# Cache ostatniego udanego odczytu portfela per user - {user_id: {"positions":
+# [...], "total_value": Decimal, "total_ppl": Decimal}}. "Moje aktywa" pokazuje
+# to NATYCHMIAST przy wejsciu (bez czekania na T212), a swiezy odczyt dociaga
+# JS z opoznieniem - patrz portfolio_view()/portfolio_refresh() nizej.
+_portfolio_cache: dict[int, dict] = {}
+
 
 def _get_guard(user_id: int) -> RiskGuard:
     """Zwraca (tworząc przy pierwszym użyciu) RiskGuard danego użytkownika."""
@@ -536,19 +542,41 @@ def limits():
 def portfolio_view():
     """
     "Moje aktywa" - WSZYSTKIE otwarte pozycje z T212 (nie tylko te w
-    ulubionych/siatce jak dotad wszedzie indziej), z ilenia/za ile/ile teraz
-    warte/zysk-strata. Jedno zapytanie do /equity/portfolio przy kazdym
-    wejsciu na strone (rate limit T212 - NIE pollowane).
+    ulubionych/siatce jak dotad wszedzie indziej), z iloscia/za ile/ile teraz
+    warte/zysk-strata.
+
+    Strona NIE odpytuje T212 na zywo przy renderowaniu - pokazuje od razu to,
+    co jest w cache z poprzedniej wizyty (_portfolio_cache, ten sam wzorzec
+    co _guards/session_store - w pamieci procesu), a swiezy odczyt dociaga
+    dopiero JS z malym opoznieniem (portfolio.js, ten sam powod co opoznione
+    "Otwarte zlecenia" w Warp: zeby nie strzelac zapytaniem do T212 zaraz po
+    zaladowaniu strony, w waski rate limit demo). Pierwsza wizyta (brak
+    cache) pokazuje czytelny stan "ladowanie" zamiast probowac na sztywno
+    i czesto trafiac w blad.
+    """
+    cached = _portfolio_cache.get(current_user_id())
+    if cached:
+        return render_template(
+            "portfolio.html", positions=cached["positions"],
+            total_value=cached["total_value"], total_ppl=cached["total_ppl"],
+            error=None, has_cache=True,
+        )
+    return render_template(
+        "portfolio.html", positions=[], total_value=None, total_ppl=None,
+        error=None, has_cache=False,
+    )
+
+
+def _fetch_portfolio_live(user_id: int) -> dict:
+    """
+    Prawdziwe zapytanie do T212 (+wzbogacenie o nazwe/logo/hue) - rzuca
+    RuntimeError/T212APIError przy niepowodzeniu, wywolujacy ma to zlapac.
+    Aktualizuje _portfolio_cache przy sukcesie.
     """
     from ..models import Instrument
 
-    try:
-        client = _get_client()
-        raw_positions = client.get_portfolio()
-    except RuntimeError as exc:
-        return render_template("portfolio.html", positions=[], total_value=None, total_ppl=None, error=str(exc))
-    except T212APIError as exc:
-        return render_template("portfolio.html", positions=[], total_value=None, total_ppl=None, error=str(exc))
+    client = _get_client()
+    raw_positions = client.get_portfolio()
 
     tickers = [p.get("ticker") for p in raw_positions if p.get("ticker")]
     instruments_by_ticker = (
@@ -596,8 +624,49 @@ def portfolio_view():
 
     positions.sort(key=lambda x: x["value"], reverse=True)
 
-    return render_template(
-        "portfolio.html", positions=positions, total_value=total_value, total_ppl=total_ppl, error=None,
+    result = {"positions": positions, "total_value": total_value, "total_ppl": total_ppl}
+    _portfolio_cache[user_id] = result
+    return result
+
+
+@scalping_bp.route("/portfolio/refresh", methods=["GET"])
+@login_required
+def portfolio_refresh():
+    """
+    JSON - wolane przez portfolio.js z opoznieniem po zaladowaniu strony,
+    zeby odswiezyc dane na zywo bez blokowania pierwszego renderu (patrz
+    portfolio_view). Decimal -> float, bo to tylko do wyswietlenia w JS,
+    nie do dalszych precyzyjnych obliczen.
+    """
+    try:
+        result = _fetch_portfolio_live(current_user_id())
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    except T212APIError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+
+    return jsonify(
+        ok=True,
+        positions=[
+            {
+                "ticker": p["ticker"],
+                "display_ticker": p["display_ticker"],
+                "name": p["name"],
+                "currency": p["currency"],
+                "quantity": float(p["quantity"]),
+                "avg_price": float(p["avg_price"]),
+                "current_price": float(p["current_price"]),
+                "value": float(p["value"]),
+                "ppl": float(p["ppl"]),
+                "ppl_pct": float(p["ppl_pct"]),
+                "hue": p["hue"],
+                "initial": p["initial"],
+                "logo_filename": p["logo_filename"],
+            }
+            for p in result["positions"]
+        ],
+        total_value=float(result["total_value"]),
+        total_ppl=float(result["total_ppl"]),
     )
 
 

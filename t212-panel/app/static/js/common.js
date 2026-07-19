@@ -32,7 +32,7 @@ Przeniesione tu z warp.js, bo pie.js (Smart Virtual Pie) też ich potrzebuje.
 */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-function playTone(freq, durationMs) {
+function playTone(freq, durationMs, waveType) {
     // AudioContext startuje w stanie "suspended" dopoki przegladarka nie
     // zobaczy gestu usera (autoplay policy) - powstal PRZED pierwszym
     // klikniecim (linijka wyzej, przy zaladowaniu strony), wiec bez tego
@@ -44,7 +44,7 @@ function playTone(freq, durationMs) {
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.frequency.value = freq;
-    osc.type = "square";
+    osc.type = waveType || "square";
     gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start();
@@ -53,6 +53,11 @@ function playTone(freq, durationMs) {
 
 function playSuccess() { playTone(880, 90); }
 function playError() { playTone(160, 180); }
+// Cichy sygnal "dane odswiezone w tle" (np. portfolio.js) - celowo INNY niz
+// wynik zlecenia (playSuccess/playError), zeby nie mylic "kupno/sprzedaz OK"
+// z "wlasnie doszly swiezsze dane". Fala sinusoidalna zamiast square - inna
+// barwa, nie tylko wysokosc, latwiej odroznic na sluch.
+function playUpdate() { playTone(523, 70, "sine"); }
 
 function confirmDialog(message) {
     return new Promise((resolve) => {
