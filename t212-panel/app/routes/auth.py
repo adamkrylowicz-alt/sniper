@@ -24,14 +24,17 @@ Flow logowania:
 
 from __future__ import annotations
 
+import re
+import secrets
 import time
 
-from flask import Blueprint, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, redirect, render_template, request, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .. import cipher
 from ..extensions import db
 from ..models import User
+from ..services import mailer
 from ..services.session_store import (
     SESSION_COOKIE_NAME,
     create_session,
@@ -77,6 +80,53 @@ def _clear_failed_logins(key: str) -> None:
     _failed_logins.pop(key, None)
 
 
+# -- Throttling rejestracji ---------------------------------------------------
+# Rejestracja jest teraz PUBLICZNA (patrz register_view - konto i tak startuje
+# nieaktywne, wymaga maila + zatwierdzenia admina), ale bez limitu ktos moglby
+# zasypac skrzynke Adama mailami/panel zatwierdzania smieciowymi kontami.
+REGISTER_MAX_ATTEMPTS = 5
+REGISTER_WINDOW_SECONDS = 60 * 60
+
+_recent_registrations: dict[str, list[float]] = {}
+
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _is_registration_throttled(ip: str) -> bool:
+    now = time.monotonic()
+    recent = [t for t in _recent_registrations.get(ip, []) if now - t < REGISTER_WINDOW_SECONDS]
+    _recent_registrations[ip] = recent
+    return len(recent) >= REGISTER_MAX_ATTEMPTS
+
+
+def _record_registration(ip: str) -> None:
+    _recent_registrations.setdefault(ip, []).append(time.monotonic())
+
+
+def _send_mail_safe(*, mail_to: str, subject: str, body_text: str) -> None:
+    """
+    Wrapper na mailer.send_report - polyka bledy wysylki (brak SMTP w .env,
+    Gmail odmowil itp.) zamiast wywalac 500 przy rejestracji. Rejestracja
+    ma sie udac NIEZALEZNIE od tego czy mail dojdzie - konto i tak czeka
+    na zatwierdzenie admina, ktory moze je zatwierdzic recznie nawet bez
+    linku aktywacyjnego jesli mail nie dotarl.
+    """
+    cfg = current_app.config
+    try:
+        mailer.send_report(
+            smtp_host=cfg.get("SMTP_HOST"),
+            smtp_port=cfg.get("SMTP_PORT"),
+            smtp_user=cfg.get("SMTP_USER"),
+            smtp_password=cfg.get("SMTP_PASSWORD"),
+            mail_from=cfg.get("SMTP_FROM"),
+            mail_to=mail_to,
+            subject=subject,
+            body_text=body_text,
+        )
+    except (mailer.MailerNotConfiguredError, mailer.MailSendError) as exc:
+        current_app.logger.warning("Nie udalo sie wyslac maila do %s: %s", mail_to, exc)
+
+
 def _password_policy_error(username: str, password: str) -> str | None:
     """
     Prosta walidacja siły hasła. Świadomie NIE używam biblioteki zxcvbn
@@ -95,19 +145,23 @@ def _password_policy_error(username: str, password: str) -> str | None:
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register_view():
     """
-    Rejestracja zamyka się SAMA po powstaniu pierwszego konta - appka jest
-    projektowana pod jednego uzytkownika (patrz komentarze w session_store.py/
-    scalping.py), a od 19.07.2026 jest dostepna publicznie przez
-    nginx-proxy-manager (sniper.duckdns.org). Bez tej blokady KAZDY kto trafi
-    na /auth/register moglby zalozyc sobie konto na cudzej appce handlowej.
-    Basic Auth w NPM to pierwsza warstwa, ale ta blokada zostaje NIEZALEZNIE
-    - appka nie powinna polegac wylacznie na konfiguracji reverse proxy.
+    Rejestracja jest publiczna (appka od 19.07.2026 dostepna przez
+    nginx-proxy-manager, sniper.duckdns.org), ale konto NIE moze sie
+    zalogowac dopoki nie przejdzie dwoch niezaleznych bramek:
+      1. email_verified - klik w link aktywacyjny wyslany na username
+         (traktowany jako adres email - patrz EMAIL_PATTERN).
+      2. is_active - reczne zatwierdzenie przez admina w panelu
+         (Ustawienia -> Oczekujace konta, patrz routes/settings.py).
+    Pierwszy user w bazie (Ty) zostaje adminem automatycznie.
     """
-    if User.query.count() > 0:
-        return render_template("auth/register.html", error=None, closed=True)
-
     if request.method == "GET":
-        return render_template("auth/register.html", error=None, closed=False)
+        return render_template("auth/register.html", error=None)
+
+    if _is_registration_throttled(request.remote_addr):
+        return render_template(
+            "auth/register.html",
+            error="Zbyt wiele rejestracji z tego adresu. Spróbuj później.",
+        )
 
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""
@@ -115,6 +169,12 @@ def register_view():
 
     if not username or not password:
         return render_template("auth/register.html", error="Wypełnij wszystkie pola.")
+
+    if not EMAIL_PATTERN.match(username):
+        return render_template(
+            "auth/register.html",
+            error="Podaj prawidłowy adres e-mail jako nazwę użytkownika - trafi tam link aktywacyjny.",
+        )
 
     if password != password_confirm:
         return render_template("auth/register.html", error="Hasła nie są identyczne.")
@@ -126,6 +186,8 @@ def register_view():
     if User.query.filter_by(username=username).first() is not None:
         return render_template("auth/register.html", error="Ta nazwa użytkownika jest już zajęta.")
 
+    _record_registration(request.remote_addr)
+
     # -- Zero-Knowledge key wrapping ------------------------------------
     master_key = cipher.generate_master_key()
     recovery_code = cipher.generate_recovery_code()
@@ -136,6 +198,7 @@ def register_view():
     wrapped_by_password = cipher.wrap_master_key(master_key, password, salt_password)
     wrapped_by_recovery = cipher.wrap_master_key(master_key, recovery_code, salt_recovery)
 
+    is_first_user = User.query.count() == 0
     user = User(
         username=username,
         password_hash=generate_password_hash(password),
@@ -143,9 +206,35 @@ def register_view():
         salt_password=salt_password,
         wrapped_master_key_by_recovery=wrapped_by_recovery,
         salt_recovery=salt_recovery,
+        is_admin=is_first_user,
+        email_verified=is_first_user,
+        is_active=is_first_user,
+        activation_token=None if is_first_user else secrets.token_urlsafe(32),
     )
     db.session.add(user)
     db.session.commit()
+
+    if not is_first_user:
+        activation_url = url_for("auth.activate_view", token=user.activation_token, _external=True)
+        _send_mail_safe(
+            mail_to=username,
+            subject="SNIPER - potwierdź rejestrację",
+            body_text=(
+                f"Kliknij link, żeby potwierdzić adres e-mail:\n{activation_url}\n\n"
+                "Konto dodatkowo wymaga ręcznego zatwierdzenia przez administratora - "
+                "dopiero wtedy będziesz mógł się zalogować."
+            ),
+        )
+        admin_email = current_app.config.get("REPORT_TO_EMAIL")
+        if admin_email:
+            _send_mail_safe(
+                mail_to=admin_email,
+                subject="SNIPER - nowa rejestracja czeka na zatwierdzenie",
+                body_text=(
+                    f"Nowe konto: {username}\n"
+                    "Zatwierdź albo odrzuć w Ustawienia -> Oczekujące konta."
+                ),
+            )
 
     # Recovery code pokazujemy TERAZ, JEDEN JEDYNY RAZ - renderujemy go
     # bezpośrednio w odpowiedzi, nie zapisujemy nigdzie jawnie, nie
@@ -154,7 +243,34 @@ def register_view():
         "auth/recovery_code.html",
         username=username,
         recovery_code=recovery_code,
+        pending_activation=not is_first_user,
     )
+
+
+@auth_bp.route("/activate/<token>", methods=["GET"])
+def activate_view(token):
+    """
+    Klik w link z maila - potwierdza tylko, ze adres jest prawdziwy
+    (email_verified=True). NIE aktywuje logowania - to osobny krok
+    (is_active), reczny, w panelu admina.
+    """
+    user = User.query.filter_by(activation_token=token).first()
+    if user is None:
+        return render_template(
+            "auth/activate_result.html", ok=False,
+            message="Link jest nieprawidłowy albo już użyty.",
+        )
+
+    if not user.email_verified:
+        user.email_verified = True
+        db.session.commit()
+
+    message = "Adres e-mail potwierdzony. " + (
+        "Konto jest już zatwierdzone, możesz się zalogować."
+        if user.is_active else
+        "Teraz poczekaj, aż administrator ręcznie zatwierdzi konto."
+    )
+    return render_template("auth/activate_result.html", ok=True, message=message)
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -185,6 +301,14 @@ def login_view():
         return render_template("auth/login.html", error=generic_error, next=next_path)
 
     _clear_failed_logins(throttle_key)
+
+    if not user.is_active:
+        pending_msg = (
+            "Potwierdź adres e-mail klikając w link wysłany podczas rejestracji."
+            if not user.email_verified else
+            "Konto czeka na ręczne zatwierdzenie przez administratora."
+        )
+        return render_template("auth/login.html", error=pending_msg, next=next_path)
 
     try:
         master_key = cipher.try_unwrap(

@@ -69,6 +69,7 @@ $relFiles = @(
     "templates\focus.html"
     "templates\instrument_detail.html"
     "templates\api_keys.html"
+    "templates\auth\activate_result.html"
     "templates\auth\login.html"
     "templates\auth\recover.html"
     "templates\auth\recovery_code.html"
@@ -133,8 +134,17 @@ if ($wipeDatabase) {
 }
 
 Write-Host ""
+Write-Host "=== Wysylanie run.py / requirements.txt (poza folderem app/) ===" -ForegroundColor Cyan
+foreach ($rootFile in @("run.py", "requirements.txt")) {
+    $rootLocal = Join-Path $PSScriptRoot $rootFile
+    Write-Host "-> $rootFile  ...  " -NoNewline
+    scp -O -P $port -i $key $rootLocal "${destHost}:/volume1/docker/t212-panel/$rootFile" 2>&1 | Out-Null
+    if ($LASTEXITCODE -eq 0) { Write-Host "OK" -ForegroundColor Green } else { Write-Host "BLAD (kod $LASTEXITCODE)" -ForegroundColor Red }
+}
+
+Write-Host ""
 Write-Host "=== Wysylanie skryptow migracji (jednorazowe, idempotentne) ===" -ForegroundColor Cyan
-$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py", "migrate_add_active_trade_is_paper.py", "migrate_drop_pie_asset_bot_columns.py")
+$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py", "migrate_add_active_trade_is_paper.py", "migrate_drop_pie_asset_bot_columns.py", "migrate_add_user_activation.py")
 foreach ($mig in $migScripts) {
     $migLocal = Join-Path $PSScriptRoot $mig
     if (Test-Path $migLocal) {

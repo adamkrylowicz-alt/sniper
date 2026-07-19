@@ -55,6 +55,19 @@ class User(db.Model):
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
 
+    # -- Aktywacja konta (od 19.07.2026, odkad rejestracja jest publiczna) ----
+    # is_admin: PIERWSZY kiedykolwiek zarejestrowany user (patrz auth.py) -
+    # tylko on widzi panel zatwierdzania w Ustawieniach.
+    # email_verified: klikniecie w link z maila aktywacyjnego (dowod ze
+    # username/email jest prawdziwy, NIE wystarcza do zalogowania).
+    # is_active: recznie zatwierdzone przez admina w panelu - DOPIERO to
+    # odblokowuje logowanie. Dwa niezalezne gate'y celowo (klikniecie w link
+    # moze zrobic bot, zatwierdzenie admina - nie).
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
+    email_verified = db.Column(db.Boolean, default=False, nullable=False)
+    is_active = db.Column(db.Boolean, default=False, nullable=False)
+    activation_token = db.Column(db.String(64), nullable=True, unique=True)
+
     # Relacje 1:1 / 1:N
     api_keys = db.relationship(
         "ApiKeySet", back_populates="user", cascade="all, delete-orphan"

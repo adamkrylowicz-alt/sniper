@@ -17,10 +17,10 @@ from __future__ import annotations
 
 import json
 
-from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
+from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from ..extensions import db
-from ..models import UserSettings
+from ..models import User, UserSettings
 from ..services import instrument_cache, logo_cache
 from ..services.t212_client import T212APIError
 from ..utils import avatar_hue, current_user_id, friendly_name, login_required
@@ -89,7 +89,48 @@ def set_focus_tiles():
 @login_required
 def index():
     """Strona główna Ustawień - linki do Kluczy API i Watchlisty (kiedyś: Hard Cap itd.)."""
-    return render_template("settings_index.html")
+    current_user = User.query.get(current_user_id())
+    pending_users = (
+        User.query.filter_by(email_verified=True, is_active=False).order_by(User.created_at).all()
+        if current_user and current_user.is_admin else []
+    )
+    return render_template(
+        "settings_index.html",
+        is_admin=bool(current_user and current_user.is_admin),
+        pending_users=pending_users,
+    )
+
+
+def _require_admin() -> User:
+    user = User.query.get(current_user_id())
+    if user is None or not user.is_admin:
+        abort(403)
+    return user
+
+
+@settings_bp.route("/pending-users/<int:user_id>/approve", methods=["POST"])
+@login_required
+def approve_user(user_id):
+    _require_admin()
+    target = User.query.get_or_404(user_id)
+    target.is_active = True
+    db.session.commit()
+    flash(f"Zatwierdzono konto {target.username}.")
+    return redirect(url_for("settings.index"))
+
+
+@settings_bp.route("/pending-users/<int:user_id>/reject", methods=["POST"])
+@login_required
+def reject_user(user_id):
+    _require_admin()
+    target = User.query.get_or_404(user_id)
+    if target.is_admin:
+        abort(403)  # bezpiecznik - admin nie moze przypadkiem odrzucic/skasowac siebie
+    username = target.username
+    db.session.delete(target)
+    db.session.commit()
+    flash(f"Odrzucono i usunięto konto {username}.")
+    return redirect(url_for("settings.index"))
 
 
 @settings_bp.route("/theme", methods=["POST"])

@@ -25,6 +25,14 @@
         do zaszyfrowanych kluczy API przepada bezpowrotnie.
     </p>
 
+    {% if pending_activation %}
+    <p class="auth-box__hint">
+        Zanim się zalogujesz, potrzebne są jeszcze dwie rzeczy: kliknij link
+        aktywacyjny wysłany na <strong>{{ username }}</strong>, a potem poczekaj
+        aż administrator ręcznie zatwierdzi konto.
+    </p>
+    {% endif %}
+
     <a class="auth-form__submit auth-form__submit--link" href="{{ url_for('auth.login_view') }}">
         ZAPISAŁEM — PRZEJDŹ DO LOGOWANIA
     </a>

@@ -31,6 +31,31 @@
         <button type="submit" class="account-bar__btn">Zapisz</button>
     </form>
 
+    {% if is_admin %}
+    <hr class="watchlist-divider">
+    <h2 class="auth-box__title" style="font-size:12px">OCZEKUJĄCE KONTA ({{ pending_users|length }})</h2>
+    {% if not pending_users %}
+    <p class="auth-box__hint">Brak kont czekających na zatwierdzenie.</p>
+    {% else %}
+    <div class="watchlist-favorites">
+        {% for u in pending_users %}
+        <div class="watchlist-favorites__item">
+            <span class="watchlist-favorites__info">
+                <span class="watchlist-favorites__name">{{ u.username }}</span>
+                <span class="watchlist-favorites__ticker">zarejestrowany {{ u.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+            </span>
+            <form method="post" action="{{ url_for('settings.approve_user', user_id=u.id) }}">
+                <button type="submit" class="account-bar__btn account-bar__btn--buy">Zatwierdź</button>
+            </form>
+            <form method="post" action="{{ url_for('settings.reject_user', user_id=u.id) }}">
+                <button type="submit" class="account-bar__btn account-bar__btn--sell">Odrzuć</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+
     <p class="auth-box__footer">
         <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
     </p>

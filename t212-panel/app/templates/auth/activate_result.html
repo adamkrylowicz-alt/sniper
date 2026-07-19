@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Aktywacja konta{% endblock %}
+
+{% block content %}
+<div class="auth-box">
+    <h1 class="auth-box__title">AKTYWACJA KONTA</h1>
+
+    <p class="auth-box__hint{% if not ok %} auth-box__hint--warn{% endif %}">{{ message }}</p>
+
+    <a class="auth-form__submit auth-form__submit--link" href="{{ url_for('auth.login_view') }}">
+        PRZEJDŹ DO LOGOWANIA
+    </a>
+</div>
+{% endblock %}
