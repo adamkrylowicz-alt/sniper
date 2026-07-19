@@ -1,7 +1,7 @@
 /*
 portfolio.js
 =============
-"Moje aktywa" - strona laduje sie NATYCHMIAST z cache (patrz scalping.py::
+"Aktywa" - strona laduje sie NATYCHMIAST z cache (patrz scalping.py::
 portfolio_view - _portfolio_cache w pamieci procesu), a swiezy odczyt z T212
 dociagamy tutaj z opoznieniem (ten sam powod co 1.5s opoznienie "Otwartych
 zlecen" w warp.js: nie strzelac zapytaniem do T212 zaraz po zaladowaniu

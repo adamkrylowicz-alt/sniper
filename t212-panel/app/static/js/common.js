@@ -76,25 +76,43 @@ function playSuccess() { playTone(880, 90); }
 function playError() { playTone(160, 180); }
 
 /*
-Odblokowanie audio przy PIERWSZYM realnym gescie usera na stronie (klik/
-klawisz/dotyk) - dzwieki wywolywane z timera (np. portfolio.js::playUpdate
-po 1.5s auto-odswiezeniu, bez zadnego kliknieca) NIE odblokuja sie same,
-bo autoplay policy przegladarek wymaga zeby resume() nastapil w ramach
-prawdziwego gestu, nie w callbacku setTimeout. Bez tego listenera taki
-dzwiek nigdy nie zabrzmi, dopoki user czegokolwiek na stronie nie kliknie -
-z tym listenerem wystarczy JEDNO klikniecie gdziekolwiek (nawet przelacznik
-motywu), zeby audio odblokowac raz na cala reszte wizyty na tej stronie.
+Dzwieki wywolywane z TIMERA (np. portfolio.js::playUpdate po 1.5s auto-
+odswiezeniu, bez zadnego kliknieca) trafiaja czesto w moment gdy AudioContext
+jest jeszcze "suspended" (autoplay policy przegladarek: audio odblokowuje sie
+WYLACZNIE w ramach prawdziwego gestu usera - klik/klawisz/dotyk, nigdy w
+callbacku setTimeout, nawet jesli ten timer sam w sobie zostal ustawiony
+przez cos co user kiedys kliknal). Zeby taki dzwiek nie ginal bezpowrotnie
+gdy user nic jeszcze nie kliknal - kolejkujemy go i odtwarzamy PRZY
+NAJBLIZSZYM realnym gescie, zamiast po prostu cicho nic nie robic.
 */
+let _pendingChime = null;
+
+function playToneMaybeQueued(freq, durationMs, waveType) {
+    if (audioCtx.state === "suspended") {
+        _pendingChime = () => playTone(freq, durationMs, waveType);
+        return;
+    }
+    playTone(freq, durationMs, waveType);
+}
+
 ["click", "keydown", "touchstart"].forEach((evt) => {
     document.addEventListener(evt, () => {
-        if (audioCtx.state === "suspended") audioCtx.resume();
+        if (audioCtx.state !== "suspended") return;
+        audioCtx.resume().then(() => {
+            if (_pendingChime) {
+                _pendingChime();
+                _pendingChime = null;
+            }
+        });
     }, { once: true });
 });
+
 // Cichy sygnal "dane odswiezone w tle" (np. portfolio.js) - celowo INNY niz
 // wynik zlecenia (playSuccess/playError), zeby nie mylic "kupno/sprzedaz OK"
 // z "wlasnie doszly swiezsze dane". Fala sinusoidalna zamiast square - inna
-// barwa, nie tylko wysokosc, latwiej odroznic na sluch.
-function playUpdate() { playTone(523, 70, "sine"); }
+// barwa, nie tylko wysokosc, latwiej odroznic na sluch. Uzywa kolejkowanej
+// wersji (patrz wyzej), bo w praktyce ZAWSZE wola sie z timera, nie klikniecia.
+function playUpdate() { playToneMaybeQueued(523, 70, "sine"); }
 
 function confirmDialog(message) {
     return new Promise((resolve) => {
