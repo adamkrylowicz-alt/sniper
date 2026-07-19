@@ -91,7 +91,12 @@
     </main>
     {% if is_authenticated %}
     <footer class="app-footer">
-        <a href="{{ url_for('settings.costs_view') }}" class="app-footer__link">Koszty i opłaty</a>
+        <a href="{{ url_for('settings.costs_view') }}" class="app-footer__link">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
+            </svg>
+            Koszty i opłaty
+        </a>
     </footer>
     {% endif %}
     <script src="{{ url_for('static', filename='js/common.js') }}"></script>
