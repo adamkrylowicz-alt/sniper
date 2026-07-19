@@ -89,6 +89,11 @@
         {% endwith %}
         {% block content %}{% endblock %}
     </main>
+    {% if is_authenticated %}
+    <footer class="app-footer">
+        <a href="{{ url_for('settings.costs_view') }}" class="app-footer__link">Koszty i opłaty</a>
+    </footer>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/common.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>

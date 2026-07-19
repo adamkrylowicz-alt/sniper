@@ -202,6 +202,17 @@ main {
     align-items: center;
 }
 
+.app-footer {
+    padding: 16px 24px 24px;
+    text-align: center;
+}
+.app-footer__link {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-decoration: none;
+}
+.app-footer__link:hover { color: var(--accent-amber); }
+
 /*
 warp-page: kontener na WSZYSTKO co jest w Warp Mode (pasek konta + status +
 siatka). Bez tego opakowania te trzy elementy byłyby bezpośrednimi dziećmi
