@@ -88,14 +88,30 @@ function renderPortfolio(positions, totalValue, totalPpl) {
         </table>`;
 }
 
+function showRetry(message) {
+    const statusEl = document.getElementById("portfolio-refresh-status");
+    if (!statusEl) return;
+    statusEl.textContent = "";
+    statusEl.appendChild(document.createTextNode(`${message} `));
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "account-bar__btn";
+    btn.textContent = "Spróbuj ponownie";
+    // Recznie, nie automatycznie - T212 demo ma bardzo waski rate limit,
+    // automatyczny retry-loop tylko dobijalby ten sam limit w kolko.
+    btn.addEventListener("click", refreshPortfolio);
+    statusEl.appendChild(btn);
+}
+
 async function refreshPortfolio() {
     const statusEl = document.getElementById("portfolio-refresh-status");
+    if (statusEl) statusEl.textContent = "";
     try {
         const resp = await fetch("/warp/portfolio/refresh");
         const data = await resp.json();
 
         if (!data.ok) {
-            if (statusEl) statusEl.textContent = `Nie udało się odświeżyć na żywo (${data.error || "błąd"}) - pokazuję ostatnio znane dane.`;
+            showRetry(`Nie udało się odświeżyć na żywo (${data.error || "błąd"}) - pokazuję ostatnio znane dane.`);
             return;
         }
 
@@ -104,7 +120,7 @@ async function refreshPortfolio() {
         playUpdate();
     } catch (err) {
         console.error("Błąd odświeżania portfela:", err);
-        if (statusEl) statusEl.textContent = "Nie udało się odświeżyć na żywo - pokazuję ostatnio znane dane.";
+        showRetry("Nie udało się odświeżyć na żywo - pokazuję ostatnio znane dane.");
     }
 }
 
