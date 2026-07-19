@@ -233,13 +233,19 @@ async function sendFocusOrder(tile, side) {
         });
         const data = await resp.json();
         if (data.ok) {
+            playSuccess();
             statusEl.textContent = `OK #${data.order_id ?? "?"}`;
             tile.querySelector(".focus-tile__flash").classList.add("focus-tile__flash--ok");
             setTimeout(() => tile.querySelector(".focus-tile__flash").classList.remove("focus-tile__flash--ok"), 400);
+        } else if (data.blocked) {
+            playError();
+            statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
         } else {
+            playError();
             statusEl.textContent = `BŁĄD: ${data.error ?? "nieznany"}`;
         }
     } catch (err) {
+        playError();
         statusEl.textContent = "Błąd sieci";
     } finally {
         btns.forEach(b => b.disabled = false);
