@@ -75,7 +75,7 @@ def submit():
             smtp_password=current_app.config["SMTP_PASSWORD"],
             mail_from=current_app.config["SMTP_FROM"],
             mail_to=current_app.config["REPORT_TO_EMAIL"],
-            subject=f"[SNIPER] Zgłoszenie od {username}",
+            subject=f"[SNAJPER] Zgłoszenie od {username}",
             body_text=body_text,
             attachment_filename=attachment_filename,
             attachment_bytes=attachment_bytes,

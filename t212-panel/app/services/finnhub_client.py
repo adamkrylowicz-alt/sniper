@@ -143,10 +143,12 @@ class FinnhubClient:
         self._candle_cache: dict[str, tuple[list, float]] = {}  # symbol -> (data, timestamp)
         self._ohlc_cache: dict[str, tuple[list, float]] = {}    # symbol -> (data, timestamp)
         self._profile_cache: dict[str, tuple[dict, float]] = {} # symbol -> (data, timestamp)
+        self._metric_cache: dict[str, tuple[dict, float]] = {}  # symbol -> (data, timestamp)
 
         self.QUOTE_TTL = 2       # sekundy - nadpisywane przez JS z dynamicznym interwałem
         self.CANDLE_TTL = 3600   # 1h - dane dzienne nie zmieniają się co chwilę
         self.PROFILE_TTL = 86400 # 24h - profil firmy zmienia się rzadko
+        self.METRIC_TTL = 86400  # 24h - P/E, dywidenda, 52-tyg. zakres itp. nie skacza w ciagu dnia
 
     def _get(self, endpoint: str, params: dict) -> dict | None:
         params["token"] = self.api_key
@@ -289,6 +291,39 @@ class FinnhubClient:
             self._profile_cache[symbol] = (data, time.time())
             return data
         return None
+
+    def get_basic_financials(self, t212_ticker: str) -> dict | None:
+        """
+        Statystyki fundamentalne (jak "Statystyki" w apce T212 dla instrumentu) -
+        Finnhub /stock/metric?metric=all. Zwraca tylko podzbior pol ktore
+        faktycznie uzywamy (patrz instrument_detail.html), nie caly surowy
+        slownik (Finnhub zwraca dziesiatki pol, wiekszosc niepotrzebna tutaj).
+        None jesli symbol nieznany albo Finnhub nic nie zwrocil (np. dla ETF-ow
+        czesc pol jak P/E/dywidenda po prostu nie istnieje - to normalne,
+        UI ma pokazac "-" dla brakujacych, nie calego bloku).
+        """
+        symbol = t212_to_finnhub(t212_ticker)
+        if not symbol:
+            return None
+
+        cached, ts = self._metric_cache.get(symbol, (None, 0))
+        if cached and time.time() - ts < self.METRIC_TTL:
+            return cached
+
+        data = self._get("stock/metric", {"symbol": symbol, "metric": "all"})
+        metric = (data or {}).get("metric") or {}
+        if not metric:
+            return None
+
+        result = {
+            "week52_high": metric.get("52WeekHigh"),
+            "week52_low": metric.get("52WeekLow"),
+            "avg_volume_3m": metric.get("3MonthAverageTradingVolume"),
+            "pe_ttm": metric.get("peBasicExclExtraTTM"),
+            "dividend_yield": metric.get("dividendYieldIndicatedAnnual"),
+        }
+        self._metric_cache[symbol] = (result, time.time())
+        return result
 
     def get_quote_batch(self, t212_tickers: list[str]) -> dict[str, dict]:
         """

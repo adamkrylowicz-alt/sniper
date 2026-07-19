@@ -77,6 +77,7 @@ function formatChange(dp) {
 }
 
 let lastQuote = null;
+let week52Range = null;
 
 async function refreshQuote() {
     try {
@@ -90,8 +91,75 @@ async function refreshQuote() {
         changeEl.textContent = formatChange(lastQuote.dp);
         changeEl.className = "instrument-detail__change " +
             (lastQuote.dp >= 0 ? "focus-tile__change--up" : "focus-tile__change--down");
+
+        updateRangeMarkers();
     } catch (err) {
         console.error("Błąd ceny:", err);
+    }
+}
+
+/*
+=== Statystyki (jak "Statystyki" w apce T212) - Finnhub /stock/metric +
+    /stock/profile2 (patrz finnhub_client.py::get_basic_financials/
+    get_profile), cache 24h po stronie serwera - jednorazowo przy wejsciu.
+    Zakres 1 DZIEN uzywa h/l juz obecnych w /warp/quote (refreshQuote), wiec
+    marker aktualizuje sie razem z zywa cena bez dodatkowego requestu.
+===*/
+
+function setRangeMarker(markerId, low, high, current) {
+    const marker = document.getElementById(markerId);
+    if (!marker) return;
+    if (low == null || high == null || current == null || high <= low) {
+        marker.style.left = "0%";
+        return;
+    }
+    const pct = Math.min(100, Math.max(0, ((current - low) / (high - low)) * 100));
+    marker.style.left = `${pct}%`;
+}
+
+function updateRangeMarkers() {
+    if (!lastQuote) return;
+    setRangeMarker("stats-day-marker", lastQuote.l, lastQuote.h, lastQuote.c);
+    document.getElementById("stats-day-low").textContent = lastQuote.l != null ? lastQuote.l.toFixed(2) : "—";
+    document.getElementById("stats-day-high").textContent = lastQuote.h != null ? lastQuote.h.toFixed(2) : "—";
+    if (week52Range) {
+        setRangeMarker("stats-52w-marker", week52Range.low, week52Range.high, lastQuote.c);
+    }
+}
+
+function formatMarketCap(millions) {
+    if (millions == null) return "—";
+    if (millions >= 1e6) return `${(millions / 1e6).toFixed(2)} bln`;
+    if (millions >= 1e3) return `${(millions / 1e3).toFixed(2)} mld`;
+    return `${millions.toFixed(1)} mln`;
+}
+
+function formatVolume(millions) {
+    if (millions == null) return "—";
+    return `${millions.toFixed(1)} mln`;
+}
+
+async function loadStats() {
+    try {
+        const resp = await fetch(`/warp/stats?ticker=${encodeURIComponent(ticker)}`);
+        const data = await resp.json();
+        if (!data.ok) return;
+
+        document.getElementById("stats-52w-low").textContent = data.week52_low != null ? data.week52_low.toFixed(2) : "—";
+        document.getElementById("stats-52w-high").textContent = data.week52_high != null ? data.week52_high.toFixed(2) : "—";
+        document.getElementById("stats-market-cap").textContent = formatMarketCap(data.market_cap);
+        document.getElementById("stats-avg-volume").textContent = formatVolume(data.avg_volume_3m);
+        document.getElementById("stats-pe").textContent = data.pe_ttm != null ? data.pe_ttm.toFixed(2) : "—";
+        document.getElementById("stats-dividend").textContent = data.dividend_yield != null ? `${data.dividend_yield.toFixed(2)}%` : "—";
+
+        if (data.week52_low != null && data.week52_high != null) {
+            week52Range = { low: data.week52_low, high: data.week52_high };
+        }
+
+        document.getElementById("instrument-stats").style.display = "";
+        updateRangeMarkers();
+    } catch (err) {
+        console.error("Błąd statystyk:", err);
     }
 }
 
@@ -243,4 +311,5 @@ loadCandles(currentDays);
 refreshQuote();
 loadPosition();
 loadLimits();
+loadStats();
 setInterval(refreshQuote, 5000);

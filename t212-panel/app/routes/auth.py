@@ -218,7 +218,7 @@ def register_view():
         activation_url = url_for("auth.activate_view", token=user.activation_token, _external=True)
         _send_mail_safe(
             mail_to=username,
-            subject="SNIPER - potwierdź rejestrację",
+            subject="SNAJPER - potwierdź rejestrację",
             body_text=(
                 f"Kliknij link, żeby potwierdzić adres e-mail:\n{activation_url}\n\n"
                 "Konto dodatkowo wymaga ręcznego zatwierdzenia przez administratora - "
@@ -229,7 +229,7 @@ def register_view():
         if admin_email:
             _send_mail_safe(
                 mail_to=admin_email,
-                subject="SNIPER - nowa rejestracja czeka na zatwierdzenie",
+                subject="SNAJPER - nowa rejestracja czeka na zatwierdzenie",
                 body_text=(
                     f"Nowe konto: {username}\n"
                     "Zatwierdź albo odrzuć w Ustawienia -> Oczekujące konta."

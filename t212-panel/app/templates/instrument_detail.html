@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}SNIPER — {{ display_ticker }}{% endblock %}
+{% block title %}SNAJPER — {{ display_ticker }}{% endblock %}
 
 {% block content %}
 <div class="history-box instrument-detail" data-ticker="{{ ticker }}">
@@ -38,6 +38,38 @@
         <p class="auth-box__hint instrument-detail__chart-empty" id="instrument-chart-empty" style="display:none">
             Brak danych świecowych dla tego zakresu.
         </p>
+    </div>
+
+    <div class="instrument-detail__stats" id="instrument-stats" style="display:none">
+        <div class="instrument-detail__position-title">Statystyki</div>
+        <div class="instrument-stats-ranges">
+            <div class="instrument-stats-range">
+                <span class="instrument-stats-range__label">1 DZIEŃ</span>
+                <div class="instrument-stats-range__bar-track">
+                    <div class="instrument-stats-range__bar-fill" id="stats-day-marker"></div>
+                </div>
+                <div class="instrument-stats-range__values">
+                    <span id="stats-day-low">—</span>
+                    <span id="stats-day-high">—</span>
+                </div>
+            </div>
+            <div class="instrument-stats-range">
+                <span class="instrument-stats-range__label">52 TYGODNIE</span>
+                <div class="instrument-stats-range__bar-track">
+                    <div class="instrument-stats-range__bar-fill" id="stats-52w-marker"></div>
+                </div>
+                <div class="instrument-stats-range__values">
+                    <span id="stats-52w-low">—</span>
+                    <span id="stats-52w-high">—</span>
+                </div>
+            </div>
+        </div>
+        <div class="instrument-stats-list">
+            <div class="instrument-stats-list__row"><span>Kapitalizacja rynkowa</span><span id="stats-market-cap">—</span></div>
+            <div class="instrument-stats-list__row"><span>Średni wolumen (3 mies.)</span><span id="stats-avg-volume">—</span></div>
+            <div class="instrument-stats-list__row"><span>Wskaźnik P/E</span><span id="stats-pe">—</span></div>
+            <div class="instrument-stats-list__row"><span>Stopa dywidendy</span><span id="stats-dividend">—</span></div>
+        </div>
     </div>
 
     <div class="instrument-detail__position" id="instrument-position" style="display:none">

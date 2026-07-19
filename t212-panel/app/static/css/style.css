@@ -1800,6 +1800,62 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__qty-row { max-width: 420px; margin-bottom: 12px; }
 .instrument-detail__actions { max-width: 420px; }
 
+.instrument-detail__stats { margin-bottom: 16px; }
+
+.instrument-stats-ranges {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.instrument-stats-range {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    padding: 12px 14px;
+}
+.instrument-stats-range__label {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    margin-bottom: 10px;
+}
+.instrument-stats-range__bar-track {
+    position: relative;
+    height: 4px;
+    background: var(--hairline);
+    border-radius: 2px;
+    margin-bottom: 6px;
+}
+.instrument-stats-range__bar-fill {
+    position: absolute;
+    top: -3px;
+    left: 0%;
+    width: 2px;
+    height: 10px;
+    background: var(--accent-amber);
+    border-radius: 1px;
+    box-shadow: 0 0 6px var(--accent-glow);
+}
+.instrument-stats-range__values {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-bright);
+}
+
+.instrument-stats-list__row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 12px;
+}
+.instrument-stats-list__row span:first-child { color: var(--text-muted); }
+.instrument-stats-list__row span:last-child { color: var(--text-bright); font-weight: 600; }
+.instrument-stats-list__row:last-child { border-bottom: none; }
+
 /* === "Moje aktywa" (/warp/portfolio) === */
 .portfolio-summary {
     display: flex;

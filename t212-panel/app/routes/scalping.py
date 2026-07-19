@@ -313,6 +313,37 @@ def sparkline():
     return jsonify(ok=True, ticker=ticker, closes=closes)
 
 
+@scalping_bp.route("/stats", methods=["GET"])
+@login_required
+def stats():
+    """
+    Statystyki fundamentalne dla strony szczegolow instrumentu (jak
+    "Statystyki" w apce T212) - kapitalizacja rynkowa (profile2) + 52-tyg.
+    zakres/P-E/dywidenda/wolumen (metric=all). Cache 24h po stronie
+    finnhub_client.py - te liczby nie zmieniaja sie w ciagu dnia, jeden
+    request na wejscie na strone (nie pollowane).
+    """
+    from ..extensions import finnhub
+    ticker = request.args.get("ticker", "").strip()
+    if not ticker:
+        return jsonify(ok=False, error="Brak tickera."), 400
+    if not finnhub:
+        return jsonify(ok=False, error="Finnhub nie skonfigurowany."), 503
+
+    financials = finnhub.get_basic_financials(ticker)
+    profile = finnhub.get_profile(ticker)
+
+    if not financials and not profile:
+        return jsonify(ok=False, error=f"Brak statystyk dla {ticker}."), 404
+
+    return jsonify(
+        ok=True,
+        ticker=ticker,
+        market_cap=(profile or {}).get("marketCapitalization"),
+        **(financials or {}),
+    )
+
+
 @scalping_bp.route("/candles", methods=["GET"])
 @login_required
 def candles():
