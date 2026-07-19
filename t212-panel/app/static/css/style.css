@@ -1951,6 +1951,18 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .portfolio-summary__cell { display: flex; flex-direction: column; gap: 4px; }
 .portfolio-summary__cell .instrument-detail__position-value { font-size: 22px; }
 
+.portfolio-freshness {
+    display: inline-block;
+    width: fit-content;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 2px 8px;
+    border-radius: 3px;
+}
+.portfolio-freshness--cached { background: rgba(229, 72, 77, 0.15); color: var(--sell-red); }
+.portfolio-freshness--live { background: rgba(51, 193, 123, 0.15); color: var(--buy-green); }
+
 /*
 Wyrazisty wizualny puls przy zywym odswiezeniu (portfolio.js) - NIEZALEZNY
 od dzwieku (playUpdate), bo dzwiek z timera bez wczesniejszego kliknieca

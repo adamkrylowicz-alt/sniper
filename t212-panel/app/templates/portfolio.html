@@ -4,7 +4,6 @@
 {% block content %}
 <div class="history-box">
     <h1 class="auth-box__title">AKTYWA</h1>
-    <p class="auth-box__hint" id="portfolio-refresh-status"></p>
 
     <div id="portfolio-content">
         {% if error %}
@@ -18,6 +17,7 @@
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Wartość portfela</span>
                 <span class="instrument-detail__position-value">{{ "%.2f"|format(total_value) }}</span>
+                <span class="portfolio-freshness portfolio-freshness--cached" id="portfolio-freshness">Z cache</span>
             </div>
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Zysk / strata</span>

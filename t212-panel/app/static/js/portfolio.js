@@ -65,6 +65,7 @@ function renderPortfolio(positions, totalValue, totalPpl) {
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Wartość portfela</span>
                 <span class="instrument-detail__position-value">${totalValue.toFixed(2)}</span>
+                <span class="portfolio-freshness portfolio-freshness--live">Aktualne</span>
             </div>
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Zysk / strata</span>
@@ -88,38 +89,29 @@ function renderPortfolio(positions, totalValue, totalPpl) {
         </table>`;
 }
 
-function showRetry(message) {
-    // Bez przycisku "Sprobuj ponownie" (na zyczenie Adama, 20.07.2026) -
-    // sam krotki, spokojny komunikat. Dzwiek/wizualne potwierdzenie i tak
-    // jest zwiazane z SUKCESEM odswiezenia (renderPortfolio -> puls +
-    // playUpdate), nie z tym stanem bledu.
-    const statusEl = document.getElementById("portfolio-refresh-status");
-    if (statusEl) statusEl.textContent = message;
-}
-
+/*
+Zamiast tekstowego komunikatu bledu (usuniete na zyczenie Adama, 20.07.2026) -
+znacznik swiezosci danych POD wartoscia portfela (.portfolio-freshness,
+patrz portfolio.html): czerwony "Z cache" domyslnie (tak renderuje go Jinja
+od razu przy pierwszym wczytaniu strony), zielony "Aktualne" dopiero po
+udanym zywym odswiezeniu (renderPortfolio() wyzej). Przy nieudanym
+odswiezeniu (najczesciej 429 - rate limit T212 demo) po prostu NIC sie nie
+zmienia - znacznik zostaje czerwony, bo dane faktycznie nadal sa z cache.
+*/
 async function refreshPortfolio() {
-    const statusEl = document.getElementById("portfolio-refresh-status");
-    if (statusEl) statusEl.textContent = "";
     try {
         const resp = await fetch("/warp/portfolio/refresh");
         const data = await resp.json();
 
         if (!data.ok) {
-            // 429 (rate limit T212 demo) jest CZESTY i oczekiwany - spokojny,
-            // krotki komunikat zamiast strasznego zrzutu surowego wyjatku.
-            const message = data.rate_limited
-                ? "T212 chwilowo zajęty, pokazuję ostatnio znane dane."
-                : "Nie udało się odświeżyć na żywo, pokazuję ostatnio znane dane.";
-            showRetry(message);
+            console.warn("Odswiezenie portfela nie powiodlo sie:", data.error);
             return;
         }
 
         renderPortfolio(data.positions, data.total_value, data.total_ppl);
-        if (statusEl) statusEl.textContent = "";
         playUpdate();
     } catch (err) {
         console.error("Błąd odświeżania portfela:", err);
-        showRetry("Nie udało się odświeżyć na żywo - pokazuję ostatnio znane dane.");
     }
 }
 
