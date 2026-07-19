@@ -78,6 +78,7 @@ $relFiles = @(
     "templates\base.html"
     "templates\history.html"
     "templates\portfolio.html"
+    "templates\costs.html"
     "templates\settings_index.html"
     "templates\warp.html"
     "templates\watchlist.html"

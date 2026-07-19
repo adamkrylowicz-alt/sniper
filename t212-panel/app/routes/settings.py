@@ -101,6 +101,21 @@ def index():
     )
 
 
+@settings_bp.route("/costs", methods=["GET"])
+@login_required
+def costs_view():
+    """
+    Statyczna strona informacyjna - koszty i oplaty handlu na T212, przepisane
+    z oficjalnej dokumentacji (trading212.com/terms/invest samo w sobie
+    blokuje boty/scrapery Cloudflare'em, wiec zrodlem sa artykuly Help Centre
+    T212, ktore NIE sa zablokowane - te same liczby, ta sama tresc).
+    Zero dynamicznych danych/zapytan do T212 - to czysto referencyjny tekst,
+    warty odswiezenia recznie od czasu do czasu (link do zrodla w stopce
+    strony), nie warto tego automatyzowac/scrapowac przy kazdym wejsciu.
+    """
+    return render_template("costs.html")
+
+
 def _require_admin() -> User:
     user = User.query.get(current_user_id())
     if user is None or not user.is_admin:

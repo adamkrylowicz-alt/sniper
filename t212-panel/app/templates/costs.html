@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}SNAJPER — Koszty i opłaty{% endblock %}
+
+{% block content %}
+<div class="history-box">
+    <h1 class="auth-box__title">KOSZTY I OPŁATY (T212 INVEST)</h1>
+    <p class="auth-box__hint">
+        Przepisane z oficjalnej dokumentacji Trading 212 (zobacz link do źródła
+        na dole). To informacja referencyjna, nie dane na żywo — jeśli T212
+        zmieni cennik, ta strona nie zaktualizuje się sama.
+    </p>
+
+    <h2 class="auth-box__title" style="font-size:12px; margin-top:20px">OPŁATY POBIERANE PRZEZ T212</h2>
+    <table class="history-table">
+        <thead>
+            <tr>
+                <th>Opłata</th>
+                <th>Wysokość</th>
+                <th>Kiedy</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Prowizja za zlecenie</td>
+                <td>0%</td>
+                <td>Zawsze — T212 nie pobiera prowizji od zleceń</td>
+            </tr>
+            <tr>
+                <td>Przechowywanie aktywów (custody)</td>
+                <td>0%</td>
+                <td>Zawsze — brak opłaty</td>
+            </tr>
+            <tr>
+                <td>Opłata FX (przewalutowanie)</td>
+                <td>0,15%</td>
+                <td>
+                    Gdy waluta instrumentu różni się od waluty konta. Doliczana do
+                    kursu spot: przy kupnie kurs pomniejszony o 0,15%, przy sprzedaży
+                    powiększony o 0,15%. Nie dotyczy dywidend.
+                </td>
+            </tr>
+            <tr>
+                <td>Wpłata kartą / Apple Pay / Google Pay</td>
+                <td>0% do 2000 EUR/GBP łącznie, potem 0,7%</td>
+                <td>
+                    Limit liczony narastająco (nie resetuje się). Przelew bankowy
+                    jest zawsze darmowy, bez limitu.
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2 class="auth-box__title" style="font-size:12px; margin-top:24px">PODATKI I OPŁATY GIEŁD/URZĘDÓW (NIE T212)</h2>
+    <p class="auth-box__hint">
+        Tego T212 nie zarabia i nie kontroluje — to opłaty nakładane przez
+        giełdy albo urzędy skarbowe danego kraju, doliczane automatycznie do
+        zlecenia.
+    </p>
+    <table class="history-table">
+        <thead>
+            <tr>
+                <th>Opłata</th>
+                <th>Wysokość</th>
+                <th>Rynek / warunki</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>Stamp Duty Reserve Tax</td>
+                <td>0,5%</td>
+                <td>
+                    Zakup akcji na London Stock Exchange. Nie dotyczy obligacji,
+                    ETF-ów ani spółek notowanych na LSE AIM.
+                </td>
+            </tr>
+            <tr>
+                <td>PTM Levy</td>
+                <td>£1,50 / zlecenie</td>
+                <td>LSE, tylko dla zleceń powyżej £10 000 (kupno i sprzedaż)</td>
+            </tr>
+            <tr>
+                <td>SEC Transaction Fee</td>
+                <td>$0,0000278 × wartość zlecenia</td>
+                <td>NYSE/NASDAQ, tylko sprzedaż</td>
+            </tr>
+            <tr>
+                <td>FINRA Trading Activity Fee</td>
+                <td>$0,000195 × liczba akcji</td>
+                <td>NYSE/NASDAQ, tylko sprzedaż</td>
+            </tr>
+            <tr>
+                <td>Francuski podatek od transakcji (FTT)</td>
+                <td>0,4%</td>
+                <td>Zakup akcji francuskich spółek o kapitalizacji &gt; 1 mld €</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p class="auth-box__hint" style="margin-top:20px">
+        Pełna, zawsze aktualna lista (T212 może dodać rynki/zmienić stawki):
+        <a href="https://www.trading212.com/terms/invest" target="_blank" rel="noopener noreferrer">
+            trading212.com/terms/invest
+        </a>
+        oraz
+        <a href="https://helpcentre.trading212.com/hc/en-us/articles/11471996799517" target="_blank" rel="noopener noreferrer">
+            Help Centre T212
+        </a>.
+    </p>
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('settings.index') }}">← Wróć do Ustawień</a>
+    </p>
+</div>
+{% endblock %}
