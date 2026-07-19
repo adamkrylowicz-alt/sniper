@@ -1766,14 +1766,16 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 
 .instrument-detail__chart-wrap {
     width: 100%;
-    height: 220px;
+    aspect-ratio: 600 / 220;
+    min-height: 160px;
+    max-height: 420px;
     border-bottom: 1px solid var(--hairline);
     margin-bottom: 16px;
     display: flex;
     align-items: center;
     justify-content: center;
 }
-.instrument-detail__chart { width: 100%; height: 220px; }
+.instrument-detail__chart { width: 100%; height: 100%; }
 .instrument-detail__chart-empty { margin: 0; }
 
 .instrument-detail__position {
@@ -1797,8 +1799,8 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__position-label { font-size: 11px; color: var(--text-muted); }
 .instrument-detail__position-value { font-size: 15px; font-weight: 600; color: var(--text-bright); }
 
-.instrument-detail__qty-row { max-width: 420px; margin-bottom: 12px; }
-.instrument-detail__actions { max-width: 420px; }
+.instrument-detail__qty-row { max-width: 420px; margin: 0 auto 12px; }
+.instrument-detail__actions { max-width: 420px; margin: 0 auto; }
 
 .instrument-detail__stats { margin-bottom: 16px; }
 
