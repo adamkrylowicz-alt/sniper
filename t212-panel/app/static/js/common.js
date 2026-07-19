@@ -53,6 +53,22 @@ function playTone(freq, durationMs, waveType) {
 
 function playSuccess() { playTone(880, 90); }
 function playError() { playTone(160, 180); }
+
+/*
+Odblokowanie audio przy PIERWSZYM realnym gescie usera na stronie (klik/
+klawisz/dotyk) - dzwieki wywolywane z timera (np. portfolio.js::playUpdate
+po 1.5s auto-odswiezeniu, bez zadnego kliknieca) NIE odblokuja sie same,
+bo autoplay policy przegladarek wymaga zeby resume() nastapil w ramach
+prawdziwego gestu, nie w callbacku setTimeout. Bez tego listenera taki
+dzwiek nigdy nie zabrzmi, dopoki user czegokolwiek na stronie nie kliknie -
+z tym listenerem wystarczy JEDNO klikniecie gdziekolwiek (nawet przelacznik
+motywu), zeby audio odblokowac raz na cala reszte wizyty na tej stronie.
+*/
+["click", "keydown", "touchstart"].forEach((evt) => {
+    document.addEventListener(evt, () => {
+        if (audioCtx.state === "suspended") audioCtx.resume();
+    }, { once: true });
+});
 // Cichy sygnal "dane odswiezone w tle" (np. portfolio.js) - celowo INNY niz
 // wynik zlecenia (playSuccess/playError), zeby nie mylic "kupno/sprzedaz OK"
 // z "wlasnie doszly swiezsze dane". Fala sinusoidalna zamiast square - inna
