@@ -33,6 +33,14 @@ Przeniesione tu z warp.js, bo pie.js (Smart Virtual Pie) też ich potrzebuje.
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
 function playTone(freq, durationMs) {
+    // AudioContext startuje w stanie "suspended" dopoki przegladarka nie
+    // zobaczy gestu usera (autoplay policy) - powstal PRZED pierwszym
+    // klikniecim (linijka wyzej, przy zaladowaniu strony), wiec bez tego
+    // resume() dzwiek nigdy sie nie odblokowuje, mimo ze playTone() i tak
+    // jest wolane wylacznie z handlerow klikniec (Kup/Sprzedaj itp.).
+    if (audioCtx.state === "suspended") {
+        audioCtx.resume();
+    }
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.frequency.value = freq;

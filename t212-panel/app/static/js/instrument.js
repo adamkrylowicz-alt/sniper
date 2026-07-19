@@ -174,7 +174,15 @@ async function loadPosition() {
     try {
         const resp = await fetch("/warp/account");
         const data = await resp.json();
-        if (!data.ok) return;
+        if (!data.ok) {
+            // Najczesciej waski rate limit T212 na demo - bez tego komunikatu
+            // "Max kupno/sprzedaz" po prostu zostawaly na "-" bez wyjasnienia.
+            const buyEl = document.getElementById("max-buy-hint");
+            const sellEl = document.getElementById("max-sell-hint");
+            if (buyEl) buyEl.textContent = `Max kupno: błąd (${data.error || "T212"})`;
+            if (sellEl) sellEl.textContent = "Max sprzedaż: błąd";
+            return;
+        }
 
         heldQuantity = 0;
         availableCash = data.cash && data.cash.free != null ? Number(data.cash.free) : null;
@@ -201,6 +209,10 @@ async function loadPosition() {
         updateMaxHints();
     } catch (err) {
         console.error("Błąd pozycji:", err);
+        const buyEl = document.getElementById("max-buy-hint");
+        const sellEl = document.getElementById("max-sell-hint");
+        if (buyEl) buyEl.textContent = "Max kupno: błąd sieci";
+        if (sellEl) sellEl.textContent = "Max sprzedaż: błąd sieci";
     }
 }
 
@@ -288,7 +300,16 @@ async function sendOrder(side) {
     const btns = document.querySelectorAll(".focus-tile__btn");
 
     if (!quantity || Number(quantity) <= 0) {
-        statusEl.textContent = "Podaj ilość > 0";
+        const active = document.querySelector(".tile__preset--active");
+        if (active && active.dataset.qty === "max") {
+            // MAX policzyl 0 - wyjasnij dlaczego zamiast ogolnego "podaj ilosc"
+            // (myli, skoro user NIC nie musial wpisywac recznie).
+            statusEl.textContent = side === "sell"
+                ? "Nie masz nic do sprzedania (posiadasz 0 szt.)."
+                : "Brak środków na zakup (albo nie udało się pobrać salda/ceny).";
+        } else {
+            statusEl.textContent = "Podaj ilość > 0";
+        }
         return;
     }
 
