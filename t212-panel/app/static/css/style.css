@@ -480,6 +480,9 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     gap: 8px;
     text-decoration: none;
     color: inherit;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
 }
 
 .tile__logo {
@@ -528,6 +531,7 @@ img.tile__logo {
 
 .tile__price {
     width: 92px;
+    flex-shrink: 0;
     background: var(--bg);
     border: 1px solid var(--hairline);
     color: var(--text-muted);
