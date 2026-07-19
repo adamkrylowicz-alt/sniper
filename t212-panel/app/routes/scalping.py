@@ -138,10 +138,13 @@ def warp_view():
 
     # Kafelki siatki wzbogacone o logo/awatar - ten sam wzorzec co favorites
     # wyzej i watchlist.html (logo z dysku jesli jest, inaczej kolorowy
-    # awatar z inicjalem).
+    # awatar z inicjalem). Nazwa spolki (nie tylko ticker) na kafelku - warp_grid
+    # jest zawsze podzbiorem favorites, wiec cached_names juz ja ma, bez
+    # dodatkowego zapytania.
     grid_tiles = [
         {
             "ticker": t,
+            "name": cached_names.get(t, ""),
             "initial": t.split("_")[0][0].upper(),
             "hue": avatar_hue(t),
             "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),

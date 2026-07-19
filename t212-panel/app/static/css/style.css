@@ -504,10 +504,26 @@ img.tile__logo {
     padding: 3px;
 }
 
-.tile__ticker {
+.tile__name-wrap {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.tile__name {
     font-weight: 700;
     font-size: 15px;
+    color: var(--text-bright);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tile__ticker {
+    font-weight: 600;
+    font-size: 10px;
     letter-spacing: 0.05em;
+    color: var(--text-muted);
 }
 
 .tile__price {

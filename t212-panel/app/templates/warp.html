@@ -129,7 +129,10 @@
                         {% else %}
                         <span class="tile__logo tile__logo--fallback" style="background: hsl({{ tile.hue }}, 55%, 38%);">{{ tile.initial }}</span>
                         {% endif %}
-                        <span class="tile__ticker">{{ tile.ticker.split('_')[0] }}</span>
+                        <span class="tile__name-wrap">
+                            <span class="tile__name">{{ tile.name or tile.ticker.split('_')[0] }}</span>
+                            <span class="tile__ticker">{{ tile.ticker.split('_')[0] }}</span>
+                        </span>
                     </a>
                     <input
                         type="number"
