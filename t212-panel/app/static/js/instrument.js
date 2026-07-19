@@ -93,6 +93,7 @@ async function refreshQuote() {
             (lastQuote.dp >= 0 ? "focus-tile__change--up" : "focus-tile__change--down");
 
         updateRangeMarkers();
+        updateMaxHints();
     } catch (err) {
         console.error("Błąd ceny:", err);
     }
@@ -175,22 +176,29 @@ async function loadPosition() {
         const data = await resp.json();
         if (!data.ok) return;
 
+        heldQuantity = 0;
+        availableCash = data.cash && data.cash.free != null ? Number(data.cash.free) : null;
+
         const position = (data.positions || []).find((p) => p.ticker === ticker);
-        if (!position) return;
+        if (position) {
+            const qty = Number(position.quantity) || 0;
+            const currentPrice = Number(position.currentPrice) || 0;
+            const avgPrice = Number(position.averagePrice) || 0;
+            const ppl = Number(position.ppl) || 0;
 
-        const qty = Number(position.quantity) || 0;
-        const currentPrice = Number(position.currentPrice) || 0;
-        const avgPrice = Number(position.averagePrice) || 0;
-        const ppl = Number(position.ppl) || 0;
+            heldQuantity = qty;
 
-        document.getElementById("position-value").textContent = (qty * currentPrice).toFixed(2);
-        const pplEl = document.getElementById("position-pnl");
-        pplEl.textContent = `${ppl >= 0 ? "+" : ""}${ppl.toFixed(2)}`;
-        pplEl.className = "instrument-detail__position-value " + (ppl >= 0 ? "focus-tile__pnl--profit" : "focus-tile__pnl--loss");
-        document.getElementById("position-qty").textContent = qty;
-        document.getElementById("position-avg").textContent = avgPrice.toFixed(2);
+            document.getElementById("position-value").textContent = (qty * currentPrice).toFixed(2);
+            const pplEl = document.getElementById("position-pnl");
+            pplEl.textContent = `${ppl >= 0 ? "+" : ""}${ppl.toFixed(2)}`;
+            pplEl.className = "instrument-detail__position-value " + (ppl >= 0 ? "focus-tile__pnl--profit" : "focus-tile__pnl--loss");
+            document.getElementById("position-qty").textContent = qty;
+            document.getElementById("position-avg").textContent = avgPrice.toFixed(2);
 
-        document.getElementById("instrument-position").style.display = "";
+            document.getElementById("instrument-position").style.display = "";
+        }
+
+        updateMaxHints();
     } catch (err) {
         console.error("Błąd pozycji:", err);
     }
@@ -215,9 +223,46 @@ function setupPresets() {
     });
 }
 
-function getQuantity() {
+/*
+=== MAX - inne niz stale presety (0.1/0.5/1) bo "maksimum" zalezy od kierunku
+    zlecenia (max KUPNA = dostepna gotowka / cena, max SPRZEDAZY = ile masz
+    tego aktywa) - nie da sie tego zamienic na jedna z gory liczbe jak reszta
+    presetow. Dlatego getQuantity() przyjmuje `side` i liczy dopiero w
+    momencie wysylki, a maxBuyQuantity()/maxSellQuantity() sa tez uzywane
+    do na biezaco wyswietlanych podpowiedzi pod przyciskami (updateMaxHints).
+===*/
+let availableCash = null;
+let heldQuantity = null;
+
+function maxBuyQuantity() {
+    const price = lastQuote && lastQuote.c ? Number(lastQuote.c) : null;
+    if (availableCash == null || !price) return null;
+    let qty = availableCash / price;
+    if (cachedMaxOrderValue) qty = Math.min(qty, cachedMaxOrderValue / price);
+    return Math.max(0, qty);
+}
+
+function updateMaxHints() {
+    const buyEl = document.getElementById("max-buy-hint");
+    const sellEl = document.getElementById("max-sell-hint");
+    if (!buyEl || !sellEl) return;
+
+    const maxBuy = maxBuyQuantity();
+    buyEl.textContent = `Max kupno: ${maxBuy != null ? maxBuy.toFixed(4) : "—"} szt.`;
+    sellEl.textContent = `Max sprzedaż: ${heldQuantity != null ? heldQuantity : "—"} szt.`;
+}
+
+function getQuantity(side) {
     const active = document.querySelector(".tile__preset--active");
-    if (active && active.dataset.qty !== "custom") return active.dataset.qty;
+    if (active && active.dataset.qty === "custom") {
+        return document.getElementById("instrument-qty-custom").value;
+    }
+    if (active && active.dataset.qty === "max") {
+        if (side === "sell") return heldQuantity != null ? String(heldQuantity) : "0";
+        const maxBuy = maxBuyQuantity();
+        return maxBuy != null ? maxBuy.toFixed(4) : "0";
+    }
+    if (active) return active.dataset.qty;
     return document.getElementById("instrument-qty-custom").value;
 }
 
@@ -231,13 +276,14 @@ async function loadLimits() {
         const resp = await fetch("/warp/limits");
         const data = await resp.json();
         cachedMaxOrderValue = data.max_order_value ? Number(data.max_order_value) : null;
+        updateMaxHints();
     } catch (err) {
         console.error("Błąd limitów:", err);
     }
 }
 
 async function sendOrder(side) {
-    const quantity = getQuantity();
+    const quantity = getQuantity(side);
     const statusEl = document.getElementById("instrument-status");
     const btns = document.querySelectorAll(".focus-tile__btn");
 

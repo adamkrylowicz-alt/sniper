@@ -96,11 +96,12 @@
 
     <div class="focus-tile__qty-row instrument-detail__qty-row">
         <span class="tile__qty-label">ILOŚĆ</span>
-        <div class="focus-tile__qty-presets">
+        <div class="focus-tile__qty-presets instrument-detail__qty-presets">
             <button type="button" class="tile__preset" data-qty="0.1">0.1</button>
             <button type="button" class="tile__preset" data-qty="0.5">0.5</button>
             <button type="button" class="tile__preset tile__preset--active" data-qty="1">1</button>
             <button type="button" class="tile__preset tile__preset--custom" data-qty="custom">wł.</button>
+            <button type="button" class="tile__preset" data-qty="max">MAX</button>
         </div>
         <input type="number" class="tile__qty-custom-input tile__qty-custom-input--hidden" min="0" step="0.0001" id="instrument-qty-custom">
     </div>
@@ -121,6 +122,11 @@
             </svg>
             SPRZEDAJ
         </button>
+    </div>
+
+    <div class="instrument-detail__max-hints">
+        <span id="max-buy-hint">Max kupno: —</span>
+        <span id="max-sell-hint">Max sprzedaż: —</span>
     </div>
 
     <p class="auth-box__footer">

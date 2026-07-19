@@ -1800,7 +1800,18 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__position-value { font-size: 15px; font-weight: 600; color: var(--text-bright); }
 
 .instrument-detail__qty-row { max-width: 420px; margin: 0 auto 12px; }
+.instrument-detail__qty-presets { grid-template-columns: repeat(5, 1fr); }
 .instrument-detail__actions { max-width: 420px; margin: 0 auto; }
+
+.instrument-detail__max-hints {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    max-width: 420px;
+    margin: 8px auto 0;
+    font-size: 11px;
+    color: var(--text-muted);
+}
 
 .instrument-detail__stats { margin-bottom: 16px; }
 
