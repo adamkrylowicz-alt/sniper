@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 
 from flask import Flask
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from .config import Config
 from .extensions import db, scheduler, socketio
@@ -22,6 +23,16 @@ def create_app(config_object: type = Config) -> Flask:
 
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config_object)
+
+    # Appka moze byc dostepna albo bezposrednio w LAN (http://192.168.1.50:5050),
+    # albo przez nginx-proxy-manager z HTTPS na zewnatrz (sniper.duckdns.org).
+    # ProxyFix sprawia, ze request.is_secure/request.remote_addr poprawnie
+    # odzwierciedlaja PRAWDZIWEGO klienta (przez naglowki X-Forwarded-*), a nie
+    # NPM jako "klienta" - potrzebne m.in. do dynamicznej flagi Secure na
+    # ciasteczku sesji (auth.py) i do throttlingu logowania po prawdziwym IP.
+    # x_for/x_proto/x_host=1 - ufamy DOKLADNIE JEDNEMU skokowi proxy (NPM),
+    # bo appka nie stoi za zadnym innym posrednikiem.
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 
     # Flask sam nie tworzy folderu instance/ (tam trzyma się plik SQLite) -
     # trzeba to zrobić ręcznie, inaczej pierwszy zapis do bazy wywali błąd.

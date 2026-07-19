@@ -24,6 +24,8 @@ Flow logowania:
 
 from __future__ import annotations
 
+import time
+
 from flask import Blueprint, redirect, render_template, request, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -39,6 +41,40 @@ from ..services.session_store import (
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 MIN_PASSWORD_LENGTH = 10
+
+# -- Throttling nieudanych logowan -------------------------------------------
+# Prosty licznik w pamieci procesu (ten sam wzorzec co session_store.py/
+# risk_guard.py - jeden proces, jeden user, restart czysci stan i to
+# akceptowalne). Potrzebne odkad appka jest dostepna publicznie przez
+# nginx-proxy-manager (sniper.duckdns.org), nie tylko w LAN - bez tego bot
+# mogliby brute-forcowac haslo bez zadnego ograniczenia.
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 15 * 60  # tez czas "odblokowania" - najstarsza proba wypada z okna
+
+_failed_logins: dict[str, list[float]] = {}
+
+
+def _throttle_key(username: str) -> str:
+    # IP + username (nie sam IP) - jeden zly aktor nie blokuje calej sieci
+    # (np. NAT-owanej), a jeden username nie da sie zbrute-forcowac z wielu IP
+    # bez proby na kazdy z osobna. request.remote_addr jest poprawny dzieki
+    # ProxyFix (patrz __init__.py) nawet przez NPM.
+    return f"{request.remote_addr}:{username.lower()}"
+
+
+def _is_locked_out(key: str) -> bool:
+    now = time.monotonic()
+    recent = [t for t in _failed_logins.get(key, []) if now - t < LOGIN_WINDOW_SECONDS]
+    _failed_logins[key] = recent
+    return len(recent) >= LOGIN_MAX_ATTEMPTS
+
+
+def _record_failed_login(key: str) -> None:
+    _failed_logins.setdefault(key, []).append(time.monotonic())
+
+
+def _clear_failed_logins(key: str) -> None:
+    _failed_logins.pop(key, None)
 
 
 def _password_policy_error(username: str, password: str) -> str | None:
@@ -118,14 +154,25 @@ def login_view():
     password = request.form.get("password") or ""
     next_path = request.form.get("next") or url_for("scalping.warp_view")
 
-    user = User.query.filter_by(username=username).first()
-
+    throttle_key = _throttle_key(username)
     generic_error = "Nieprawidłowa nazwa użytkownika lub hasło."
+
+    if _is_locked_out(throttle_key):
+        return render_template(
+            "auth/login.html",
+            error="Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za kilkanaście minut.",
+            next=next_path,
+        )
+
+    user = User.query.filter_by(username=username).first()
 
     if user is None or not check_password_hash(user.password_hash, password):
         # Celowo IDENTYCZNY komunikat dla "brak usera" i "złe hasło" -
         # nie zdradzamy atakującemu, czy dana nazwa użytkownika istnieje.
+        _record_failed_login(throttle_key)
         return render_template("auth/login.html", error=generic_error, next=next_path)
+
+    _clear_failed_logins(throttle_key)
 
     try:
         master_key = cipher.try_unwrap(
@@ -156,10 +203,13 @@ def login_view():
         token,
         httponly=True,
         samesite="Lax",
-        # secure=True wymaga HTTPS - włącz gdy appka będzie za tunelem/reverse
-        # proxy z certyfikatem. Na czystym http://IP:port w sieci lokalnej
-        # ustawienie secure=True zablokowałoby zapisanie ciasteczka w ogóle.
-        secure=False,
+        # Dynamiczne, nie na sztywno - ta sama appka jest dostępna i po
+        # zwykłym http://192.168.1.50:5050 w LAN-ie (gdzie secure=True
+        # zablokowałoby zapisanie ciasteczka w ogóle), i po https:// przez
+        # nginx-proxy-manager na zewnątrz. request.is_secure poprawnie
+        # rozróżnia oba przypadki dzięki ProxyFix (patrz __init__.py),
+        # który czyta nagłówek X-Forwarded-Proto ustawiany przez NPM.
+        secure=request.is_secure,
         max_age=ttl_seconds,
     )
     return response
