@@ -42,6 +42,9 @@
                     <span class="pie-asset-row__currency">{{ a.currency }}</span>
                     <span class="pie-asset-row__weight-pct" data-weight-pct>—</span>
                 </div>
+                {% if a.name %}
+                <span class="pie-asset-row__subtitle">{{ a.name }}</span>
+                {% endif %}
 
                 <svg class="pie-asset-row__spark" viewBox="0 0 100 30" preserveAspectRatio="none" data-spark></svg>
 

@@ -1303,6 +1303,13 @@ img.tile__logo {
     font-size: 12px;
     font-weight: 600;
 }
+.pie-asset-row__subtitle {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: -3px;
+    margin-bottom: 6px;
+}
 
 .pie-asset-row__spark {
     width: 100%;

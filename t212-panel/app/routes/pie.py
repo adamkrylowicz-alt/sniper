@@ -26,7 +26,7 @@ from ..extensions import db
 from ..models import Instrument, Pie, PieAsset
 from ..services import price_feed
 from ..services.t212_client import T212APIError
-from ..utils import avatar_hue, current_user_id, login_required
+from ..utils import avatar_hue, current_user_id, friendly_name, login_required
 from .scalping import _get_client, _get_guard, _log_order
 
 pie_bp = Blueprint("pie", __name__, url_prefix="/pie")
@@ -76,11 +76,19 @@ def detail(pie_id):
     # Hydratacja do prostych dict-ów - szablon i JS nie muszą znać ORM-a,
     # a hue liczymy raz tutaj zamiast w Jinja (ten sam avatar_hue co
     # Warp/Watchlist, żeby kolory tickerów były spójne w całej appce).
+    # Pełna nazwa spółki pod tickerem - sam skrót (np. "SPCX") nic nie mówi,
+    # ten sam wzorzec co tile_data w scalping.py::focus_view().
+    tickers = [a.ticker for a in pie.assets]
+    instruments_by_ticker = (
+        {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
+        if tickers else {}
+    )
     assets = [
         {
             "id": a.id,
             "ticker": a.ticker,
             "display_ticker": a.display_ticker,
+            "name": friendly_name(instruments_by_ticker[a.ticker].name) if a.ticker in instruments_by_ticker else "",
             "currency": a.currency,
             "target_weight": str(a.target_weight),
             "hue": avatar_hue(a.ticker),
