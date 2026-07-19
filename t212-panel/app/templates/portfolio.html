@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — Moje aktywa{% endblock %}
+
+{% block content %}
+<div class="history-box">
+    <h1 class="auth-box__title">MOJE AKTYWA</h1>
+
+    {% if error %}
+    <p class="auth-box__hint auth-box__hint--warn">Błąd pobierania portfela: {{ error }}</p>
+    {% elif not positions %}
+    <p class="auth-box__hint">Brak otwartych pozycji.</p>
+    {% else %}
+    <div class="portfolio-summary">
+        <div class="portfolio-summary__cell">
+            <span class="instrument-detail__position-label">Wartość portfela</span>
+            <span class="instrument-detail__position-value">{{ "%.2f"|format(total_value) }}</span>
+        </div>
+        <div class="portfolio-summary__cell">
+            <span class="instrument-detail__position-label">Zysk / strata</span>
+            <span class="instrument-detail__position-value {{ 'focus-tile__pnl--profit' if total_ppl >= 0 else 'focus-tile__pnl--loss' }}">
+                {{ "+" if total_ppl >= 0 else "" }}{{ "%.2f"|format(total_ppl) }}
+            </span>
+        </div>
+    </div>
+
+    <table class="history-table">
+        <thead>
+            <tr>
+                <th>Aktywo</th>
+                <th>Ilość</th>
+                <th>Średnia cena</th>
+                <th>Cena teraz</th>
+                <th>Wartość</th>
+                <th>Zysk / strata</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in positions %}
+            <tr>
+                <td>
+                    <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
+                        {% if p.logo_filename %}
+                        <img class="pie-asset-row__avatar" style="width:28px;height:28px" src="{{ url_for('static', filename='logos/' + p.logo_filename) }}" alt="{{ p.display_ticker }}">
+                        {% else %}
+                        <span class="pie-asset-row__avatar" style="width:28px;height:28px;font-size:12px;background: hsl({{ p.hue }}, 55%, 38%);">{{ p.initial }}</span>
+                        {% endif %}
+                        <span>
+                            <span class="pie-asset-row__ticker">{{ p.name or p.display_ticker }}</span>
+                            <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · {{ p.currency }}{% endif %}</span>
+                        </span>
+                    </a>
+                </td>
+                <td>{{ p.quantity }}</td>
+                <td>{{ "%.2f"|format(p.avg_price) }}</td>
+                <td>{{ "%.2f"|format(p.current_price) }}</td>
+                <td>{{ "%.2f"|format(p.value) }}</td>
+                <td class="{{ 'focus-tile__pnl--profit' if p.ppl >= 0 else 'focus-tile__pnl--loss' }}">
+                    {{ "+" if p.ppl >= 0 else "" }}{{ "%.2f"|format(p.ppl) }}
+                    ({{ "+" if p.ppl_pct >= 0 else "" }}{{ "%.1f"|format(p.ppl_pct) }}%)
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
+    </p>
+</div>
+{% endblock %}

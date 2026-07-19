@@ -1799,3 +1799,12 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 
 .instrument-detail__qty-row { max-width: 420px; margin-bottom: 12px; }
 .instrument-detail__actions { max-width: 420px; }
+
+/* === "Moje aktywa" (/warp/portfolio) === */
+.portfolio-summary {
+    display: flex;
+    gap: 24px;
+    margin: 12px 0 20px;
+}
+.portfolio-summary__cell { display: flex; flex-direction: column; gap: 4px; }
+.portfolio-summary__cell .instrument-detail__position-value { font-size: 22px; }

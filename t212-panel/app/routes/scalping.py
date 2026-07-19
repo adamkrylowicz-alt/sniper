@@ -500,6 +500,76 @@ def limits():
     return jsonify(ok=True, max_order_value=str(value) if value is not None else None)
 
 
+@scalping_bp.route("/portfolio", methods=["GET"])
+@login_required
+def portfolio_view():
+    """
+    "Moje aktywa" - WSZYSTKIE otwarte pozycje z T212 (nie tylko te w
+    ulubionych/siatce jak dotad wszedzie indziej), z ilenia/za ile/ile teraz
+    warte/zysk-strata. Jedno zapytanie do /equity/portfolio przy kazdym
+    wejsciu na strone (rate limit T212 - NIE pollowane).
+    """
+    from ..models import Instrument
+
+    try:
+        client = _get_client()
+        raw_positions = client.get_portfolio()
+    except RuntimeError as exc:
+        return render_template("portfolio.html", positions=[], total_value=None, total_ppl=None, error=str(exc))
+    except T212APIError as exc:
+        return render_template("portfolio.html", positions=[], total_value=None, total_ppl=None, error=str(exc))
+
+    tickers = [p.get("ticker") for p in raw_positions if p.get("ticker")]
+    instruments_by_ticker = (
+        {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
+        if tickers else {}
+    )
+
+    positions = []
+    total_value = Decimal("0")
+    total_ppl = Decimal("0")
+    for p in raw_positions:
+        ticker = p.get("ticker")
+        if not ticker:
+            continue
+        try:
+            quantity = Decimal(str(p.get("quantity", 0)))
+            avg_price = Decimal(str(p.get("averagePrice", 0)))
+            current_price = Decimal(str(p.get("currentPrice", 0)))
+            ppl = Decimal(str(p.get("ppl", 0)))
+        except InvalidOperation:
+            continue
+
+        instrument = instruments_by_ticker.get(ticker)
+        name = friendly_name(instrument.name) if instrument else ""
+        cost_basis = quantity * avg_price
+        value = quantity * current_price
+
+        positions.append({
+            "ticker": ticker,
+            "display_ticker": ticker.split("_")[0],
+            "name": name,
+            "currency": instrument.currency_code if instrument else "",
+            "quantity": quantity,
+            "avg_price": avg_price,
+            "current_price": current_price,
+            "value": value,
+            "ppl": ppl,
+            "ppl_pct": (ppl / cost_basis * 100) if cost_basis else Decimal("0"),
+            "hue": avatar_hue(ticker),
+            "initial": (name or ticker.split("_")[0])[0].upper(),
+            "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, ticker),
+        })
+        total_value += value
+        total_ppl += ppl
+
+    positions.sort(key=lambda x: x["value"], reverse=True)
+
+    return render_template(
+        "portfolio.html", positions=positions, total_value=total_value, total_ppl=total_ppl, error=None,
+    )
+
+
 @scalping_bp.route("/history", methods=["GET"])
 @login_required
 def history_view():
