@@ -25,12 +25,12 @@
             {% set ticker = tile.ticker %}
             <div class="focus-tile" data-ticker="{{ ticker }}" data-index="{{ loop.index0 }}">
                 <div class="focus-tile__header">
-                    <div>
+                    <a href="{{ url_for('instrument.detail', ticker=ticker) }}" class="focus-tile__title-link">
                         <span class="focus-tile__ticker">{{ ticker.split('_')[0] }}</span>
                         {% if tile.name or tile.currency %}
                         <span class="focus-tile__subtitle">{{ tile.name }}{% if tile.currency %} · {{ tile.currency }}{% endif %}</span>
                         {% endif %}
-                    </div>
+                    </a>
                     <div class="focus-tile__price-wrap">
                         <span class="focus-tile__price" id="price-{{ ticker }}">—</span>
                         <span class="focus-tile__change" id="change-{{ ticker }}"></span>

@@ -47,20 +47,22 @@
         <div class="watchlist-favorites">
             {% for f in favorites %}
             <div class="watchlist-favorites__item" data-ticker="{{ f.ticker }}">
-                {% if f.logo_filename %}
-                <img class="watchlist-favorites__avatar watchlist-favorites__avatar--logo"
-                     src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
-                     alt="{{ f.ticker }}">
-                {% else %}
-                <span class="watchlist-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
-                    {{ f.initial }}
-                </span>
-                {% endif %}
+                <a href="{{ url_for('instrument.detail', ticker=f.ticker) }}" class="watchlist-favorites__link">
+                    {% if f.logo_filename %}
+                    <img class="watchlist-favorites__avatar watchlist-favorites__avatar--logo"
+                         src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
+                         alt="{{ f.ticker }}">
+                    {% else %}
+                    <span class="watchlist-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
+                        {{ f.initial }}
+                    </span>
+                    {% endif %}
 
-                <span class="watchlist-favorites__info">
-                    <span class="watchlist-favorites__name">{{ f.name or f.ticker }}</span>
-                    <span class="watchlist-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
-                </span>
+                    <span class="watchlist-favorites__info">
+                        <span class="watchlist-favorites__name">{{ f.name or f.ticker }}</span>
+                        <span class="watchlist-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
+                    </span>
+                </a>
 
                 <span class="watchlist-favorites__pnl" data-pnl-for="{{ f.ticker }}"></span>
 

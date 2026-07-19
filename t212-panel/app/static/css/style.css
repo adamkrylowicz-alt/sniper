@@ -313,22 +313,52 @@ tekst błędu, obok osobno siatka.
 .sidebar-favorites__item {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     background: transparent;
     border: 1px solid var(--hairline);
     padding: 6px 8px;
-    cursor: pointer;
-    text-align: left;
     width: 100%;
 }
 .sidebar-favorites__item:hover { border-color: var(--accent-amber); }
-.sidebar-favorites__item:disabled { opacity: 0.5; cursor: wait; }
 
 .sidebar-favorites__item--active {
     border-color: var(--accent-amber);
     background: rgba(168, 85, 255, 0.08);
     box-shadow: 0 0 8px var(--accent-glow);
 }
+
+/*
+Rozbite z jednego <button> (runda 12, 19.07.2026) na link (logo+nazwa ->
+szczegoly instrumentu) + osobna ikonka toggle (dodaj/usun z siatki 3x3) -
+klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
+*/
+.sidebar-favorites__link {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
+}
+
+.sidebar-favorites__toggle {
+    flex-shrink: 0;
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--text-muted);
+    cursor: pointer;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+}
+.sidebar-favorites__toggle .icon { width: 13px; height: 13px; }
+.sidebar-favorites__toggle:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
+.sidebar-favorites__toggle:disabled { opacity: 0.5; cursor: wait; }
+.sidebar-favorites__toggle--active { border-color: var(--accent-amber); color: var(--accent-amber); }
 
 .sidebar-favorites__avatar--logo {
     background: #fff; /* logotypy zwykle maja przezroczyste tlo - biale podloze, zeby nie znikaly na dark mode */
@@ -448,6 +478,8 @@ tekst błędu, obok osobno siatka.
     display: flex;
     align-items: center;
     gap: 8px;
+    text-decoration: none;
+    color: inherit;
 }
 
 .tile__logo {
@@ -977,6 +1009,16 @@ img.tile__logo {
     padding: 4px;
 }
 
+.watchlist-favorites__link {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: inherit;
+}
+
 .watchlist-favorites__info {
     flex: 1;
     min-width: 0;
@@ -1285,6 +1327,15 @@ img.tile__logo {
     font-weight: 700;
     font-size: 15px;
     flex-shrink: 0;
+    text-decoration: none;
+}
+
+.pie-asset-row__ticker-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
 }
 
 .pie-asset-row__main { min-width: 0; }
@@ -1512,6 +1563,12 @@ img.tile__logo {
     letter-spacing: 0.05em;
 }
 
+.focus-tile__title-link {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+}
+
 .focus-tile__subtitle {
     display: block;
     font-size: 11px;
@@ -1634,3 +1691,95 @@ img.tile__logo {
 }
 
 .focus-footer__info { color: var(--text-muted); }
+
+/*
+=== Strona szczegolow instrumentu (/instrument/<ticker>) ===
+Wspolny cel klikniecia w logo/nazwe aktywa z Warp/Focus/Watchlist/Pie/Bot -
+patrz templates/instrument_detail.html i static/js/instrument.js. Reuzywa
+.tabs/.tab (zakladki kategorii), .focus-tile__btn/.tile__preset (Kup/Sprzedaj,
+ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
+*/
+.instrument-detail { max-width: 720px; }
+
+.instrument-detail__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 8px;
+}
+
+.instrument-detail__logo {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+.instrument-detail__logo--fallback {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0B0D0F;
+    font-weight: 700;
+    font-size: 22px;
+}
+
+.instrument-detail__title { flex: 1; min-width: 0; }
+.instrument-detail__ticker-line { display: flex; align-items: center; gap: 8px; }
+.instrument-detail__ticker {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: 0.05em;
+}
+.instrument-detail__subtitle {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.instrument-detail__price-wrap { text-align: right; flex-shrink: 0; }
+.instrument-detail__price {
+    display: block;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--text-bright);
+}
+.instrument-detail__change { font-size: 13px; font-weight: 600; }
+
+.instrument-detail__chart-wrap {
+    width: 100%;
+    height: 220px;
+    border-bottom: 1px solid var(--hairline);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.instrument-detail__chart { width: 100%; height: 220px; }
+.instrument-detail__chart-empty { margin: 0; }
+
+.instrument-detail__position {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    padding: 14px 16px;
+    margin-bottom: 16px;
+}
+.instrument-detail__position-title {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    margin-bottom: 10px;
+}
+.instrument-detail__position-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+}
+.instrument-detail__position-cell { display: flex; flex-direction: column; gap: 2px; }
+.instrument-detail__position-label { font-size: 11px; color: var(--text-muted); }
+.instrument-detail__position-value { font-size: 15px; font-weight: 600; color: var(--text-bright); }
+
+.instrument-detail__qty-row { max-width: 420px; margin-bottom: 12px; }
+.instrument-detail__actions { max-width: 420px; }

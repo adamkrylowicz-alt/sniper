@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}SNIPER — {{ display_ticker }}{% endblock %}
+
+{% block content %}
+<div class="history-box instrument-detail" data-ticker="{{ ticker }}">
+
+    <div class="instrument-detail__header">
+        {% if logo_filename %}
+        <img class="instrument-detail__logo" src="{{ url_for('static', filename='logos/' + logo_filename) }}" alt="{{ display_ticker }}">
+        {% else %}
+        <span class="instrument-detail__logo instrument-detail__logo--fallback" style="background: hsl({{ hue }}, 55%, 38%);">{{ initial }}</span>
+        {% endif %}
+
+        <div class="instrument-detail__title">
+            <div class="instrument-detail__ticker-line">
+                <span class="instrument-detail__ticker">{{ display_ticker }}</span>
+                {% if is_leveraged %}<span class="badge badge--leverage">DŹWIGNIA</span>{% endif %}
+            </div>
+            <span class="instrument-detail__subtitle">{{ name }}{% if currency %} · {{ currency }}{% endif %}</span>
+        </div>
+
+        <div class="instrument-detail__price-wrap">
+            <span class="instrument-detail__price" id="instrument-price">—</span>
+            <span class="instrument-detail__change" id="instrument-change"></span>
+        </div>
+    </div>
+
+    <div class="tabs" id="instrument-range-tabs" role="tablist">
+        <button type="button" class="tab" data-days="7">1T</button>
+        <button type="button" class="tab tab--active" data-days="30">1M</button>
+        <button type="button" class="tab" data-days="90">3M</button>
+        <button type="button" class="tab" data-days="365">1R</button>
+        <button type="button" class="tab" data-days="1825">MAX</button>
+    </div>
+
+    <div class="instrument-detail__chart-wrap">
+        <svg class="instrument-detail__chart" id="instrument-chart" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+        <p class="auth-box__hint instrument-detail__chart-empty" id="instrument-chart-empty" style="display:none">
+            Brak danych świecowych dla tego zakresu.
+        </p>
+    </div>
+
+    <div class="instrument-detail__position" id="instrument-position" style="display:none">
+        <div class="instrument-detail__position-title">Twoja inwestycja</div>
+        <div class="instrument-detail__position-grid">
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">Wartość</span>
+                <span class="instrument-detail__position-value" id="position-value">—</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">Zysk</span>
+                <span class="instrument-detail__position-value" id="position-pnl">—</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">Akcje</span>
+                <span class="instrument-detail__position-value" id="position-qty">—</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">Średnia cena</span>
+                <span class="instrument-detail__position-value" id="position-avg">—</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="focus-tile__qty-row instrument-detail__qty-row">
+        <span class="tile__qty-label">ILOŚĆ</span>
+        <div class="focus-tile__qty-presets">
+            <button type="button" class="tile__preset" data-qty="0.1">0.1</button>
+            <button type="button" class="tile__preset" data-qty="0.5">0.5</button>
+            <button type="button" class="tile__preset tile__preset--active" data-qty="1">1</button>
+            <button type="button" class="tile__preset tile__preset--custom" data-qty="custom">wł.</button>
+        </div>
+        <input type="number" class="tile__qty-custom-input tile__qty-custom-input--hidden" min="0" step="0.0001" id="instrument-qty-custom">
+    </div>
+
+    <div class="focus-tile__flash" id="instrument-flash"></div>
+    <div class="focus-tile__status" id="instrument-status"></div>
+
+    <div class="focus-tile__actions instrument-detail__actions">
+        <button type="button" class="focus-tile__btn focus-tile__btn--buy" data-side="buy">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 19V5M5 12l7-7 7 7"/>
+            </svg>
+            KUP
+        </button>
+        <button type="button" class="focus-tile__btn focus-tile__btn--sell" data-side="sell">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 5v14M5 12l7 7 7-7"/>
+            </svg>
+            SPRZEDAJ
+        </button>
+    </div>
+
+    <p class="auth-box__footer">
+        <button type="button" id="btn-instrument-back" class="auth-form__submit--link" style="background:none;border:none;cursor:pointer;padding:0;font:inherit;color:inherit;text-decoration:underline">← Wróć</button>
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const INSTRUMENT_TICKER = "{{ ticker }}";
+</script>
+<script src="{{ url_for('static', filename='js/instrument.js') }}"></script>
+{% endblock %}

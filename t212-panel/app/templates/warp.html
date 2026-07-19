@@ -46,27 +46,34 @@
             {% else %}
             <div class="sidebar-favorites">
                 {% for f in favorites %}
-                <button
-                    type="button"
-                    class="sidebar-favorites__item {{ 'sidebar-favorites__item--active' if f.in_grid else '' }}"
-                    data-ticker="{{ f.ticker }}"
-                    data-in-grid="{{ 'true' if f.in_grid else 'false' }}"
-                    title="{{ 'Kliknij aby usunąć z siatki' if f.in_grid else 'Kliknij aby dodać do siatki' }}"
-                >
-                    {% if f.logo_filename %}
-                    <img class="sidebar-favorites__avatar sidebar-favorites__avatar--logo"
-                         src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
-                         alt="{{ f.ticker }}">
-                    {% else %}
-                    <span class="sidebar-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
-                        {{ f.initial }}
-                    </span>
-                    {% endif %}
-                    <span class="sidebar-favorites__info">
-                        <span class="sidebar-favorites__name">{{ f.name or f.ticker }}</span>
-                        <span class="sidebar-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
-                    </span>
-                </button>
+                <div class="sidebar-favorites__item {{ 'sidebar-favorites__item--active' if f.in_grid else '' }}">
+                    <a href="{{ url_for('instrument.detail', ticker=f.ticker) }}" class="sidebar-favorites__link" title="Szczegóły {{ f.ticker.split('_')[0] }}">
+                        {% if f.logo_filename %}
+                        <img class="sidebar-favorites__avatar sidebar-favorites__avatar--logo"
+                             src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
+                             alt="{{ f.ticker }}">
+                        {% else %}
+                        <span class="sidebar-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
+                            {{ f.initial }}
+                        </span>
+                        {% endif %}
+                        <span class="sidebar-favorites__info">
+                            <span class="sidebar-favorites__name">{{ f.name or f.ticker }}</span>
+                            <span class="sidebar-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
+                        </span>
+                    </a>
+                    <button
+                        type="button"
+                        class="sidebar-favorites__toggle {{ 'sidebar-favorites__toggle--active' if f.in_grid else '' }}"
+                        data-ticker="{{ f.ticker }}"
+                        data-in-grid="{{ 'true' if f.in_grid else 'false' }}"
+                        title="{{ 'W siatce - kliknij aby usunąć' if f.in_grid else 'Kliknij aby dodać do siatki' }}"
+                    >
+                        <svg class="icon" viewBox="0 0 24 24" fill="{{ 'currentColor' if f.in_grid else 'none' }}" stroke="currentColor" stroke-width="2">
+                            <path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.7 7.1-.6z"/>
+                        </svg>
+                    </button>
+                </div>
                 {% endfor %}
             </div>
             {% endif %}
@@ -116,14 +123,14 @@
                 <div class="tile__corner tile__corner--br"></div>
 
                 <div class="tile__header">
-                    <span class="tile__ticker-wrap">
+                    <a href="{{ url_for('instrument.detail', ticker=tile.ticker) }}" class="tile__ticker-wrap">
                         {% if tile.logo_filename %}
                         <img class="tile__logo" src="{{ url_for('static', filename='logos/' + tile.logo_filename) }}" alt="{{ tile.ticker }}">
                         {% else %}
                         <span class="tile__logo tile__logo--fallback" style="background: hsl({{ tile.hue }}, 55%, 38%);">{{ tile.initial }}</span>
                         {% endif %}
                         <span class="tile__ticker">{{ tile.ticker.split('_')[0] }}</span>
-                    </span>
+                    </a>
                     <input
                         type="number"
                         class="tile__price"

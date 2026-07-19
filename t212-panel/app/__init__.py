@@ -156,6 +156,7 @@ def _register_blueprints(app: Flask) -> None:
     from .routes.report import report_bp
     from .routes.pie import pie_bp
     from .routes.bot import bot_bp
+    from .routes.instrument import instrument_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(scalping_bp)
@@ -164,3 +165,4 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(report_bp)
     app.register_blueprint(pie_bp)
     app.register_blueprint(bot_bp)
+    app.register_blueprint(instrument_bp)

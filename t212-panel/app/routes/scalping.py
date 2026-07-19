@@ -314,10 +314,16 @@ def sparkline():
 @login_required
 def candles():
     """
-    Dane OHLC (open/high/low/close) do swiecowego wykresu w Focus Mode -
-    patrz finnhub_client.py::get_candles. Osobny endpoint od /sparkline
-    (tamten zwraca same zamkniecia, wciaz uzywany np. przez mini-wykresy
-    Smart Virtual Pie) - Focus Mode chce pelnego OHLC do swiec.
+    Dane OHLC (open/high/low/close) do swiecowego wykresu w Focus Mode i na
+    stronie szczegolow instrumentu - patrz finnhub_client.py::get_candles.
+    Osobny endpoint od /sparkline (tamten zwraca same zamkniecia, wciaz
+    uzywany np. przez mini-wykresy Smart Virtual Pie) - tu chcemy pelnego
+    OHLC do swiec.
+
+    ?days= opcjonalne (domyslnie 30) - przelacznik zakresu 1T/1M/3M/1R/MAX
+    na stronie instrumentu (patrz instrument.js). Ograniczone do rozsadnego
+    zakresu, zeby ktos przez pomylke/manipulacje URL-em nie zazadal np.
+    100 lat danych.
     """
     from ..extensions import finnhub
     ticker = request.args.get("ticker", "").strip()
@@ -326,7 +332,10 @@ def candles():
     if not finnhub:
         return jsonify(ok=False, error="Finnhub nie skonfigurowany."), 503
 
-    data = finnhub.get_candles(ticker)
+    days = request.args.get("days", default=30, type=int) or 30
+    days = min(max(days, 1), 1825)  # 1 dzien .. 5 lat
+
+    data = finnhub.get_candles(ticker, days=days)
     if not data:
         return jsonify(ok=False, error=f"Brak danych świecowych dla {ticker}."), 404
 

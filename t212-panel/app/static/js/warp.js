@@ -365,7 +365,7 @@ Po sukcesie: przeładowanie strony - środkowa siatka jest renderowana po
 stronie serwera z tickers, więc to najprostszy sposób żeby na pewno
 pokazała aktualny stan (bez duplikowania logiki renderowania kafelków w JS).
 */
-document.querySelectorAll(".sidebar-favorites__item").forEach((btn) => {
+document.querySelectorAll(".sidebar-favorites__toggle").forEach((btn) => {
     btn.addEventListener("click", async () => {
         const ticker = btn.dataset.ticker;
         const inGrid = btn.dataset.inGrid === "true";

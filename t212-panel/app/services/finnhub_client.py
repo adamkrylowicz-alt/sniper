@@ -67,6 +67,24 @@ def _fetch_yahoo_candles(symbol: str, days: int) -> list[float] | None:
     return closes[-days:]
 
 
+def _yahoo_range_for_days(days: int) -> str:
+    """
+    Mapuje liczbe dni na parametr 'range' Yahoo Chart API. Bez tego
+    _fetch_yahoo_ohlc zawsze pytal o "1mo" i przycinal ogon - dla dluzszych
+    zakresow (3M/1R/MAX na stronie szczegolow instrumentu) zwracalby wciaz
+    tylko ~miesiac danych zamiast rzeczywiscie dluzszej historii.
+    """
+    if days <= 7:
+        return "5d"
+    if days <= 30:
+        return "1mo"
+    if days <= 90:
+        return "3mo"
+    if days <= 365:
+        return "1y"
+    return "5y"
+
+
 def _fetch_yahoo_ohlc(symbol: str, days: int) -> list[dict] | None:
     """
     Jak _fetch_yahoo_candles(), ale zwraca pelne OHLC (open/high/low/close)
@@ -76,7 +94,7 @@ def _fetch_yahoo_ohlc(symbol: str, days: int) -> list[dict] | None:
     try:
         resp = requests.get(
             f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
-            params={"range": "1mo", "interval": "1d"},
+            params={"range": _yahoo_range_for_days(days), "interval": "1d"},
             timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": "Mozilla/5.0"},
         )
@@ -221,7 +239,12 @@ class FinnhubClient:
         if not symbol:
             return None
 
-        cached, ts = self._ohlc_cache.get(symbol, (None, 0))
+        # Klucz cache musi zawierac days - inaczej dwa rozne zakresy tego
+        # samego tickera (np. przelacznik 1T/1M/3M/1R/MAX na stronie
+        # szczegolow instrumentu) nadpisywalyby sobie nawzajem wynik w
+        # ramach CANDLE_TTL (1h), zwracajac zly zakres.
+        cache_key = f"{symbol}:{days}"
+        cached, ts = self._ohlc_cache.get(cache_key, (None, 0))
         if cached and time.time() - ts < self.CANDLE_TTL:
             return cached
 
@@ -240,12 +263,12 @@ class FinnhubClient:
                 {"o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
                 for o, h, l, c in zip(data["o"], data["h"], data["l"], data["c"])
             ]
-            self._ohlc_cache[symbol] = (candles, time.time())
+            self._ohlc_cache[cache_key] = (candles, time.time())
             return candles
 
         candles = _fetch_yahoo_ohlc(symbol, days)
         if candles:
-            self._ohlc_cache[symbol] = (candles, time.time())
+            self._ohlc_cache[cache_key] = (candles, time.time())
         return candles
 
     def get_profile(self, t212_ticker: str) -> dict | None:

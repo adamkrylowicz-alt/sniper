@@ -64,14 +64,16 @@
     <div class="pie-assets" id="bot-assets-list">
         {% for a in bot_assets %}
         <div class="pie-asset-row" data-asset-id="{{ a.id }}" data-ticker="{{ a.ticker }}">
-            <span class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);">
+            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="Szczegóły {{ a.display_ticker }}">
                 {{ a.display_ticker[0] }}
-            </span>
+            </a>
 
             <div class="pie-asset-row__main">
                 <div class="pie-asset-row__title-line">
-                    <span class="pie-asset-row__ticker">{{ a.display_ticker }}</span>
-                    <span class="pie-asset-row__currency">{{ a.currency }}</span>
+                    <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__ticker-link">
+                        <span class="pie-asset-row__ticker">{{ a.display_ticker }}</span>
+                        <span class="pie-asset-row__currency">{{ a.currency }}</span>
+                    </a>
                 </div>
                 <div class="pie-asset-row__fields">
                     <label>Kwota wejścia
