@@ -1907,3 +1907,17 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 }
 .portfolio-summary__cell { display: flex; flex-direction: column; gap: 4px; }
 .portfolio-summary__cell .instrument-detail__position-value { font-size: 22px; }
+
+/*
+Wyrazisty wizualny puls przy zywym odswiezeniu (portfolio.js) - NIEZALEZNY
+od dzwieku (playUpdate), bo dzwiek z timera bez wczesniejszego kliknieca
+moze nie zagrac wcale (autoplay policy przegladarek - twardy limit, nie
+bug). Wizualny sygnal dziala ZAWSZE, bez wzgledu na to czy audio jest
+odblokowane.
+*/
+.portfolio-summary--pulse { animation: portfolio-pulse 0.8s ease; }
+@keyframes portfolio-pulse {
+    0% { box-shadow: 0 0 0 0 var(--accent-glow); }
+    30% { box-shadow: 0 0 24px 6px var(--accent-glow); }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}

@@ -61,7 +61,7 @@ function renderPortfolio(positions, totalValue, totalPpl) {
     }).join("");
 
     container.innerHTML = `
-        <div class="portfolio-summary">
+        <div class="portfolio-summary portfolio-summary--pulse">
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Wartość portfela</span>
                 <span class="instrument-detail__position-value">${totalValue.toFixed(2)}</span>
