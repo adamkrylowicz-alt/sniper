@@ -41,7 +41,15 @@ const SOUND_VOLUME_KEY = "sniper_sound_volume_pct";
 const MAX_SOUND_GAIN = 0.35;
 
 function getSoundVolumePct() {
-    const stored = Number(localStorage.getItem(SOUND_VOLUME_KEY));
+    // UWAGA: localStorage.getItem() zwraca null gdy klucz nigdy nie byl
+    // ustawiony (czyli dla KAZDEGO usera dopoki nie ruszy suwaka), a
+    // Number(null) w JS to 0, NIE NaN - bez tego jawnego sprawdzenia
+    // brak zapisanej preferencji wychodzil jako "wyciszone" zamiast
+    // domyslnych 100%. To byl realny bug: dzwiek byl cichy dla WSZYSTKICH,
+    // zawsze, odkad powstal suwak.
+    const raw = localStorage.getItem(SOUND_VOLUME_KEY);
+    if (raw === null) return 100;
+    const stored = Number(raw);
     if (!Number.isFinite(stored)) return 100;
     return Math.min(100, Math.max(0, stored));
 }

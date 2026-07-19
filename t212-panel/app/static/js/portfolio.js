@@ -111,7 +111,12 @@ async function refreshPortfolio() {
         const data = await resp.json();
 
         if (!data.ok) {
-            showRetry(`Nie udało się odświeżyć na żywo (${data.error || "błąd"}) - pokazuję ostatnio znane dane.`);
+            // 429 (rate limit T212 demo) jest CZESTY i oczekiwany - spokojny,
+            // krotki komunikat zamiast strasznego zrzutu surowego wyjatku.
+            const message = data.rate_limited
+                ? "T212 chwilowo zajęty, pokazuję ostatnio znane dane."
+                : "Nie udało się odświeżyć na żywo, pokazuję ostatnio znane dane.";
+            showRetry(message);
             return;
         }
 

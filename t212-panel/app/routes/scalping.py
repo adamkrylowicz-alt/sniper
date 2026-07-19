@@ -641,9 +641,12 @@ def portfolio_refresh():
     try:
         result = _fetch_portfolio_live(current_user_id())
     except RuntimeError as exc:
-        return jsonify(ok=False, error=str(exc)), 500
+        return jsonify(ok=False, error=str(exc), rate_limited=False), 500
     except T212APIError as exc:
-        return jsonify(ok=False, error=str(exc)), 502
+        # rate_limited osobno, zeby JS mogl pokazac spokojny komunikat zamiast
+        # surowego zrzutu wyjatku - 429 na demo T212 jest CZESTY i oczekiwany
+        # (bardzo waski limit), nie realny blad wart alarmowania.
+        return jsonify(ok=False, error=str(exc), rate_limited=(exc.status_code == 429)), 502
 
     return jsonify(
         ok=True,
