@@ -45,7 +45,7 @@ function playTone(freq, durationMs, waveType) {
     const gain = audioCtx.createGain();
     osc.frequency.value = freq;
     osc.type = waveType || "square";
-    gain.gain.setValueAtTime(0.05, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start();
     osc.stop(audioCtx.currentTime + durationMs / 1000);
