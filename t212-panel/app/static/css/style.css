@@ -158,6 +158,13 @@ html[data-theme="light"] .topbar__mark {
     padding: 0;
 }
 .topbar__link:hover { color: var(--accent-amber); }
+.topbar__link--active {
+    color: var(--text-bright);
+    text-decoration: underline;
+    text-decoration-color: var(--accent-amber);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 6px;
+}
 
 .topbar__logout { margin: 0; }
 
@@ -1603,16 +1610,51 @@ img.tile__logo {
 }
 
 .focus-tile__ticker {
+    display: block;
     font-size: 22px;
     font-weight: 700;
     color: var(--text-bright);
     letter-spacing: 0.05em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .focus-tile__title-link {
-    display: block;
+    display: flex;
+    align-items: center;
+    gap: 10px;
     text-decoration: none;
     color: inherit;
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+}
+
+.focus-tile__title-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.focus-tile__logo {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.focus-tile__logo--fallback {
+    color: #fff;
+    font-weight: 700;
+    font-size: 15px;
+}
+img.focus-tile__logo {
+    background: #fff;
+    object-fit: contain;
+    padding: 3px;
 }
 
 .focus-tile__subtitle {
@@ -1623,6 +1665,7 @@ img.tile__logo {
 }
 
 .focus-tile__price-wrap {
+    flex-shrink: 0;
     text-align: right;
 }
 

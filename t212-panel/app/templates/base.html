@@ -11,12 +11,12 @@
         <span class="topbar__mark">◆ SNAJPER</span>
         <nav class="topbar__nav">
             {% if is_authenticated %}
-            <a class="topbar__link" href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
-            <a class="topbar__link" href="{{ url_for('scalping.focus_view') }}">Focus</a>
-            <a class="topbar__link" href="{{ url_for('scalping.portfolio_view') }}">Aktywa</a>
-            <a class="topbar__link" href="{{ url_for('pie.list_view') }}">Virtual Pie</a>
-            <a class="topbar__link" href="{{ url_for('bot.view') }}">Bot</a>
-            <a class="topbar__link" href="{{ url_for('settings.index') }}">Ustawienia</a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.warp_view' }}" href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.focus_view' }}" href="{{ url_for('scalping.focus_view') }}">Focus</a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.portfolio_view' }}" href="{{ url_for('scalping.portfolio_view') }}">Aktywa</a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'pie' }}" href="{{ url_for('pie.list_view') }}">Virtual Pie</a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'bot' }}" href="{{ url_for('bot.view') }}">Bot</a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint in ('settings', 'api_keys') }}" href="{{ url_for('settings.index') }}">Ustawienia</a>
             <button type="button" class="topbar__link topbar__link--btn" id="report-problem-btn">Zgłoś problem</button>
             <form method="post" action="{{ url_for('auth.logout_view') }}" class="topbar__logout">
                 <button type="submit" class="topbar__link topbar__link--btn">Wyloguj</button>

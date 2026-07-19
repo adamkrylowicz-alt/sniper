@@ -423,11 +423,22 @@ def focus_view():
         {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
         if tickers else {}
     )
+    # Logo/awatar na kafelku (brakowalo od zawsze - Focus Mode nigdy nie mial
+    # tego dociagniete, w odroznieniu od Warp/Watchlist - zob. pliki/to do.txt).
+    # ensure_logos_auto ten sam ograniczony wzorzec co warp_view()/watchlist_view().
+    logo_cache.ensure_logos_auto(
+        current_app.static_folder,
+        current_app.config.get("LOGO_DEV_API_KEY"),
+        tickers,
+    )
     tile_data = [
         {
             "ticker": t,
             "name": friendly_name(instruments_by_ticker[t].name) if t in instruments_by_ticker else "",
             "currency": instruments_by_ticker[t].currency_code if t in instruments_by_ticker else "",
+            "hue": avatar_hue(t),
+            "initial": t.split("_")[0][0].upper(),
+            "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),
         }
         for t in tickers
     ]
