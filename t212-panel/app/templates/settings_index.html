@@ -31,6 +31,18 @@
         <button type="submit" class="account-bar__btn">Zapisz</button>
     </form>
 
+    <hr class="watchlist-divider">
+    <h2 class="auth-box__title" style="font-size:12px">POWIADOMIENIA DŹWIĘKOWE</h2>
+    <p class="auth-box__hint">
+        Głośność dźwięków przy zleceniach (Kup/Sprzedaj) i cichych odświeżeniach
+        danych. Zapamiętane w tej przeglądarce, 0% = wyciszone.
+    </p>
+    <div style="display:flex; gap:12px; align-items:center; max-width:420px">
+        <input type="range" id="sound-volume-slider" min="0" max="100" step="5" value="100" style="flex:1">
+        <span id="sound-volume-value" style="min-width:44px; color:var(--text-muted); font-size:12px">100%</span>
+        <button type="button" id="sound-volume-test" class="account-bar__btn">Testuj</button>
+    </div>
+
     {% if is_admin %}
     <hr class="watchlist-divider">
     <h2 class="auth-box__title" style="font-size:12px">OCZEKUJĄCE KONTA ({{ pending_users|length }})</h2>

@@ -32,6 +32,24 @@ Przeniesione tu z warp.js, bo pie.js (Smart Virtual Pie) też ich potrzebuje.
 */
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
+// Glosnosc powiadomien dzwiekowych - 0-100%, trzymana w localStorage (czysto
+// kosmetyczna preferencja przegladarki, nie ma potrzeby synchronizowac jej
+// przez serwer jak np. motywu jasny/ciemny). MAX_SOUND_GAIN to faktyczny
+// gain Web Audio przy 100% - podbijanie samego suwaka wyzej niz to
+// zaczyna przeszkadzac (zniekształcenia przy prostych falach square/sine).
+const SOUND_VOLUME_KEY = "sniper_sound_volume_pct";
+const MAX_SOUND_GAIN = 0.35;
+
+function getSoundVolumePct() {
+    const stored = Number(localStorage.getItem(SOUND_VOLUME_KEY));
+    if (!Number.isFinite(stored)) return 100;
+    return Math.min(100, Math.max(0, stored));
+}
+
+function setSoundVolumePct(pct) {
+    localStorage.setItem(SOUND_VOLUME_KEY, String(Math.min(100, Math.max(0, pct))));
+}
+
 function playTone(freq, durationMs, waveType) {
     // AudioContext startuje w stanie "suspended" dopoki przegladarka nie
     // zobaczy gestu usera (autoplay policy) - powstal PRZED pierwszym
@@ -41,11 +59,14 @@ function playTone(freq, durationMs, waveType) {
     if (audioCtx.state === "suspended") {
         audioCtx.resume();
     }
+    const volumePct = getSoundVolumePct();
+    if (volumePct <= 0) return; // 0% = wyciszone, nie ma sensu nawet tworzyc oscylatora
+
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.frequency.value = freq;
     osc.type = waveType || "square";
-    gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    gain.gain.setValueAtTime(MAX_SOUND_GAIN * (volumePct / 100), audioCtx.currentTime);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start();
     osc.stop(audioCtx.currentTime + durationMs / 1000);
@@ -221,6 +242,31 @@ document.addEventListener("DOMContentLoaded", () => {
             console.error("Nie udało się zapisać motywu:", err);
         }
     });
+});
+
+/*
+Suwak glosnosci powiadomien dzwiekowych w Ustawieniach - patrz
+settings_index.html. Element istnieje TYLKO na tej stronie, stad guard
+"if (!slider) return" (ten sam wzorzec co theme-toggle wyzej, wspolny
+common.js zamiast osobnego settings.js na jeden mały widget).
+*/
+document.addEventListener("DOMContentLoaded", () => {
+    const slider = document.getElementById("sound-volume-slider");
+    const valueLabel = document.getElementById("sound-volume-value");
+    const testBtn = document.getElementById("sound-volume-test");
+    if (!slider) return;
+
+    slider.value = getSoundVolumePct();
+    if (valueLabel) valueLabel.textContent = `${slider.value}%`;
+
+    slider.addEventListener("input", () => {
+        setSoundVolumePct(Number(slider.value));
+        if (valueLabel) valueLabel.textContent = `${slider.value}%`;
+    });
+
+    if (testBtn) {
+        testBtn.addEventListener("click", () => playSuccess());
+    }
 });
 
 /*
