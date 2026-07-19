@@ -94,8 +94,20 @@ def _password_policy_error(username: str, password: str) -> str | None:
 
 @auth_bp.route("/register", methods=["GET", "POST"])
 def register_view():
+    """
+    Rejestracja zamyka się SAMA po powstaniu pierwszego konta - appka jest
+    projektowana pod jednego uzytkownika (patrz komentarze w session_store.py/
+    scalping.py), a od 19.07.2026 jest dostepna publicznie przez
+    nginx-proxy-manager (sniper.duckdns.org). Bez tej blokady KAZDY kto trafi
+    na /auth/register moglby zalozyc sobie konto na cudzej appce handlowej.
+    Basic Auth w NPM to pierwsza warstwa, ale ta blokada zostaje NIEZALEZNIE
+    - appka nie powinna polegac wylacznie na konfiguracji reverse proxy.
+    """
+    if User.query.count() > 0:
+        return render_template("auth/register.html", error=None, closed=True)
+
     if request.method == "GET":
-        return render_template("auth/register.html", error=None)
+        return render_template("auth/register.html", error=None, closed=False)
 
     username = (request.form.get("username") or "").strip()
     password = request.form.get("password") or ""

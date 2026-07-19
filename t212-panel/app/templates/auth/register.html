@@ -5,6 +5,12 @@
 <div class="auth-box">
     <h1 class="auth-box__title">REJESTRACJA</h1>
 
+    {% if closed %}
+    <p class="auth-box__hint">Rejestracja jest zamknięta — konto już istnieje.</p>
+    <p class="auth-box__footer">
+        <a href="{{ url_for('auth.login_view') }}">Zaloguj się</a>
+    </p>
+    {% else %}
     {% if error %}
     <div class="auth-box__error">{{ error }}</div>
     {% endif %}
@@ -31,5 +37,6 @@
     <p class="auth-box__footer">
         Masz już konto? <a href="{{ url_for('auth.login_view') }}">Zaloguj się</a>
     </p>
+    {% endif %}
 </div>
 {% endblock %}
