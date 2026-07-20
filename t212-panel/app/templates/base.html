@@ -6,7 +6,7 @@
     <title>{% block title %}SNAJPER{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body>
+<body class="{{ 'page-bot' if request.blueprint == 'bot' }}">
     <header class="topbar">
         <span class="topbar__mark">◆ SNAJPER</span>
         <nav class="topbar__nav">

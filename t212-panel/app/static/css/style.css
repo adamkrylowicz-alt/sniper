@@ -112,6 +112,10 @@ html[data-theme="light"] .topbar__mark {
 }
 
 .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: var(--bg);
     display: grid;
     grid-template-columns: 1fr auto 1fr;
     align-items: center;
@@ -866,6 +870,36 @@ img.tile__logo {
     display: block;
 }
 .auth-form__submit:hover { background: rgba(168, 85, 255, 0.14); box-shadow: 0 0 10px var(--accent-glow); }
+
+/* Przypięty na stałe do dołu viewportu (nie tylko sekcji) - na życzenie
+   Adama, żeby przy długiej stronie (Bot: dużo pól ustawień + dziennik pod
+   spodem) nie trzeba było scrollować z powrotem do góry/środka po kliknięcie
+   zapisu. margin-top wyłączone (nadpisuje .auth-form__submit) - fixed
+   pozycjonowanie i tak samo daje odstęp przez `bottom`. */
+.auth-form__submit--sticky {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 40;
+    width: 260px;
+    max-width: calc(100% - 40px);
+    margin-top: 0;
+    background: var(--panel);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.35);
+}
+.auth-form__submit--sticky:hover { box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.35), 0 0 10px var(--accent-glow); }
+
+/* Miejsce pod przypiętym .auth-form__submit--sticky, żeby nie zasłaniał
+   ostatnich wierszy dziennika bota pod spodem strony. */
+#bot-panel { padding-bottom: 90px; }
+
+/* .app-footer (stopka "Koszty i opłaty", base.html, na KAŻDEJ stronie) na
+   stronie Bota potrzebuje dodatkowego marginesu - inaczej na samym końcu
+   scrolla nachodzi na przypięty .auth-form__submit--sticky ("2 przyciski na
+   sobie"). Scoped przez klasę body.page-bot (ustawianą w base.html), żeby
+   nie ruszać stopki na żadnej innej stronie. */
+.page-bot .app-footer { margin-bottom: 70px; }
 
 .auth-form__checkbox {
     display: flex;
