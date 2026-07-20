@@ -456,6 +456,14 @@ class ActiveTrade(db.Model):
     next_sell_retry_at = db.Column(db.DateTime, nullable=True)
     sell_blocked = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Ile tickera user posiadał w portfolio T212 TUŻ PRZED złożeniem tego
+    # zlecenia kupna (patrz services/bot_engine.py::_enter_position). Gdy
+    # zlecenie zniknie z pending (wykonane/anulowane), _retry_pending_sells()
+    # liczy filled = aktualne_owned - baseline_owned_quantity - odejmuje
+    # WCZEŚNIEJSZE posiadanie tego tickera (np. z ręcznego tradingu), więc
+    # nigdy nie sprzeda cudzej/starszej pozycji tego samego tickera.
+    baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
     quantity = db.Column(db.Numeric(12, 4), nullable=False)
     allocated_value = db.Column(db.Numeric(12, 2), nullable=False)

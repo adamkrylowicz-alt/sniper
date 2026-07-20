@@ -48,20 +48,29 @@ niezależne przyczyny):
    sesji (17.07) niepowiązaną, starą pozycję 0.006 AAPL - kod zobaczył
    "owned=0.006" w portfolio i SPRZEDAŁ TĘ STARĄ pozycję, podczas gdy
    dzisiejsze zlecenie kupna (0.009) wciąż czekało niewypełnione w kolejce.
-   ActiveTrade oznaczyło się jako "załatwione" (sell_order_id ustawiony),
-   więc gdyby dzisiejsze zlecenie później faktycznie się wypełniło, te NOWE
-   akcje nigdy nie dostałyby własnego LIMIT SELL - zostałyby trwale
-   niewidoczne dla retry loop. Fix: _retry_pending_sells() sprawdza
-   filledQuantity KONKRETNEGO trade.buy_order_id (get_pending_orders() dla
-   zleceń wciąż w kolejce, get_order_history() dla tych co już z niej
-   zniknęły - wykonane w całości albo anulowane/odrzucone), nigdy zbiorczego
-   stanu portfela.
+   Fix (druga wersja): _retry_pending_sells() sprawdzało filledQuantity
+   KONKRETNEGO trade.buy_order_id - get_pending_orders() dla zleceń wciąż w
+   kolejce, get_order_history() (stronicowana) dla tych co już z niej
+   zniknęły.
+
+3. Druga wersja fixu (get_order_history) okazała się niewystarczająca na
+   koncie z BARDZO dużą ręczną aktywnością (ten sam produkcyjny użytkownik
+   handluje ręcznie tą samą appką) - zlecenie bota potrafiło "wypaść" poza
+   nawet 150 najnowszych zleceń (3 strony po 50) zanim retry zdążył je
+   znaleźć, więc pozycja utykała w nieskończonym "nie znaleziono, spróbuję
+   później". Ostateczny fix: ActiveTrade.baseline_owned_quantity - zapis ile
+   tickera user posiadał w portfolio TUŻ PRZED złożeniem zlecenia kupna
+   (_enter_position). Gdy zlecenie zniknie z pending, liczymy
+   filled = aktualne_owned_w_portfolio - baseline_owned_quantity, NIE surowe
+   aktualne_owned (to był dokładnie błąd z punktu 2) - odejmowanie baseline
+   izoluje wkład TEGO zlecenia nawet gdy user ma inne pozycje tego samego
+   tickera, a portfolio (w odróżnieniu od historii zleceń) nie ma problemu ze
+   skalą niezależnie od tego ile zleceń konto wygenerowało.
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import re
 import uuid
 from decimal import Decimal
 
@@ -132,48 +141,18 @@ def _get_client_for_user(user_id: int, settings: RiskSettings) -> T212Client | N
     return T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
 
 
-HISTORY_PAGE_SIZE = 50
-HISTORY_SEARCH_MAX_PAGES = 3
-
-_CURSOR_RE = re.compile(r"[?&]cursor=([^&]+)")
-
-
-def _next_cursor(next_page_path: str | None) -> str | None:
+def _portfolio_quantities(client: T212Client) -> dict[str, Decimal]:
     """
-    T212Client.get_order_history(cursor=...) oczekuje SAMEJ wartości cursora
-    (Long), ale `nextPagePath` z odpowiedzi T212 to PEŁNA ścieżka z query
-    stringiem (np. "/api/v0/equity/history/orders?cursor=123&limit=50") -
-    przekazanie całej ścieżki jako cursor kończy się 400 invalid-request
-    (potwierdzone empirycznie). Wyciąga samą wartość.
+    Jedno zapytanie /equity/portfolio, zamienione na {ticker: owned_quantity}.
+    Współdzielone przez cały retry-pass w _retry_pending_sells() - przy N
+    zawieszonych pozycjach to i tak jedno zapytanie, nie N (rate limit demo
+    jest ciasny). UWAGA: to jest CAŁKOWITE, bieżące posiadanie tickera - do
+    ustalenia ile pochodzi z KONKRETNEGO zlecenia trzeba odjąć
+    trade.baseline_owned_quantity (patrz _attempt_sell_placement i "Historia
+    buga" w docstringu modułu, punkty 2-3).
     """
-    if not next_page_path:
-        return None
-    match = _CURSOR_RE.search(next_page_path)
-    return match.group(1) if match else None
-
-
-def _find_in_history(client: T212Client, order_id: str) -> dict | None:
-    """
-    Szuka KONKRETNEGO zlecenia w historii T212, stronicując (nextPagePath,
-    patrz _next_cursor) aż do znalezienia albo wyczerpania
-    HISTORY_SEARCH_MAX_PAGES stron. Bez tego zlecenie bota "wypada" z
-    widoczności gdy konto ma dużo INNEJ aktywności (ręczny trading tą samą
-    appką) między złożeniem zlecenia a jego zniknięciem z pending - dokładnie
-    to zaobserwowane na koncie produkcyjnym (2026-07-20). Ograniczone do
-    kilku stron (rate limit demo jest bardzo ciasny) - jeśli zlecenie nie
-    znajdzie się w HISTORY_SEARCH_MAX_PAGES*HISTORY_PAGE_SIZE najnowszych
-    zleceniach, dalsze retry (kolejny tick) spróbuje ponownie od nowa.
-    """
-    cursor = None
-    for _ in range(HISTORY_SEARCH_MAX_PAGES):
-        history = client.get_order_history(limit=HISTORY_PAGE_SIZE, cursor=cursor)
-        for item in history.get("items", []):
-            if str(item.get("id")) == order_id:
-                return item
-        cursor = _next_cursor(history.get("nextPagePath"))
-        if not cursor:
-            break
-    return None
+    portfolio = client.get_portfolio()
+    return {p["ticker"]: Decimal(str(p.get("quantity", 0))) for p in portfolio}
 
 
 def _bump_retry(user_id: int, trade: ActiveTrade, reason: str) -> None:
@@ -188,16 +167,18 @@ def _bump_retry(user_id: int, trade: ActiveTrade, reason: str) -> None:
 
 
 def _attempt_sell_placement(
-    user_id: int, client: T212Client, trade: ActiveTrade,
-    take_profit_usd: Decimal, pending_by_id: dict[str, dict],
+    user_id: int, client: T212Client, trade: ActiveTrade, take_profit_usd: Decimal,
+    pending_by_id: dict[str, dict], owned_map: dict[str, Decimal] | None,
 ) -> None:
     """
-    Sprawdza wypełnienie KONKRETNEGO trade.buy_order_id - NIGDY zbiorczego
-    stanu portfela (patrz "Historia buga" punkt 2 w docstringu modułu, gdzie
-    to pomyliło się z inną, starszą pozycją tego samego tickera). Zlecenie
-    wciąż w pending_by_id -> filledQuantity stamtąd. Zlecenie które z
-    pending_by_id zniknęło -> stan końcowy (wykonane w całości albo
-    anulowane/odrzucone), sprawdzamy get_order_history().
+    Sprawdza wypełnienie KONKRETNEGO trade.buy_order_id, nie zbiorczego stanu
+    portfela wprost (patrz "Historia buga" punkt 2 w docstringu modułu).
+    Zlecenie wciąż w pending_by_id -> filledQuantity stamtąd wprost. Zlecenie
+    które z pending_by_id zniknęło -> stan końcowy (wykonane w całości albo
+    anulowane/odrzucone) - liczymy filled = owned_map[ticker] -
+    trade.baseline_owned_quantity (ile PRZYBYŁO tego tickera odkąd złożyliśmy
+    TO zlecenie, patrz punkt 3 - odjęcie baseline izoluje wkład tego
+    konkretnego zlecenia nawet gdy user ma inne pozycje tego samego tickera).
 
     Sprzedaje MIN(filled, zażądana) - przy częściowym wykonaniu koryguje
     trade.quantity/allocated_value do faktycznie wypełnionej ilości i loguje
@@ -214,35 +195,27 @@ def _attempt_sell_placement(
             )
             return
     else:
-        try:
-            item = _find_in_history(client, trade.buy_order_id)
-        except T212APIError as exc:
+        if owned_map is None:
             _bump_retry(
                 user_id, trade,
-                f"zlecenie kupna zniknęło z pending, a sprawdzenie historii nie powiodło się ({exc}).",
+                "zlecenie kupna zniknęło z pending, ale nie udało się pobrać portfolio żeby "
+                "sprawdzić faktyczną ilość - spróbuję ponownie.",
             )
             return
 
-        if item is None:
-            _bump_retry(
-                user_id, trade,
-                f"zlecenie kupna zniknęło z pending i nie widać go w ostatnich "
-                f"{HISTORY_SEARCH_MAX_PAGES * HISTORY_PAGE_SIZE} zleceniach z historii.",
-            )
-            return
-
-        filled_qty = Decimal(str(item.get("filledQuantity", 0)))
+        current_owned = owned_map.get(trade.ticker, Decimal("0"))
+        filled_qty = max(Decimal("0"), current_owned - trade.baseline_owned_quantity)
         if filled_qty <= 0:
-            # Zlecenie zakończone (nie ma go już w pending) BEZ wykonania -
-            # anulowane/odrzucone. Zero akcji kupionych, nigdy nie będzie -
-            # dalsze retry byłyby stratą czasu i rate limitu.
-            trade.sell_blocked = True
-            db.session.commit()
-            _log(
-                user_id, "ERROR",
-                f"{trade.ticker}: zlecenie kupna zakończone bez wykonania (status {item.get('status')}) - "
-                "zero akcji kupionych, pozycja NIGDY nie dostanie LIMIT SELL, wymaga ręcznej interwencji.",
-                trade.position_group_id,
+            # Zlecenie zniknęło z pending, ale portfolio nie pokazuje żadnego
+            # PRZYROSTU od baseline - albo anulowane/odrzucone (zero kupione,
+            # na zawsze), albo księgowanie portfolio jeszcze nie nadążyło.
+            # Nie da się tego pewnie rozróżnić bez statusu zlecenia (a tego
+            # unikamy - patrz punkt 3), więc bezpieczny default to dalszy
+            # retry z rosnącym backoffem, nie trwałe zablokowanie.
+            _bump_retry(
+                user_id, trade,
+                f"zlecenie kupna zniknęło z pending, portfolio nie pokazuje przyrostu "
+                f"tickera od baseline ({trade.baseline_owned_quantity}) - być może jeszcze się księguje.",
             )
             return
 
@@ -333,8 +306,21 @@ def _retry_pending_sells(
             return
     pending_by_id = {str(o.get("id")): o for o in pending}
 
+    # Portfolio odpytujemy TYLKO gdy faktycznie potrzebne (co najmniej jedno
+    # zlecenie zniknęło już z pending) - oszczędza zapytanie w ciasnym rate
+    # limicie demo, gdy wszystkie kandydaty wciąż grzecznie czekają w kolejce.
+    # owned_map=None (nie pusty dict) gdy zapytanie się nie udało - odróżnia
+    # "sprawdzone, zero przyrostu" od "nie udało się sprawdzić" w
+    # _attempt_sell_placement, żeby nie zgadywać na podstawie brakujących danych.
+    owned_map: dict[str, Decimal] | None = None
+    if any(trade.buy_order_id not in pending_by_id for trade in candidates):
+        try:
+            owned_map = _portfolio_quantities(client)
+        except T212APIError as exc:
+            _log(user_id, "ERROR", f"Retry LIMIT SELL: błąd pobierania portfolio - {exc}")
+
     for trade in candidates:
-        _attempt_sell_placement(user_id, client, trade, settings.take_profit_usd, pending_by_id)
+        _attempt_sell_placement(user_id, client, trade, settings.take_profit_usd, pending_by_id, owned_map)
 
 
 def reconcile(user_id: int) -> None:
@@ -480,6 +466,19 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
 
     client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
 
+    # Zapis TUŻ PRZED złożeniem zlecenia - ile tickera user już posiada
+    # (np. z ręcznego tradingu tą samą appką). _retry_pending_sells() później
+    # odejmuje tę wartość od aktualnego portfolio, żeby wyizolować wkład
+    # TEGO konkretnego zlecenia (patrz "Historia buga" punkt 3 w docstringu
+    # modułu). Błąd tego zapytania NIE blokuje zakupu - to tylko dokładność
+    # późniejszego dopasowania, nie warunek wejścia w pozycję; brak baseline
+    # (0) w najgorszym razie odtwarza dawne, prostsze zachowanie.
+    try:
+        existing_position = client.get_position(asset.ticker)
+    except T212APIError:
+        existing_position = None
+    baseline_owned_quantity = Decimal(str(existing_position["quantity"])) if existing_position else Decimal("0")
+
     try:
         buy_result = client.place_market_order(asset.ticker, quantity)
     except T212APIError as exc:
@@ -504,6 +503,7 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
         buy_order_id=buy_result.order_id, sell_order_id=None,
         buy_price=buy_price, quantity=quantity, allocated_value=allocated_value,
         average_price=buy_price, dca_level=0, status="OPEN", is_paper=False,
+        baseline_owned_quantity=baseline_owned_quantity,
     )
     db.session.add(trade)
     db.session.commit()
