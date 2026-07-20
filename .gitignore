@@ -9,6 +9,7 @@ t212-panel/instance/
 # Zrzuty ekranu, logi bledow, pliki tymczasowe - nie sa czescia kodu
 pliki/*.png
 pliki/error.txt
+pliki/to do.txt
 t212-panel/nohup.out
 
 # Stary, popsuty backup z 17.07 - nie wersjonujemy
