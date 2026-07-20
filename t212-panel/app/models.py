@@ -374,6 +374,15 @@ class RiskSettings(db.Model):
 
     dca_scenario = db.Column(db.String(100), nullable=False, default="1,1,1,1,1")
     max_dca_levels = db.Column(db.Integer, nullable=False, default=5)
+
+    # O ile % (wzgledem CENY WEJSCIA POZIOMU 0 - ActiveTrade.grid_anchor_price,
+    # NIE ruchomej sredniej) ma spasc cena, zeby bot dokupil kolejny poziom
+    # DCA - patrz services/bot_engine.py::_trigger_dca_buys. Brak tego pola w
+    # pierwotnym PRD/schemacie - dodane na wyrazne zyczenie Adama (2026-07-20,
+    # "polacz opcje 2 i 3": domyslnie 5%, ale edytowalne w UI zamiast na
+    # sztywno w kodzie).
+    dca_trigger_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.05)
+
     max_spread_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.05)
     take_profit_usd = db.Column(db.Numeric(12, 4), nullable=False, default=0.05)
     max_daily_loss = db.Column(db.Numeric(12, 2), nullable=False, default=10.0)
@@ -447,6 +456,13 @@ class ActiveTrade(db.Model):
     buy_order_id = db.Column(db.String(64), nullable=False)
     sell_order_id = db.Column(db.String(64), nullable=True)
 
+    # "Gonienie" ceny LIMIT BUY (patrz services/bot_engine.py::_retry_pending_buys) -
+    # jeśli cena rynkowa odjedzie powyżej wystawionego LIMIT BUY (nigdy się już
+    # sam nie wypełni), bot anuluje i wystawia nowy po aktualnej cenie. Ten sam
+    # wzorzec backoffu co sell_retry_count/next_sell_retry_at.
+    buy_retry_count = db.Column(db.Integer, nullable=False, default=0)
+    next_buy_retry_at = db.Column(db.DateTime, nullable=True)
+
     # Retry LIMIT SELL (patrz services/bot_engine.py::_retry_pending_sells) -
     # next_sell_retry_at=NULL oznacza "sprobuj przy najblizszym ticku",
     # sell_blocked=True oznacza blad T212 inny niz "selling-equity-not-owned"
@@ -463,6 +479,24 @@ class ActiveTrade(db.Model):
     # WCZEŚNIEJSZE posiadanie tego tickera (np. z ręcznego tradingu), więc
     # nigdy nie sprzeda cudzej/starszej pozycji tego samego tickera.
     baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+
+    # Cena WEJŚCIA POZIOMU 0 (pierwszego zakupu), USTAWIANA RAZ w
+    # _enter_position() i NIGDY później nie modyfikowana (w odróżnieniu od
+    # buy_price, który _retry_pending_buys() nadpisuje przy "gonieniu" ceny) -
+    # stały punkt odniesienia siatki DCA. Poziom N wyzwala się gdy cena
+    # spadnie do grid_anchor_price * (1 - dca_trigger_pct * N), patrz
+    # services/bot_engine.py::_trigger_dca_buys.
+    grid_anchor_price = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+
+    # Zawieszona noga DCA w trakcie potwierdzania wykonania - CAŁKOWICIE
+    # NIEZALEŻNE od buy_order_id/baseline_owned_quantity (tamte dotyczą
+    # WYŁĄCZNIE pierwszego wejścia, poziom 0, i są już "rozwiązane" zanim
+    # jakikolwiek poziom DCA może się wyzwolić - wymaga sell_order_id
+    # ustawionego). Patrz _trigger_dca_buys/_confirm_dca_fills.
+    dca_pending_buy_order_id = db.Column(db.String(64), nullable=True)
+    dca_pending_quantity = db.Column(db.Numeric(12, 4), nullable=True)
+    dca_pending_price = db.Column(db.Numeric(12, 4), nullable=True)
+    dca_pending_baseline_quantity = db.Column(db.Numeric(12, 4), nullable=True)
 
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
     quantity = db.Column(db.Numeric(12, 4), nullable=False)

@@ -200,17 +200,22 @@ def update_settings():
     try:
         dca_scenario = (payload.get("dca_scenario") or settings.dca_scenario).strip()
         max_dca_levels = int(payload.get("max_dca_levels", settings.max_dca_levels))
+        dca_trigger_pct = Decimal(str(payload.get("dca_trigger_pct", settings.dca_trigger_pct)))
         max_spread_pct = Decimal(str(payload.get("max_spread_pct", settings.max_spread_pct)))
         take_profit_usd = Decimal(str(payload.get("take_profit_usd", settings.take_profit_usd)))
         max_daily_loss = Decimal(str(payload.get("max_daily_loss", settings.max_daily_loss)))
 
-        if max_dca_levels <= 0 or max_spread_pct <= 0 or take_profit_usd <= 0 or max_daily_loss <= 0:
+        if (
+            max_dca_levels <= 0 or dca_trigger_pct <= 0 or max_spread_pct <= 0
+            or take_profit_usd <= 0 or max_daily_loss <= 0
+        ):
             raise ValueError("Wartości muszą być dodatnie.")
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Nieprawidłowe dane w ustawieniach ryzyka."), 400
 
     settings.dca_scenario = dca_scenario
     settings.max_dca_levels = max_dca_levels
+    settings.dca_trigger_pct = dca_trigger_pct
     settings.max_spread_pct = max_spread_pct
     settings.take_profit_usd = take_profit_usd
     settings.max_daily_loss = max_daily_loss

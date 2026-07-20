@@ -89,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const payload = {
             dca_scenario: document.getElementById("bot-dca-scenario").value,
             max_dca_levels: document.getElementById("bot-max-dca").value,
+            dca_trigger_pct: document.getElementById("bot-dca-trigger").value,
             max_spread_pct: document.getElementById("bot-max-spread").value,
             take_profit_usd: document.getElementById("bot-take-profit").value,
             max_daily_loss: document.getElementById("bot-max-daily-loss").value,
