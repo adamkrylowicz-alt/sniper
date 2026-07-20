@@ -15,11 +15,17 @@ api_key jest przekazywany jawnie jako argument (nie current_app.config w środku
 modułu) - ten sam styl co services/logo_cache.py (static_folder jako parametr),
 żeby serwis dało się wywołać/testować bez kontekstu aplikacji Flask.
 
-MAPOWANIE TICKERA T212 -> FINNHUB:
-T212 używa własnych symboli (np. "AAPL_US_EQ"), Finnhub swoich ("AAPL").
+MAPOWANIE TICKERA T212 -> FINNHUB/YAHOO:
+T212 używa własnych symboli (np. "AAPL_US_EQ"), Finnhub/Yahoo swoich ("AAPL").
 _to_finnhub_symbol() ucina typowe sufiksy T212 - działa dla popularnych spółek
-US, NIE jest uniwersalne (spółki spoza US mają inne konwencje symboli na
-Finnhub) - jawnie udokumentowane ograniczenie Etapu 1.
+US, ale NIE jest uniwersalne (spółki spoza US mają inne konwencje symboli) -
+używane WYŁĄCZNIE do zapytań Finnhub (który i tak w praktyce nie ma pokrycia
+poza US, patrz finnhub_client.py::t212_to_finnhub). Fallback Yahoo (funkcje
+_fetch_yahoo_*) używa zamiast tego t212_to_finnhub() z finnhub_client.py, który
+dla tickerów spoza US rozwiązuje właściwy symbol Yahoo przez yahoo_resolver.py
+(np. "ASMLa_EQ" -> "ASML.AS") - bez tego bot nigdy nie dostawał ceny dla
+żadnego nie-amerykańskiego tickera (znaleziony realny bug produkcyjny,
+2026-07-20 - patrz historia w bot_engine.py).
 """
 
 from __future__ import annotations
@@ -29,6 +35,8 @@ import time
 from decimal import Decimal
 
 import requests
+
+from .finnhub_client import t212_to_finnhub
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +100,19 @@ def _fetch_candles_ohlc(api_key: str, ticker: str, days: int) -> list[dict] | No
 
 
 def _fetch_yahoo_candles_ohlc(ticker: str, days: int) -> list[dict] | None:
-    """Fallback OHLC (Yahoo Finance Chart API, bez klucza) gdy Finnhub odmówi."""
+    """
+    Fallback OHLC (Yahoo Finance Chart API, bez klucza) gdy Finnhub odmówi.
+    Symbol przez t212_to_finnhub() (finnhub_client.py), NIE _to_finnhub_symbol()
+    - dla tickerów spoza US ta pierwsza rozwiązuje właściwy symbol Yahoo przez
+    yahoo_resolver.py (np. "ASMLa_EQ" -> "ASML.AS"), naiwne ucinanie sufiksu
+    dałoby nieistniejący symbol ("ASMLa") i zawsze 404.
+    """
+    yahoo_symbol = t212_to_finnhub(ticker)
+    if yahoo_symbol is None:
+        return None
     try:
         resp = requests.get(
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{_to_finnhub_symbol(ticker)}",
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}",
             params={"range": "3mo", "interval": "1d"},
             timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": "Mozilla/5.0"},
@@ -184,13 +201,20 @@ def _fetch_finnhub_quote(api_key: str, ticker: str) -> Decimal | None:
 def _fetch_yahoo_quote(ticker: str) -> Decimal | None:
     """
     Fallback gdy Finnhub zawiedzie. Yahoo Finance Chart API (nieoficjalne,
-    ale szeroko używane, bez klucza) - ten sam mapping tickera co Finnhub
-    (_to_finnhub_symbol) - obie usługi adresują "gołe" symbole giełdowe
-    (AAPL, MSFT), nie kody T212.
+    ale szeroko używane, bez klucza). Symbol przez t212_to_finnhub()
+    (finnhub_client.py) - NIE lokalne _to_finnhub_symbol() - dla tickerów US
+    to i tak to samo (ucięty sufiks), ale dla tickerów spoza US
+    t212_to_finnhub() rozwiązuje właściwy symbol Yahoo przez yahoo_resolver.py
+    (np. "ASMLa_EQ" -> "ASML.AS"); bez tego bot nigdy nie dostawał ceny dla
+    żadnego nie-amerykańskiego tickera (potwierdzone realnym błędem
+    "brak ceny" na koncie produkcyjnym, 2026-07-20).
     """
+    yahoo_symbol = t212_to_finnhub(ticker)
+    if yahoo_symbol is None:
+        return None
     try:
         resp = requests.get(
-            f"https://query1.finance.yahoo.com/v8/finance/chart/{_to_finnhub_symbol(ticker)}",
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}",
             params={"range": "1d", "interval": "1m"},
             timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": "Mozilla/5.0"},
