@@ -11,15 +11,39 @@
         <span class="topbar__mark">◆ SNAJPER</span>
         <nav class="topbar__nav">
             {% if is_authenticated %}
-            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.warp_view' }}" href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
-            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.focus_view' }}" href="{{ url_for('scalping.focus_view') }}">Focus</a>
-            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.portfolio_view' }}" href="{{ url_for('scalping.portfolio_view') }}">Aktywa</a>
-            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'pie' }}" href="{{ url_for('pie.list_view') }}">Virtual Pie</a>
-            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'bot' }}" href="{{ url_for('bot.view') }}">Bot</a>
-            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint in ('settings', 'api_keys') }}" href="{{ url_for('settings.index') }}">Ustawienia</a>
-            <button type="button" class="topbar__link topbar__link--btn" id="report-problem-btn">Zgłoś problem</button>
+            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.warp_view' }}" href="{{ url_for('scalping.warp_view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+                Warp Mode
+            </a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.focus_view' }}" href="{{ url_for('scalping.focus_view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+                Focus
+            </a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.portfolio_view' }}" href="{{ url_for('scalping.portfolio_view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/></svg>
+                Aktywa
+            </a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'pie' }}" href="{{ url_for('pie.list_view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10h-10z"/><path d="M12 2v10"/></svg>
+                Virtual Pie
+            </a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'bot' }}" href="{{ url_for('bot.view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><path d="M9 18h6"/><circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/></svg>
+                Bot
+            </a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint in ('settings', 'api_keys') }}" href="{{ url_for('settings.index') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg>
+                Ustawienia
+            </a>
+            <button type="button" class="topbar__link topbar__link--btn" id="report-problem-btn">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                Zgłoś problem
+            </button>
             <form method="post" action="{{ url_for('auth.logout_view') }}" class="topbar__logout">
-                <button type="submit" class="topbar__link topbar__link--btn">Wyloguj</button>
+                <button type="submit" class="topbar__link topbar__link--btn">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+                    Wyloguj
+                </button>
             </form>
             {% endif %}
             <button type="button" class="topbar__theme-toggle" id="theme-toggle" title="Przełącz jasny/ciemny motyw">

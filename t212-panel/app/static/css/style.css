@@ -147,6 +147,9 @@ html[data-theme="light"] .topbar__mark {
 }
 
 .topbar__link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 11px;
     color: var(--text-muted);
     text-decoration: none;
@@ -157,6 +160,7 @@ html[data-theme="light"] .topbar__mark {
     font-family: inherit;
     padding: 0;
 }
+.topbar__link .icon { width: 14px; height: 14px; }
 .topbar__link:hover { color: var(--accent-amber); }
 .topbar__link--active {
     color: var(--text-bright);
