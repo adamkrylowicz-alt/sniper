@@ -61,6 +61,7 @@ niezależne przyczyny):
 from __future__ import annotations
 
 import datetime as dt
+import re
 import uuid
 from decimal import Decimal
 
@@ -131,6 +132,50 @@ def _get_client_for_user(user_id: int, settings: RiskSettings) -> T212Client | N
     return T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
 
 
+HISTORY_PAGE_SIZE = 50
+HISTORY_SEARCH_MAX_PAGES = 3
+
+_CURSOR_RE = re.compile(r"[?&]cursor=([^&]+)")
+
+
+def _next_cursor(next_page_path: str | None) -> str | None:
+    """
+    T212Client.get_order_history(cursor=...) oczekuje SAMEJ wartości cursora
+    (Long), ale `nextPagePath` z odpowiedzi T212 to PEŁNA ścieżka z query
+    stringiem (np. "/api/v0/equity/history/orders?cursor=123&limit=50") -
+    przekazanie całej ścieżki jako cursor kończy się 400 invalid-request
+    (potwierdzone empirycznie). Wyciąga samą wartość.
+    """
+    if not next_page_path:
+        return None
+    match = _CURSOR_RE.search(next_page_path)
+    return match.group(1) if match else None
+
+
+def _find_in_history(client: T212Client, order_id: str) -> dict | None:
+    """
+    Szuka KONKRETNEGO zlecenia w historii T212, stronicując (nextPagePath,
+    patrz _next_cursor) aż do znalezienia albo wyczerpania
+    HISTORY_SEARCH_MAX_PAGES stron. Bez tego zlecenie bota "wypada" z
+    widoczności gdy konto ma dużo INNEJ aktywności (ręczny trading tą samą
+    appką) między złożeniem zlecenia a jego zniknięciem z pending - dokładnie
+    to zaobserwowane na koncie produkcyjnym (2026-07-20). Ograniczone do
+    kilku stron (rate limit demo jest bardzo ciasny) - jeśli zlecenie nie
+    znajdzie się w HISTORY_SEARCH_MAX_PAGES*HISTORY_PAGE_SIZE najnowszych
+    zleceniach, dalsze retry (kolejny tick) spróbuje ponownie od nowa.
+    """
+    cursor = None
+    for _ in range(HISTORY_SEARCH_MAX_PAGES):
+        history = client.get_order_history(limit=HISTORY_PAGE_SIZE, cursor=cursor)
+        for item in history.get("items", []):
+            if str(item.get("id")) == order_id:
+                return item
+        cursor = _next_cursor(history.get("nextPagePath"))
+        if not cursor:
+            break
+    return None
+
+
 def _bump_retry(user_id: int, trade: ActiveTrade, reason: str) -> None:
     trade.sell_retry_count += 1
     trade.next_sell_retry_at = dt.datetime.utcnow() + _next_retry_delay(trade.sell_retry_count)
@@ -170,7 +215,7 @@ def _attempt_sell_placement(
             return
     else:
         try:
-            history = client.get_order_history(limit=20)
+            item = _find_in_history(client, trade.buy_order_id)
         except T212APIError as exc:
             _bump_retry(
                 user_id, trade,
@@ -178,11 +223,11 @@ def _attempt_sell_placement(
             )
             return
 
-        item = next((i for i in history.get("items", []) if str(i.get("id")) == trade.buy_order_id), None)
         if item is None:
             _bump_retry(
                 user_id, trade,
-                "zlecenie kupna zniknęło z pending i nie widać go na pierwszej stronie historii.",
+                f"zlecenie kupna zniknęło z pending i nie widać go w ostatnich "
+                f"{HISTORY_SEARCH_MAX_PAGES * HISTORY_PAGE_SIZE} zleceniach z historii.",
             )
             return
 
