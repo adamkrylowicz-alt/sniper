@@ -90,31 +90,31 @@ def _register_scheduler(app: Flask) -> None:
     """
     Pętla Micro-Grid Bota (services/bot_engine.py::tick), wołana co 60s.
 
-    OCHRONA PRZED PODWÓJNYM STARTEM: run.py woła app.run(..., debug=True) na
-    SZTYWNO, a Werkzeug z debug=True zawsze odpala reloader - PROCES-RODZIC
-    (watcher plików) i PROCES-DZIECKO (faktyczny serwer) OBA wykonują
-    create_app() od zera, jako dwa OSOBNE procesy OS. Bez tej ochrony
-    scheduler startowałby w OBU - dwa niezależne tick() co 60s, dublujące
-    BotAuditLog (a docelowo, w kolejnej części, dublujące PRAWDZIWE zlecenia
-    bota - dokładnie ten sam rodzaj kolizji, jaki już raz złapaliśmy przy
-    bulk-fetchu logo, patrz services/logo_cache.py).
+    OCHRONA PRZED PODWÓJNYM STARTEM: gdy run.py woła app.run(..., debug=True)
+    (lokalny dev), Werkzeug zawsze odpala reloader - PROCES-RODZIC (watcher
+    plików) i PROCES-DZIECKO (faktyczny serwer) OBA wykonują create_app() od
+    zera, jako dwa OSOBNE procesy OS. Bez tej ochrony scheduler startowałby w
+    OBU - dwa niezależne tick() co 60s, dublujące BotAuditLog (a docelowo, w
+    kolejnej części, dublujące PRAWDZIWE zlecenia bota - dokładnie ten sam
+    rodzaj kolizji, jaki już raz złapaliśmy przy bulk-fetchu logo, patrz
+    services/logo_cache.py). Werkzeug ustawia WERKZEUG_RUN_MAIN=true TYLKO w
+    procesie-dziecku, który faktycznie obsługuje requesty - jego BRAK w tym
+    trybie oznacza proces-watcher (nie startuj).
 
-    UWAGA: sprawdzamy WYŁĄCZNIE zmienną środowiskową WERKZEUG_RUN_MAIN, NIE
-    app.debug - `app.debug` NIE jest jeszcze poprawnie ustawione na tym
-    etapie (run.py przekazuje debug=True dopiero do app.run(), już PO tym
-    jak create_app() zwróci apkę; w .env FLASK_DEBUG=false, więc app.debug
-    tutaj i tak pokazywałby False, myląco). Werkzeug ustawia
-    WERKZEUG_RUN_MAIN=true TYLKO w procesie-dziecku, który faktycznie
-    obsługuje requesty - jego BRAK oznacza tu proces-watcher (nie startuj)
-    ALBO uruchomienie poza app.run() w ogóle (skrypty jednorazowe typu
-    migrate_*.py/diagnose_*.py - też słusznie nie startujemy im schedulera).
-    To założenie trzyma się dopóki run.py ma debug=True na sztywno - jeśli
-    to się kiedyś zmieni (realny prod bez reloadera), ten warunek trzeba
-    zrewidować.
+    UWAGA (bug naprawiony 2026-07-20): ten warunek reloadera ma sens WYŁĄCZNIE
+    w trybie debug. Produkcyjnie run.py NIE woła w ogóle app.run(debug=True) -
+    leci przez waitress.serve() (patrz run.py), który nie ma reloadera i nigdy
+    nie ustawia WERKZEUG_RUN_MAIN. Sprawdzanie tej zmiennej bezwarunkowo
+    (niezależnie od Config.DEBUG) powodowało, że scheduler NIGDY się nie
+    uruchamiał produkcyjnie - bot dawał się "aktywować" (reconcile działał),
+    ale tick() (właściwe wejścia w pozycje) nigdy nie był wołany. Stąd warunek
+    niżej ogranicza sprawdzanie WERKZEUG_RUN_MAIN tylko do przypadku
+    Config.DEBUG=True; poza trybem debug (waitress, jeden proces) scheduler
+    startuje zawsze.
     """
     if scheduler.running:
         return
-    if os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+    if Config.DEBUG and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
 
     from .services import bot_engine

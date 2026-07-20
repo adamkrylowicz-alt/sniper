@@ -447,6 +447,15 @@ class ActiveTrade(db.Model):
     buy_order_id = db.Column(db.String(64), nullable=False)
     sell_order_id = db.Column(db.String(64), nullable=True)
 
+    # Retry LIMIT SELL (patrz services/bot_engine.py::_retry_pending_sells) -
+    # next_sell_retry_at=NULL oznacza "sprobuj przy najblizszym ticku",
+    # sell_blocked=True oznacza blad T212 inny niz "selling-equity-not-owned"
+    # (nigdy sam sie nie naprawi) - pozycja przestaje byc automatycznie
+    # ponawiana, wymaga recznej interwencji.
+    sell_retry_count = db.Column(db.Integer, nullable=False, default=0)
+    next_sell_retry_at = db.Column(db.DateTime, nullable=True)
+    sell_blocked = db.Column(db.Boolean, nullable=False, default=False)
+
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
     quantity = db.Column(db.Numeric(12, 4), nullable=False)
     allocated_value = db.Column(db.Numeric(12, 2), nullable=False)
