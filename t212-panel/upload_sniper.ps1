@@ -148,7 +148,7 @@ foreach ($rootFile in @("run.py", "requirements.txt")) {
 
 Write-Host ""
 Write-Host "=== Wysylanie skryptow migracji (jednorazowe, idempotentne) ===" -ForegroundColor Cyan
-$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py", "migrate_add_active_trade_is_paper.py", "migrate_drop_pie_asset_bot_columns.py", "migrate_add_user_activation.py", "migrate_add_yahoo_symbol_map.py")
+$migScripts = @("migrate_add_pie_id.py", "migrate_add_is_leveraged.py", "migrate_add_bot_assets.py", "migrate_add_focus_tiles.py", "migrate_add_active_trade_is_paper.py", "migrate_drop_pie_asset_bot_columns.py", "migrate_add_user_activation.py", "migrate_add_yahoo_symbol_map.py", "migrate_add_active_trade_baseline_qty.py", "migrate_add_active_trade_buy_retry.py", "migrate_add_active_trade_sell_retry.py", "migrate_add_dca_grid.py")
 foreach ($mig in $migScripts) {
     $migLocal = Join-Path $PSScriptRoot $mig
     if (Test-Path $migLocal) {
