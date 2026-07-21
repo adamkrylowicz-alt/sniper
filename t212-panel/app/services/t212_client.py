@@ -285,6 +285,42 @@ class T212Client:
             raw=raw or {},
         )
 
+    def place_stop_order(
+        self,
+        ticker: str,
+        quantity: Decimal,
+        stop_price: Decimal,
+        time_validity: str = "GOOD_TILL_CANCEL",
+    ) -> OrderResult:
+        """
+        Składa zlecenie Stop (CZYSTY stop, nie Stop-Limit) - gdy Last Traded
+        Price osiągnie stop_price, T212 wystawia w to miejsce Market Order.
+        Kierunek jak w innych metodach: znak quantity (dodatnia=buy,
+        ujemna=sell). Używane jako noga ochronna (stop-loss) trailing exitu
+        - patrz services/bot_engine.py::_manage_trailing_exit.
+
+        Endpoint POST /equity/orders/stop, schemat (docs.trading212.com/api/
+        orders/placestoporder_1.md, zweryfikowane 2026-07-21): quantity,
+        stopPrice, ticker, timeValidity - TYLKO te 4 pola, ten sam kształt co
+        place_limit_order tylko stopPrice zamiast limitPrice (żadnego
+        limitPrice tutaj - to byłby już Stop-Limit, inny endpoint).
+        """
+        body = {
+            "ticker": ticker,
+            "quantity": float(quantity),
+            "stopPrice": float(stop_price),
+            "timeValidity": time_validity,
+        }
+        raw = self._request("POST", "/equity/orders/stop", json=body)
+
+        return OrderResult(
+            order_id=str(raw.get("id")) if raw and raw.get("id") is not None else None,
+            ticker=ticker,
+            quantity=quantity,
+            status=raw.get("status", "UNKNOWN") if raw else "UNKNOWN",
+            raw=raw or {},
+        )
+
     def get_pending_orders(self) -> list[dict]:
         """Zlecenia jeszcze niewykonane / nieanulowane / niewygasłe."""
         return self._request("GET", "/equity/orders")

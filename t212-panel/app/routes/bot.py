@@ -202,12 +202,13 @@ def update_settings():
         max_dca_levels = int(payload.get("max_dca_levels", settings.max_dca_levels))
         dca_trigger_pct = Decimal(str(payload.get("dca_trigger_pct", settings.dca_trigger_pct)))
         max_spread_pct = Decimal(str(payload.get("max_spread_pct", settings.max_spread_pct)))
-        take_profit_usd = Decimal(str(payload.get("take_profit_usd", settings.take_profit_usd)))
+        take_profit_step_pct = Decimal(str(payload.get("take_profit_step_pct", settings.take_profit_step_pct)))
+        stop_loss_pct = Decimal(str(payload.get("stop_loss_pct", settings.stop_loss_pct)))
         max_daily_loss = Decimal(str(payload.get("max_daily_loss", settings.max_daily_loss)))
 
         if (
             max_dca_levels <= 0 or dca_trigger_pct <= 0 or max_spread_pct <= 0
-            or take_profit_usd <= 0 or max_daily_loss <= 0
+            or take_profit_step_pct <= 0 or stop_loss_pct <= 0 or max_daily_loss <= 0
         ):
             raise ValueError("Wartości muszą być dodatnie.")
     except (InvalidOperation, ValueError, TypeError):
@@ -217,7 +218,8 @@ def update_settings():
     settings.max_dca_levels = max_dca_levels
     settings.dca_trigger_pct = dca_trigger_pct
     settings.max_spread_pct = max_spread_pct
-    settings.take_profit_usd = take_profit_usd
+    settings.take_profit_step_pct = take_profit_step_pct
+    settings.stop_loss_pct = stop_loss_pct
     settings.max_daily_loss = max_daily_loss
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
     db.session.commit()

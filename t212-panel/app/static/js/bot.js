@@ -91,7 +91,8 @@ document.addEventListener("DOMContentLoaded", () => {
             max_dca_levels: document.getElementById("bot-max-dca").value,
             dca_trigger_pct: document.getElementById("bot-dca-trigger").value,
             max_spread_pct: document.getElementById("bot-max-spread").value,
-            take_profit_usd: document.getElementById("bot-take-profit").value,
+            take_profit_step_pct: document.getElementById("bot-take-profit-step").value,
+            stop_loss_pct: document.getElementById("bot-stop-loss").value,
             max_daily_loss: document.getElementById("bot-max-daily-loss").value,
             is_paper_trading: document.getElementById("bot-paper-trading").checked,
         };
@@ -103,8 +104,15 @@ document.addEventListener("DOMContentLoaded", () => {
                 body: JSON.stringify(payload),
             });
             const data = await resp.json();
-            settingsStatus.textContent = data.ok ? "Zapisano." : (data.error || "Błąd zapisu.");
+            if (data.ok) {
+                playSuccess();
+                settingsStatus.textContent = "Zapisano.";
+            } else {
+                playError();
+                settingsStatus.textContent = data.error || "Błąd zapisu.";
+            }
         } catch (err) {
+            playError();
             settingsStatus.textContent = "Błąd sieci.";
             console.error(err);
         } finally {
@@ -165,7 +173,7 @@ document.addEventListener("DOMContentLoaded", () => {
             addBtn.type = "button";
             addBtn.className = "watchlist-results__add";
             addBtn.textContent = "Dodaj";
-            addBtn.addEventListener("click", () => addBotAsset(r.ticker));
+            addBtn.addEventListener("click", () => addBotAsset(r.ticker, addBtn));
             row.appendChild(addBtn);
 
             container.appendChild(row);
@@ -198,7 +206,7 @@ document.addEventListener("DOMContentLoaded", () => {
         loadBotAssetResults(false);
     }
 
-    async function addBotAsset(ticker) {
+    async function addBotAsset(ticker, addBtn) {
         const assetStatusEl = document.getElementById("bot-asset-status");
         const amountInput = document.getElementById("bot-asset-default-amount");
         const amount = amountInput.value;
@@ -208,6 +216,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
+        addBtn.disabled = true;
         try {
             const resp = await fetch("/bot/assets/add", {
                 method: "POST",
@@ -216,13 +225,18 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             const data = await resp.json();
             if (!data.ok) {
+                playError();
                 assetStatusEl.textContent = data.error || "Nie udało się dodać.";
+                addBtn.disabled = false;
                 return;
             }
+            playSuccess();
             window.location.reload();
         } catch (err) {
+            playError();
             assetStatusEl.textContent = "Błąd sieci.";
             console.error(err);
+            addBtn.disabled = false;
         }
     }
 
@@ -292,11 +306,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 });
                 const data = await resp.json();
                 if (!data.ok) {
+                    playError();
                     rowStatus.textContent = data.error || "Nie udało się zapisać kwoty.";
                 } else {
+                    rowStatus.textContent = "Zapisano.";
                     loadBotAssetPrices();  // odśwież ostrzeżenie pod nową kwotę
                 }
             } catch (err) {
+                playError();
                 rowStatus.textContent = "Błąd sieci.";
                 console.error(err);
             }
@@ -308,8 +325,15 @@ document.addEventListener("DOMContentLoaded", () => {
             try {
                 const resp = await fetch(`/bot/asset/${assetId}/penny-toggle`, { method: "POST" });
                 const data = await resp.json();
+                if (!data.ok) {
+                    playError();
+                    rowStatus.textContent = data.error || "Nie udało się przełączyć.";
+                    return;
+                }
                 pennyBtn.classList.toggle("pie-asset-row__icon-btn--active", data.is_penny_stock);
             } catch (err) {
+                playError();
+                rowStatus.textContent = "Błąd sieci.";
                 console.error(err);
             } finally {
                 pennyBtn.disabled = false;

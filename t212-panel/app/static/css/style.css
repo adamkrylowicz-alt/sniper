@@ -761,6 +761,12 @@ img.tile__logo {
 .account-bar__btn--buy:hover { border-color: var(--buy-green); color: var(--buy-green); }
 .account-bar__btn--sell:hover { border-color: var(--sell-red); color: var(--sell-red); }
 
+/* Ten sam wygląd co --buy/--sell, ale nazwa nie sugeruje zlecenia kupna/
+   sprzedaży - używane np. przy Uruchom/Wyłącz bota (bot.html), gdzie
+   --buy/--sell byłoby mylącą pożyczką słownictwa z tradingu. */
+.account-bar__btn--start:hover { border-color: var(--buy-green); color: var(--buy-green); }
+.account-bar__btn--stop:hover { border-color: var(--sell-red); color: var(--sell-red); }
+
 .account-bar__status {
     max-width: 620px;
     margin: 0 auto 12px;
@@ -797,6 +803,42 @@ img.tile__logo {
     letter-spacing: 0.1em;
     color: var(--accent-amber);
     margin: 0 0 18px;
+}
+
+/* Nagłówki sekcji dłuższych stron (np. bot.html) - wyraźniejsze niż zwykły
+   tekst (linia + większy odstęp), żeby było widać gdzie się jest przy
+   scrollowaniu, w odróżnieniu od poprzedniego 13px bez żadnego wyróżnienia. */
+.section-heading {
+    font-size: 14px;
+    letter-spacing: 0.08em;
+    color: var(--text-bright);
+    margin: 32px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--hairline);
+    scroll-margin-top: 16px;
+}
+
+/* <details> zwijane sekcje (np. Ustawienia ryzyka w bot.html) - domyślnie
+   zwinięte, summary wygląda jak .section-heading + strzałka obrotowa. */
+.collapsible > summary.section-heading {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.collapsible > summary.section-heading::-webkit-details-marker { display: none; }
+.collapsible > summary.section-heading::after {
+    content: "▸";
+    color: var(--text-muted);
+    transition: transform 0.15s;
+    margin-left: 8px;
+}
+.collapsible[open] > summary.section-heading::after { transform: rotate(90deg); }
+.collapsible > summary.section-heading:hover { color: var(--accent-amber); }
+
+.section-nav {
+    margin-bottom: 4px;
 }
 
 .auth-box__error {
@@ -1520,6 +1562,7 @@ img.tile__logo {
     border-color: var(--sell-red);
     color: var(--sell-red);
 }
+.pie-asset-row__icon-btn--danger:hover { border-color: var(--sell-red); color: var(--sell-red); }
 
 .pie-asset-row__buy {
     display: flex;

@@ -12,6 +12,13 @@
         LIMIT (na których opiera się cała strategia) na koncie live.
     </p>
 
+    <nav class="tabs section-nav" aria-label="Sekcje strony">
+        <a class="tab" href="#section-activation">Aktywacja</a>
+        <a class="tab" href="#section-assets">Aktywa</a>
+        <a class="tab" href="#section-risk">Ustawienia ryzyka</a>
+        <a class="tab" href="#section-log">Dziennik</a>
+    </nav>
+
     <div class="pie-fx-banner {{ '' if credentials_active else 'pie-fx-banner--hidden' }}" id="bot-status-banner">
         {% if credentials_active %}
         Bot AKTYWNY (poświadczenia w pamięci serwera) — {{ "Paper Trading (symulacja)" if settings.is_paper_trading else "REALNE zlecenia na demo T212" }}.
@@ -25,17 +32,17 @@
     </div>
     {% endif %}
 
-    <div class="pie-detail__add-asset">
+    <div class="pie-detail__add-asset" id="section-activation">
         <label class="auth-form__label" for="bot-password">Hasło (do aktywacji bota)</label>
         <input type="password" id="bot-password" class="auth-form__input" autocomplete="current-password">
         <div style="display:flex; gap:8px; margin-top:8px">
-            <button type="button" id="btn-bot-activate" class="account-bar__btn account-bar__btn--buy">Uruchom bota</button>
-            <button type="button" id="btn-bot-deactivate" class="account-bar__btn account-bar__btn--sell">Wyłącz bota</button>
+            <button type="button" id="btn-bot-activate" class="account-bar__btn account-bar__btn--start">Uruchom bota</button>
+            <button type="button" id="btn-bot-deactivate" class="account-bar__btn account-bar__btn--stop">Wyłącz bota</button>
         </div>
         <p class="auth-box__hint" id="bot-activate-status"></p>
     </div>
 
-    <h2 class="auth-box__title" style="font-size:13px; margin-top:24px">AKTYWA BOTA</h2>
+    <h2 class="section-heading" id="section-assets">AKTYWA BOTA</h2>
     <p class="auth-box__hint">
         Własna, niezależna lista tickerów bota — dodanie tickera tutaj nie ma
         żadnego związku z koszykami Virtual Pie (i odwrotnie).
@@ -90,7 +97,7 @@
                         <circle cx="12" cy="12" r="9"/><path d="M12 7v10M9 9.5c0-1.4 1.3-2.5 3-2.5s3 .8 3 2c0 2-6 1.5-6 4 0 1.2 1.3 2 3 2s3-1 3-2.5"/>
                     </svg>
                 </button>
-                <button type="button" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--danger"
+                <button type="button" class="pie-asset-row__icon-btn pie-asset-row__icon-btn--danger"
                         data-remove title="Usuń z listy bota">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/>
@@ -104,7 +111,8 @@
     </div>
     {% endif %}
 
-    <h2 class="auth-box__title" style="font-size:13px; margin-top:24px">USTAWIENIA RYZYKA</h2>
+    <details class="collapsible" id="section-risk">
+    <summary class="section-heading">USTAWIENIA RYZYKA</summary>
     <div class="pie-detail__budget-row">
         <label class="auth-form__label" for="bot-dca-scenario">Scenariusz DCA (mnożniki po przecinku)</label>
         <input type="text" id="bot-dca-scenario" class="auth-form__input" value="{{ settings.dca_scenario }}">
@@ -122,9 +130,24 @@
         <input type="number" id="bot-max-spread" class="auth-form__input" min="0" step="0.0001" value="{{ settings.max_spread_pct }}">
     </div>
     <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="bot-take-profit">Docelowy zysk z serii (waluta konta)</label>
-        <input type="number" id="bot-take-profit" class="auth-form__input" min="0" step="0.01" value="{{ settings.take_profit_usd }}">
+        <label class="auth-form__label" for="bot-take-profit-step">Krok trailing take-profit (ułamek, np. 0.003 = 0.3%)</label>
+        <input type="number" id="bot-take-profit-step" class="auth-form__input" min="0" step="0.0001" value="{{ settings.take_profit_step_pct }}">
     </div>
+    <p class="auth-box__hint">
+        Bot NIE wystawia zlecenia od razu po kupnie - czeka aż cena minie 2 progi
+        powyżej średniej ceny wejścia, dopiero wtedy wystawia LIMIT SELL jeden
+        próg niżej i przesuwa go w górę o kolejny próg za każdym razem gdy cena
+        idzie dalej w górę.
+    </p>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-stop-loss">Stop-loss (ułamek od średniej ceny wejścia, np. 0.02 = 2%)</label>
+        <input type="number" id="bot-stop-loss" class="auth-form__input" min="0" step="0.0001" value="{{ settings.stop_loss_pct }}">
+    </div>
+    <p class="auth-box__hint">
+        Uzbrajany DOPIERO gdy trailing take-profit zdąży się uzbroić (2 progi) -
+        ochrona przed oddaniem zysku i wejściem pod kreskę, nie stop od samego
+        wejścia.
+    </p>
     <div class="pie-detail__budget-row">
         <label class="auth-form__label" for="bot-max-daily-loss">Maksymalna dzienna strata</label>
         <input type="number" id="bot-max-daily-loss" class="auth-form__input" min="0" step="0.01" value="{{ settings.max_daily_loss }}">
@@ -143,8 +166,9 @@
         Zapisz ustawienia
     </button>
     <p class="auth-box__hint" id="bot-settings-status"></p>
+    </details>
 
-    <h2 class="auth-box__title" style="font-size:13px; margin-top:24px">DZIENNIK BOTA (ostatnie 50)</h2>
+    <h2 class="section-heading" id="section-log">DZIENNIK BOTA (ostatnie 50)</h2>
     {% if not logs %}
     <p class="auth-box__hint">Brak wpisów.</p>
     {% else %}

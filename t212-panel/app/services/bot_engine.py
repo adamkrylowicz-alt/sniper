@@ -4,14 +4,17 @@ app/services/bot_engine.py
 Silnik Micro-Grid Bota:
 
 1. tick() - wołane cyklicznie przez APScheduler (patrz app/__init__.py),
-   dla każdego aktywnego bota woła w kolejności: _confirm_dca_fills()
-   (potwierdź zawieszone nogi DCA, Cancel-Replace starego SELL),
-   _retry_pending_buys() (dogoń cenę LIMIT BUY poziomu 0, jeśli rynek
-   odjechał), _retry_pending_sells() (dokończ zawieszone pozycje bez LIMIT
-   SELL), _trigger_dca_buys() (dokup kolejny poziom siatki, jeśli cena
-   spadła dość nisko), potem _process_entries() (całkiem nowe wejścia).
-   Pierwsze trzy dzielą JEDNO wspólne get_pending_orders() per user per
-   tick (rate limit demo jest ciasny).
+   dla każdego aktywnego bota woła w kolejności: _detect_exit_fills()
+   (wykryj wykonanie LIMIT SELL/STOP, ręczne OCO - anuluj osieroconą drugą
+   nogę), _confirm_dca_fills() (potwierdź zawieszone nogi DCA, resetuje
+   trailing exit), _retry_pending_buys() (dogoń cenę LIMIT BUY poziomu 0,
+   jeśli rynek odjechał), _retry_pending_sells() (potwierdź wypełnienie
+   zakupu - buy_confirmed=True, BEZ wystawiania zlecenia wyjścia),
+   _manage_trailing_exit() (trailing take-profit + stop-loss, patrz punkt 5),
+   _trigger_dca_buys() (dokup kolejny poziom siatki, jeśli cena spadła dość
+   nisko), potem _process_entries() (całkiem nowe wejścia). Większość dzieli
+   JEDNO wspólne get_pending_orders() per user per tick (rate limit demo
+   jest ciasny).
 2. reconcile(user_id) - Reconciliation Loop (PRD sekcja 4): porównuje
    lokalny stan ActiveTrade z rzeczywistymi zleceniami na koncie T212, i woła
    TE SAME funkcje co tick() (punkt 1) - żeby zachowanie było spójne
@@ -22,23 +25,31 @@ Silnik Micro-Grid Bota:
 3. _process_entries()/_enter_position() - strategia wejścia POZIOMU 0
    (dca_level=0, PRD sekcja 3.1): kupuje mikro-kwotę LIMIT BUY po aktualnej
    cenie (marketable, NIE Market Order - patrz historia tego pliku, punkt
-   4). LIMIT SELL NIE jest wystawiany od razu - o to dba
-   _retry_pending_sells() przy najbliższym możliwym ticku.
-4. Pętla DCA (patrz punkt 5 poniżej, dodane 2026-07-20 na życzenie Adama -
-   "cena i tak odjechała") - _trigger_dca_buys() wyzwala kolejne poziomy
-   dokupowania gdy cena spadnie o RiskSettings.dca_trigger_pct na poziom
-   (liczone od STAŁEJ ActiveTrade.grid_anchor_price, nie ruchomej średniej),
-   z kwotą entry_amount * mnożnik z RiskSettings.dca_scenario (np.
-   "1,1,1,1,1" - te same kwoty na każdym poziomie); _confirm_dca_fills()
-   po potwierdzeniu wykonania dolicza do pozycji, przelicza średnią cenę i
-   robi Cancel-Replace starego LIMIT SELL. Fail-Safe (limit dziennej straty,
-   RiskSettings.max_daily_loss) NADAL jest wyłącznie polem formularza -
-   żaden kod go nie czyta, poza zakresem tej części.
+   4). Zlecenie wyjścia NIE jest wystawiane od razu - o to dba
+   _manage_trailing_exit() (punkt 5) dopiero po potwierdzeniu kupna.
+4. Pętla DCA (dodane 2026-07-20 na życzenie Adama - "cena i tak odjechała") -
+   _trigger_dca_buys() wyzwala kolejne poziomy dokupowania gdy cena spadnie o
+   RiskSettings.dca_trigger_pct na poziom (liczone od STAŁEJ
+   ActiveTrade.grid_anchor_price, nie ruchomej średniej), z kwotą
+   entry_amount * mnożnik z RiskSettings.dca_scenario (np. "1,1,1,1,1" - te
+   same kwoty na każdym poziomie); _confirm_dca_fills() po potwierdzeniu
+   wykonania dolicza do pozycji, przelicza średnią cenę i resetuje trailing
+   exit (Cancel-Replace obu nóg, patrz punkt 5). Fail-Safe (limit dziennej
+   straty, RiskSettings.max_daily_loss) NADAL jest wyłącznie polem
+   formularza - żaden kod go nie czyta, poza zakresem tej części.
    Świadomie pominięte (patrz PLAN.md z sesji): Spread Guard (Finnhub free
    tier nie ma bid/ask) i proaktywny Fractional Guard (rate limit T212
    uniemożliwił bezpieczną weryfikację pól /equity/metadata/instruments) -
    zamiast tego odrzucenie przez T212 (np. brak wsparcia ułamków) jest po
    prostu logowane jako ERROR, bot spróbuje ponownie przy kolejnym tick-u.
+5. Trailing exit (zastąpił sztywny take_profit_usd, 2026-07-21 na życzenie
+   Adama - patrz uzasadnienie w RiskSettings.take_profit_step_pct i pełny
+   docstring _manage_trailing_exit()) - LIMIT SELL wystawiany dopiero gdy
+   cena minie 2 progi (take_profit_step_pct) i przesuwany o kolejny próg za
+   każdym razem gdy cena idzie dalej w górę, plus STOP-loss uzbrajany
+   JEDNORAZOWO w tym samym momencie co pierwsze uzbrojenie LIMIT SELL. Obie
+   nogi to ręczne OCO (T212 nie ma natywnego) - _detect_exit_fills() w
+   każdym ticku wykrywa która się wykonała i anuluje drugą.
 
 Bot działa WYŁĄCZNIE na demo (patrz routes/bot.py - blokada environment="live"
 na poziomie aktywacji, bo T212 nie wspiera zleceń LIMIT na live) - stąd
@@ -141,6 +152,26 @@ def _next_retry_delay(retry_count: int) -> dt.timedelta:
     return dt.timedelta(minutes=SELL_RETRY_BACKOFF_MINUTES[idx])
 
 
+# Backoff (minuty) dla tick()::get_pending_orders po DOWOLNYM błędzie T212API
+# (nie tylko 429 - historia 2026-07-21 pokazała, że każdy uporczywy błąd tego
+# wywołania, nie tylko rate limit, prowadzi do tego samego: tick co 60s
+# dobija się bez końca o ten sam problem zamiast dać mu czas się wyjaśnić).
+# Konto usera 2 utknęło w 429 na KAŻDYM ticku przez 13.5h bez ani jednego
+# udanego zapytania - stąd ten sam rosnący backoff co SELL_RETRY_BACKOFF_MINUTES,
+# osobna stała bo to inny licznik (per-user/per-tick, nie per-trade).
+TICK_ERROR_BACKOFF_MINUTES = (1, 2, 5, 15, 30)
+
+# user_id -> (kolejnych błędów z rzędu, kiedy wolno spróbować znowu).
+# W pamięci procesu (restart czyści, jak bot_credentials/price_feed cache) -
+# celowo nietrwałe, nie ma potrzeby przeżywać restartu appki.
+_tick_error_backoff: dict[int, tuple[int, dt.datetime]] = {}
+
+
+def _next_tick_error_delay(consecutive_errors: int) -> dt.timedelta:
+    idx = min(consecutive_errors - 1, len(TICK_ERROR_BACKOFF_MINUTES) - 1)
+    return dt.timedelta(minutes=TICK_ERROR_BACKOFF_MINUTES[idx])
+
+
 def _log(user_id: int, action_type: str, message: str, position_group_id: str | None = None) -> None:
     """Zapis do BotAuditLog + commit natychmiast (każdy wpis niezależny, ten sam styl co OrderLog)."""
     db.session.add(BotAuditLog(
@@ -206,8 +237,8 @@ def _bump_buy_retry(user_id: int, trade: ActiveTrade, reason: str) -> None:
     )
 
 
-def _attempt_sell_placement(
-    user_id: int, client: T212Client, trade: ActiveTrade, take_profit_usd: Decimal,
+def _confirm_buy_fill(
+    user_id: int, client: T212Client, trade: ActiveTrade,
     pending_by_id: dict[str, dict], owned_map: dict[str, Decimal] | None,
 ) -> None:
     """
@@ -220,9 +251,13 @@ def _attempt_sell_placement(
     TO zlecenie, patrz punkt 3 - odjęcie baseline izoluje wkład tego
     konkretnego zlecenia nawet gdy user ma inne pozycje tego samego tickera).
 
-    Sprzedaje MIN(filled, zażądana) - przy częściowym wykonaniu koryguje
-    trade.quantity/allocated_value do faktycznie wypełnionej ilości i loguje
-    obie wartości.
+    Przy częściowym wykonaniu koryguje trade.quantity/allocated_value do
+    faktycznie wypełnionej ilości. NIE wystawia tu żadnego zlecenia wyjścia -
+    tylko ustawia buy_confirmed=True. Trailing take-profit/stop-loss
+    (RiskSettings.take_profit_step_pct/stop_loss_pct) zajmuje się tym
+    _manage_trailing_exit() na kolejnych tickach - bot celowo czeka aż cena
+    minie pierwsze 2 progi, zamiast wystawiać sztywne zlecenie od razu
+    (ustalone z Adamem 2026-07-21).
     """
     pending_order = pending_by_id.get(trade.buy_order_id)
 
@@ -268,33 +303,7 @@ def _attempt_sell_placement(
         trade.allocated_value = (sell_qty * trade.buy_price).quantize(Decimal("0.01"))
         trade.average_price = trade.buy_price
 
-    target_price = (trade.allocated_value + take_profit_usd) / trade.quantity
-
-    try:
-        sell_result = client.place_limit_order(trade.ticker, -sell_qty, target_price)
-    except T212APIError as exc:
-        error_type = exc.payload.get("type") if isinstance(exc.payload, dict) else None
-        if error_type == SELLING_EQUITY_NOT_OWNED_ERROR_TYPE:
-            _bump_retry(
-                user_id, trade,
-                f"zlecenie kupna pokazuje filled={filled_qty}, ale T212 wciąż zgłasza "
-                f"selling-equity-not-owned (prawdopodobnie chwilowe opóźnienie księgowania) - {exc}",
-            )
-        else:
-            # Błąd INNY niż opóźnienie księgowania nigdy się sam nie naprawi
-            # (np. quantity-precision-mismatch) - dalsze automatyczne próby
-            # byłyby tylko stratą ciasnego rate limitu demo.
-            trade.sell_blocked = True
-            db.session.commit()
-            _log(
-                user_id, "ERROR",
-                f"{trade.ticker}: LIMIT SELL trwale odrzucony ({exc}) - NIE będzie już ponawiany "
-                "automatycznie, wymaga ręcznej interwencji.",
-                trade.position_group_id,
-            )
-        return
-
-    trade.sell_order_id = sell_result.order_id
+    trade.buy_confirmed = True
     trade.sell_retry_count = 0
     trade.next_sell_retry_at = None
     db.session.commit()
@@ -302,14 +311,15 @@ def _attempt_sell_placement(
     if partial:
         _log(
             user_id, "WARN",
-            f"{trade.ticker}: LIMIT SELL wystawiony na {sell_qty} (CZĘŚCIOWE WYKONANIE zlecenia kupna - "
-            f"zażądano {requested_qty}, faktycznie wypełnione {filled_qty}), target {target_price:.4f}.",
+            f"{trade.ticker}: kupno potwierdzone CZĘŚCIOWO ({sell_qty} z {requested_qty}) - "
+            "bot zacznie zarządzać wyjściem (trailing take-profit) na najbliższym ticku.",
             trade.position_group_id,
         )
     else:
         _log(
             user_id, "INFO",
-            f"{trade.ticker}: LIMIT SELL wystawiony, target {target_price:.4f}.",
+            f"{trade.ticker}: kupno potwierdzone ({sell_qty}) - bot zacznie zarządzać "
+            "wyjściem (trailing take-profit) na najbliższym ticku.",
             trade.position_group_id,
         )
 
@@ -318,11 +328,13 @@ def _retry_pending_sells(
     user_id: int, client: T212Client, settings: RiskSettings, pending: list[dict] | None = None,
 ) -> None:
     """
-    Znajduje pozycje OPEN bez sell_order_id (zakup poszedł, LIMIT SELL jeszcze
-    nie), których backoff (next_sell_retry_at) już minął, i próbuje ponownie -
-    patrz _attempt_sell_placement. Wołane z KAŻDEGO tick() (co 60s) ORAZ z
-    reconcile() (przy aktywacji bota) - bez tego pozycja zostałaby trwale
-    zawieszona aż do ręcznej dezaktywacji/reaktywacji bota.
+    Znajduje pozycje OPEN, których kupno jeszcze NIE jest potwierdzone
+    (buy_confirmed=False, patrz ActiveTrade.buy_confirmed - zastępuje stare
+    "sell_order_id IS NULL" jako sygnał "jeszcze nie rozliczone"), których
+    backoff (next_sell_retry_at) już minął, i próbuje potwierdzić - patrz
+    _confirm_buy_fill. Wołane z KAŻDEGO tick() (co 60s) ORAZ z reconcile()
+    (przy aktywacji bota) - bez tego pozycja zostałaby trwale zawieszona aż
+    do ręcznej dezaktywacji/reaktywacji bota.
 
     `pending`: opcjonalna, już pobrana lista z get_pending_orders() - reconcile()
     ją i tak potrzebuje dla własnej logiki CLOSED-detection, więc przekazuje
@@ -331,7 +343,7 @@ def _retry_pending_sells(
     now = dt.datetime.utcnow()
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, sell_order_id=None, sell_blocked=False)
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()
     )
@@ -342,7 +354,7 @@ def _retry_pending_sells(
         try:
             pending = client.get_pending_orders()
         except T212APIError as exc:
-            _log(user_id, "ERROR", f"Retry LIMIT SELL: błąd pobierania pending orders - {exc}")
+            _log(user_id, "ERROR", f"Potwierdzenie kupna: błąd pobierania pending orders - {exc}")
             return
     pending_by_id = {str(o.get("id")): o for o in pending}
 
@@ -351,16 +363,16 @@ def _retry_pending_sells(
     # limicie demo, gdy wszystkie kandydaty wciąż grzecznie czekają w kolejce.
     # owned_map=None (nie pusty dict) gdy zapytanie się nie udało - odróżnia
     # "sprawdzone, zero przyrostu" od "nie udało się sprawdzić" w
-    # _attempt_sell_placement, żeby nie zgadywać na podstawie brakujących danych.
+    # _confirm_buy_fill, żeby nie zgadywać na podstawie brakujących danych.
     owned_map: dict[str, Decimal] | None = None
     if any(trade.buy_order_id not in pending_by_id for trade in candidates):
         try:
             owned_map = _portfolio_quantities(client)
         except T212APIError as exc:
-            _log(user_id, "ERROR", f"Retry LIMIT SELL: błąd pobierania portfolio - {exc}")
+            _log(user_id, "ERROR", f"Potwierdzenie kupna: błąd pobierania portfolio - {exc}")
 
     for trade in candidates:
-        _attempt_sell_placement(user_id, client, trade, settings.take_profit_usd, pending_by_id, owned_map)
+        _confirm_buy_fill(user_id, client, trade, pending_by_id, owned_map)
 
 
 def _retry_pending_buys(
@@ -383,7 +395,7 @@ def _retry_pending_buys(
     now = dt.datetime.utcnow()
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, sell_order_id=None)
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
         .filter(db.or_(ActiveTrade.next_buy_retry_at.is_(None), ActiveTrade.next_buy_retry_at <= now))
         .all()
     )
@@ -456,6 +468,120 @@ def _retry_pending_buys(
         )
 
 
+def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettings) -> None:
+    """
+    Trailing take-profit + stop-loss (RiskSettings.take_profit_step_pct/
+    stop_loss_pct - ustalone z Adamem 2026-07-21: "nie wystawiaj sztywnego
+    zlecenia od razu, tylko przesuwaj co krok, a jak wejdzie w zysk to uzbrój
+    stop-loss"). Procent od average_price, NIE stała kwota - żeby krok/stop
+    skalowały się z ceną instrumentu (sztywna kwota EUR na drogiej spółce jak
+    ASML to szum, na groszówce to przepaść - patrz uzasadnienie w
+    RiskSettings.take_profit_step_pct).
+
+    Mechanika: bot NIC nie wystawia dopóki cena nie minie DWÓCH progów
+    (2 * take_profit_step_pct powyżej average_price) - dopiero wtedy wystawia
+    LIMIT SELL jeden próg NIŻEJ niż aktualny (blokuje już osiągnięty zysk,
+    zostawia miejsce na dalszy wzrost) i JEDNOCZEŚNIE uzbraja STOP na
+    average_price * (1 - stop_loss_pct) - dopiero teraz, nie od wejścia, żeby
+    zwykły szum tuż po zakupie nie wyciął pozycji. Każdy kolejny próg
+    przesuwa LIMIT SELL o krok w górę (Cancel-Replace, ten sam wzorzec co
+    _retry_pending_buys) - STOP zostaje na miejscu (prosta, przewidywalna
+    ochrona raz uzbrojona, nie trailuje dalej).
+
+    Ręczne OCO: T212 nie ma natywnego "one-cancels-other", więc gdy jedna
+    noga (sell_order_id/stop_order_id) się wykona, _detect_exit_fills()
+    (wołane wcześniej w tym samym ticku, patrz tick()) anuluje drugą - tutaj
+    zakładamy że obie nogi, jeśli istnieją, wciąż są aktualne.
+    """
+    step = settings.take_profit_step_pct
+    if step <= 0:
+        return  # błędna konfiguracja (0 albo ujemny krok) - nie ma jak liczyć progów, nie zgaduj
+
+    now = dt.datetime.utcnow()
+    candidates = (
+        ActiveTrade.query
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True, sell_blocked=False)
+        .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
+        .all()
+    )
+    if not candidates:
+        return
+
+    for trade in candidates:
+        current_price = price_feed.get_live_price(current_app.config.get("FINNHUB_API_KEY"), trade.ticker)
+        if current_price is None or current_price <= 0:
+            continue  # brak ceny - spróbujemy przy kolejnym ticku, nic pilnego do zrobienia
+
+        profit_pct = (current_price - trade.average_price) / trade.average_price
+        milestone_steps = int(profit_pct / step) if profit_pct > 0 else 0
+        if milestone_steps < 2:
+            continue  # jeszcze przed progiem uzbrojenia (potrzeba 2 progów)
+
+        if milestone_steps > trade.trail_milestone_steps:
+            new_target_price = (trade.average_price * (1 + step * (milestone_steps - 1))).quantize(Decimal("0.0001"))
+
+            if trade.sell_order_id:
+                try:
+                    client.cancel_order(trade.sell_order_id)
+                except T212APIError as exc:
+                    _bump_retry(
+                        user_id, trade,
+                        f"anulowanie starego trailing LIMIT SELL ({trade.sell_order_id}) nie powiodło się "
+                        f"(mógł się już wykonać) - {exc}",
+                    )
+                    continue
+
+            try:
+                sell_result = client.place_limit_order(trade.ticker, -trade.quantity, new_target_price)
+            except T212APIError as exc:
+                trade.sell_order_id = None
+                _bump_retry(
+                    user_id, trade,
+                    f"wystawienie trailing LIMIT SELL na próg {milestone_steps} (target {new_target_price}) "
+                    f"nie powiodło się - {exc}",
+                )
+                continue
+
+            was_armed = trade.trail_milestone_steps > 0
+            trade.sell_order_id = sell_result.order_id
+            trade.trail_milestone_steps = milestone_steps
+            trade.sell_retry_count = 0
+            trade.next_sell_retry_at = None
+            db.session.commit()
+            _log(
+                user_id, "INFO",
+                f"{trade.ticker}: trailing LIMIT SELL {'uzbrojony' if not was_armed else 'przesunięty'} "
+                f"na próg {milestone_steps} (target {new_target_price}, "
+                f"+{(step * (milestone_steps - 1)):.2%} od średniej).",
+                trade.position_group_id,
+            )
+
+        if trade.stop_order_id is None:
+            stop_price = (trade.average_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
+            try:
+                stop_result = client.place_stop_order(trade.ticker, -trade.quantity, stop_price)
+            except T212APIError as exc:
+                # Backoff (dzieli licznik z ratchetem SELL, patrz _bump_retry) -
+                # bez tego, uporczywy błąd (np. "selling-equity-not-owned" bo
+                # T212 nie pozwala na dwa jednoczesne resting-ordery na te
+                # same akcje - potwierdzone na żywo 2026-07-21) powtarzałby się
+                # bez końca co tick, dopóki mechanika OCO nie zostanie
+                # przeprojektowana (patrz docs/IDEAS_v2.md).
+                _bump_retry(
+                    user_id, trade,
+                    f"uzbrojenie STOP-loss (target {stop_price}) nie powiodło się - {exc}",
+                )
+            else:
+                trade.stop_order_id = stop_result.order_id
+                db.session.commit()
+                _log(
+                    user_id, "INFO",
+                    f"{trade.ticker}: STOP-loss uzbrojony na {stop_price} "
+                    f"(-{settings.stop_loss_pct:.2%} od średniej ceny wejścia).",
+                    trade.position_group_id,
+                )
+
+
 def _parse_dca_scenario(dca_scenario: str) -> list[Decimal]:
     """
     "1,1,1,1,1" -> [Decimal("1")]*5. Mnożnik entry_amount per poziom DCA
@@ -485,19 +611,19 @@ def _dca_multiplier(multipliers: list[Decimal], level: int) -> Decimal:
 
 def _trigger_dca_buys(user_id: int, client: T212Client, settings: RiskSettings) -> None:
     """
-    Micro-Grid: dla każdej pozycji już odpoczywającej z LIMIT SELL
-    (sell_order_id ustawiony - poziom 0 w pełni rozliczony) sprawdza czy cena
+    Micro-Grid: dla każdej pozycji z potwierdzonym kupnem (buy_confirmed=True
+    - poziom 0 w pełni rozliczony, NIEZALEŻNE od tego czy trailing exit zdążył
+    już uzbroić LIMIT SELL, patrz _manage_trailing_exit) sprawdza czy cena
     spadła poniżej kolejnego poziomu siatki (grid_anchor_price * (1 -
     dca_trigger_pct * (dca_level+1)), STAŁY punkt odniesienia - patrz
     ActiveTrade.grid_anchor_price) i jeśli tak, otwiera kolejną nogę DCA
     (dca_pending_*). NIE dotyka jeszcze głównej pozycji (quantity/
-    average_price/sell_order_id) - to robi dopiero _confirm_dca_fills() po
-    potwierdzeniu wykonania (Cancel-Replace starego LIMIT SELL).
+    average_price) - to robi dopiero _confirm_dca_fills() po potwierdzeniu
+    wykonania (Cancel-Replace ewentualnego starego LIMIT SELL/STOP).
     """
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False)
-        .filter(ActiveTrade.sell_order_id.isnot(None))
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True)
         .filter(ActiveTrade.dca_pending_buy_order_id.is_(None))
         .filter(ActiveTrade.dca_level < settings.max_dca_levels - 1)
         .all()
@@ -556,13 +682,15 @@ def _confirm_dca_fills(
 ) -> None:
     """
     Sprawdza wypełnienie zawieszonych nóg DCA (dca_pending_*) - ten sam wzorzec
-    co _attempt_sell_placement (pending_by_id -> filledQuantity wprost;
-    zniknęło z pending -> portfolio delta względem dca_pending_baseline_quantity,
-    czyli ile było PRZED TĄ KONKRETNĄ nogą). Po potwierdzeniu: dolicza do
-    głównej pozycji (quantity/allocated_value/average_price), CANCELUJE stary
-    LIMIT SELL (target był liczony dla starej, mniejszej pozycji) i zeruje
-    sell_order_id - _retry_pending_sells wystawi nowy, poprawny target na
-    najbliższym możliwym cyklu (Cancel-Replace).
+    co _confirm_buy_fill (pending_by_id -> filledQuantity wprost; zniknęło z
+    pending -> portfolio delta względem dca_pending_baseline_quantity, czyli
+    ile było PRZED TĄ KONKRETNĄ nogą). Po potwierdzeniu: dolicza do głównej
+    pozycji (quantity/allocated_value/average_price) i CANCELUJE obie nogi
+    trailing exitu (LIMIT SELL i STOP, jeśli były uzbrojone - liczone były
+    dla starej, mniejszej pozycji po starej średniej cenie) oraz zeruje
+    trail_milestone_steps - _manage_trailing_exit() uzbroi je od nowa na
+    najbliższym możliwym cyklu, licząc progi od nowej average_price
+    (Cancel-Replace).
     """
     candidates = (
         ActiveTrade.query
@@ -612,23 +740,26 @@ def _confirm_dca_fills(
         trade.average_price = (trade.allocated_value / trade.quantity).quantize(Decimal("0.0001"))
         trade.dca_level += 1
 
-        old_sell_order_id = trade.sell_order_id
-        if old_sell_order_id:
+        for leg_name, old_order_id in (("LIMIT SELL", trade.sell_order_id), ("STOP", trade.stop_order_id)):
+            if not old_order_id:
+                continue
             try:
-                client.cancel_order(old_sell_order_id)
+                client.cancel_order(old_order_id)
             except T212APIError as exc:
-                # Stary SELL mógł się już sam wykonać między sprawdzeniem
+                # Stara noga mogła się już sama wykonać między sprawdzeniem
                 # pending a teraz (rzadkie, ale nieszkodliwe) - i tak zerujemy
-                # sell_order_id, _retry_pending_sells/reconcile() przestaną go
+                # jej ID, _manage_trailing_exit/reconcile() przestaną jej
                 # szukać, a portfolio-delta w kolejnym cyklu i tak odzwierciedli
                 # rzeczywisty stan.
                 _log(
                     user_id, "INFO",
-                    f"{trade.ticker}: anulowanie starego LIMIT SELL ({old_sell_order_id}) po DCA "
+                    f"{trade.ticker}: anulowanie starego {leg_name} ({old_order_id}) po DCA "
                     f"nie powiodło się (prawdopodobnie już wykonany) - {exc}",
                     trade.position_group_id,
                 )
         trade.sell_order_id = None
+        trade.stop_order_id = None
+        trade.trail_milestone_steps = 0
         trade.sell_retry_count = 0
         trade.next_sell_retry_at = None
 
@@ -641,20 +772,83 @@ def _confirm_dca_fills(
         _log(
             user_id, "BUY",
             f"{trade.ticker}: DCA poziom {trade.dca_level} wypełniony ({leg_qty} @ ~{leg_price}) - "
-            f"nowa średnia {trade.average_price}, łącznie {trade.quantity}. Stary LIMIT SELL anulowany, "
-            "nowy zostanie wystawiony przy najbliższym ticku (Cancel-Replace).",
+            f"nowa średnia {trade.average_price}, łącznie {trade.quantity}. Trailing exit zresetowany, "
+            "uzbroi się od nowa od nowej średniej (Cancel-Replace).",
             trade.position_group_id,
         )
 
 
+def _finalize_closed_trade(user_id: int, client: T212Client, trade: ActiveTrade, filled_via: str) -> None:
+    """
+    Oznacza trade jako CLOSED i anuluje "osieroconą" drugą nogę (ręczne OCO -
+    T212 nie ma natywnego one-cancels-other, patrz _manage_trailing_exit).
+    filled_via: "take-profit" albo "stop-loss", tylko do logu/wyboru której
+    nogi szukać jako osieroconej.
+    """
+    sibling_id = trade.stop_order_id if filled_via == "take-profit" else trade.sell_order_id
+    if sibling_id:
+        try:
+            client.cancel_order(sibling_id)
+        except T212APIError as exc:
+            _log(
+                user_id, "INFO",
+                f"{trade.ticker}: anulowanie drugiej nogi ({sibling_id}) po zamknięciu przez "
+                f"{filled_via} nie powiodło się (mogła się wykonać w tym samym momencie) - {exc}",
+                trade.position_group_id,
+            )
+    trade.status = "CLOSED"
+    trade.closed_at = dt.datetime.utcnow()
+    db.session.commit()
+
+
+def _detect_exit_fills(user_id: int, client: T212Client, pending_ids: set[str]) -> int:
+    """
+    Sprawdza czy sell_order_id (take-profit) albo stop_order_id (stop-loss)
+    jakiejś OPEN pozycji zniknęło z pending - jeśli tak, pozycja wykonana,
+    oznacza CLOSED i anuluje osieroconą drugą nogę (patrz
+    _finalize_closed_trade). Wołane z KAŻDEGO tick() (nie tylko reconcile()
+    przy aktywacji) - inaczej pozycja wykonana W TRAKCIE gdy bot jest aktywny
+    nigdy nie zostałaby lokalnie zamknięta, a druga noga wisiałaby na T212
+    bez końca. Zwraca liczbę zamkniętych pozycji.
+    """
+    open_trades = (
+        ActiveTrade.query
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False)
+        .filter(db.or_(ActiveTrade.sell_order_id.isnot(None), ActiveTrade.stop_order_id.isnot(None)))
+        .all()
+    )
+    closed_count = 0
+    for trade in open_trades:
+        if trade.sell_order_id and trade.sell_order_id not in pending_ids:
+            _log(
+                user_id, "INFO",
+                f"{trade.ticker} (grupa {trade.position_group_id}): LIMIT SELL (take-profit) wykonany "
+                "- pozycja zamknięta.",
+                position_group_id=trade.position_group_id,
+            )
+            _finalize_closed_trade(user_id, client, trade, "take-profit")
+            closed_count += 1
+        elif trade.stop_order_id and trade.stop_order_id not in pending_ids:
+            _log(
+                user_id, "WARN",
+                f"{trade.ticker} (grupa {trade.position_group_id}): STOP (stop-loss) wykonany "
+                "- pozycja zamknięta ze stratą.",
+                position_group_id=trade.position_group_id,
+            )
+            _finalize_closed_trade(user_id, client, trade, "stop-loss")
+            closed_count += 1
+    return closed_count
+
+
 def reconcile(user_id: int) -> None:
     """
-    1. Sprawdza czy jakaś lokalnie "OPEN" pozycja (ActiveTrade.sell_order_id)
-       wykonała się na T212 podczas gdy bot był nieaktywny - jeśli sell_order_id
-       NIE występuje już wśród pending orders, oznacza pozycję jako CLOSED.
-    2. Woła _retry_pending_buys()/_retry_pending_sells() - ten sam mechanizm
-       co cykliczny tick(), więc zachowanie jest identyczne niezależnie od
-       tego, co je wywołało.
+    1. Sprawdza czy jakaś lokalnie "OPEN" pozycja (sell_order_id/stop_order_id)
+       wykonała się na T212 podczas gdy bot był nieaktywny - patrz
+       _detect_exit_fills().
+    2. Woła _confirm_dca_fills()/_retry_pending_buys()/_retry_pending_sells()/
+       _manage_trailing_exit()/_trigger_dca_buys() - ten sam mechanizm co
+       cykliczny tick(), więc zachowanie jest identyczne niezależnie od tego,
+       co je wywołało.
     """
     master_key = bot_credentials.get_master_key(user_id)
     if master_key is None:
@@ -686,21 +880,7 @@ def reconcile(user_id: int) -> None:
         return
 
     pending_ids = {str(o.get("id")) for o in pending}
-    closed_count = 0
-
-    for trade in open_trades:
-        if trade.sell_order_id and trade.sell_order_id not in pending_ids:
-            trade.status = "CLOSED"
-            trade.closed_at = dt.datetime.utcnow()
-            closed_count += 1
-            _log(
-                user_id, "INFO",
-                f"Reconciliation: {trade.ticker} (grupa {trade.position_group_id}) "
-                f"wykonane podczas nieaktywności bota - oznaczone jako CLOSED.",
-                position_group_id=trade.position_group_id,
-            )
-
-    db.session.commit()
+    closed_count = _detect_exit_fills(user_id, client, pending_ids)
     if closed_count == 0:
         _log(user_id, "INFO", f"Reconciliation: {len(open_trades)} pozycji sprawdzonych, wszystkie nadal aktualne.")
 
@@ -708,6 +888,7 @@ def reconcile(user_id: int) -> None:
         _confirm_dca_fills(user_id, client, settings, pending=pending)
         _retry_pending_buys(user_id, client, settings, pending=pending)
         _retry_pending_sells(user_id, client, settings, pending=pending)
+        _manage_trailing_exit(user_id, client, settings)
         _trigger_dca_buys(user_id, client, settings)
 
 
@@ -726,19 +907,43 @@ def tick(app) -> None:
 
             client = _get_client_for_user(user_id, settings)
             if client is not None:
-                # Jedno wspólne pobranie pending orders dla obu retry - unika
-                # dublowania zapytania w ciasnym rate limicie demo. Kolejność:
-                # najpierw goń kupno (bez tego sprzedaż i tak nie ma czego
-                # dotyczyć), potem sprzedaż.
-                try:
-                    pending = client.get_pending_orders()
-                except T212APIError as exc:
-                    _log(user_id, "ERROR", f"Tick: błąd pobierania pending orders - {exc}")
+                now = dt.datetime.utcnow()
+                backoff = _tick_error_backoff.get(user_id)
+                if backoff is not None and now < backoff[1]:
+                    # Wciąż w backoffie po poprzednich błędach - pomijamy CAŁY
+                    # T212-zależny odcinek tego ticku bez logowania (inaczej
+                    # dokładnie ten sam spam co próbowaliśmy tu zlikwidować),
+                    # żeby nie dokładać kolejnego zapytania do ciasnego limitu.
+                    pass
                 else:
-                    _confirm_dca_fills(user_id, client, settings, pending=pending)
-                    _retry_pending_buys(user_id, client, settings, pending=pending)
-                    _retry_pending_sells(user_id, client, settings, pending=pending)
-                    _trigger_dca_buys(user_id, client, settings)
+                    # Jedno wspólne pobranie pending orders dla obu retry - unika
+                    # dublowania zapytania w ciasnym rate limicie demo. Kolejność:
+                    # najpierw goń kupno (bez tego sprzedaż i tak nie ma czego
+                    # dotyczyć), potem sprzedaż.
+                    try:
+                        pending = client.get_pending_orders()
+                    except T212APIError as exc:
+                        # Backoff dla KAŻDEGO błędu tego zapytania, nie tylko 429 -
+                        # 401/500/timeout uporczywie powtarzane co 60s to ten sam
+                        # spam i to samo obciążenie ciasnego limitu demo co rate
+                        # limit (patrz historia 2026-07-21 w komentarzu nad stałą).
+                        consecutive = (backoff[0] if backoff else 0) + 1
+                        delay = _next_tick_error_delay(consecutive)
+                        _tick_error_backoff[user_id] = (consecutive, now + delay)
+                        _log(
+                            user_id, "ERROR",
+                            f"Tick: błąd pobierania pending orders #{consecutive} z rzędu ({exc}) - "
+                            f"kolejna próba za {int(delay.total_seconds() // 60)} min zamiast za 60s.",
+                        )
+                    else:
+                        _tick_error_backoff.pop(user_id, None)
+                        pending_ids = {str(o.get("id")) for o in pending}
+                        _detect_exit_fills(user_id, client, pending_ids)
+                        _confirm_dca_fills(user_id, client, settings, pending=pending)
+                        _retry_pending_buys(user_id, client, settings, pending=pending)
+                        _retry_pending_sells(user_id, client, settings, pending=pending)
+                        _manage_trailing_exit(user_id, client, settings)
+                        _trigger_dca_buys(user_id, client, settings)
 
             _process_entries(user_id, settings)
 
@@ -780,26 +985,29 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
 
     buy_price = price
     allocated_value = quantity * buy_price
-    target_price = (allocated_value + settings.take_profit_usd) / quantity
     position_group_id = str(uuid.uuid4())
 
     if settings.is_paper_trading:
-        # Symulacja - ZERO requestow do T212, tylko zapis do ActiveTrade z
-        # syntetycznymi ID zleceń. Reconcile() musi pomijac is_paper=True
-        # (nie ma czego uzgadniac - zadne zlecenie nigdzie nie poszlo).
+        # Symulacja - ZERO requestow do T212, tylko zapis do ActiveTrade.
+        # buy_confirmed=True od razu (nie ma czego czekać, "kupno" już się
+        # "wykonało") - i tak bez znaczenia, bo _manage_trailing_exit i cała
+        # reszta zarządzania wyjściem filtruje is_paper=False, więc pozycja
+        # papierowa nigdy nie dostanie symulowanego trailing exitu (ten sam,
+        # już wcześniej istniejący brak symulacji co przy dawnym target).
         trade = ActiveTrade(
             user_id=user_id, bot_asset_id=asset.id, position_group_id=position_group_id,
             ticker=asset.ticker, currency=asset.currency,
-            buy_order_id=f"PAPER-{uuid.uuid4()}", sell_order_id=f"PAPER-{uuid.uuid4()}",
+            buy_order_id=f"PAPER-{uuid.uuid4()}", sell_order_id=None,
             buy_price=buy_price, quantity=quantity, allocated_value=allocated_value,
             average_price=buy_price, dca_level=0, status="OPEN", is_paper=True,
+            buy_confirmed=True,
         )
         db.session.add(trade)
         db.session.commit()
         _log(
             user_id, "BUY",
-            f"[PAPER] {asset.ticker}: symulowane wejście {quantity} @ ~{buy_price}, "
-            f"symulowany target {target_price:.4f} - ŻADNE zlecenie nie poszło do T212.",
+            f"[PAPER] {asset.ticker}: symulowane wejście {quantity} @ ~{buy_price} - "
+            "ŻADNE zlecenie nie poszło do T212 (i żaden trailing exit nie jest symulowany).",
             position_group_id,
         )
         return
@@ -835,8 +1043,10 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
     # modułu) - zakup może wciąż być w kolejce znacznie dłużej niż sensowny
     # blokujący retry, a nawet po wykonaniu faktycznie kupiona ilość może
     # różnić się od zażądanej (częściowe wykonanie). _retry_pending_sells()
-    # (wołane z tick()) sprawdzi FAKTYCZNIE posiadaną ilość w portfolio T212
-    # i wystawi LIMIT SELL przy najbliższym możliwym cyklu.
+    # (wołane z tick()) sprawdzi FAKTYCZNIE posiadaną ilość w portfolio T212 i
+    # ustawi buy_confirmed=True - dopiero wtedy _manage_trailing_exit()
+    # zacznie pilnować ceny i wystawi LIMIT SELL/STOP, gdy przyjdzie na to
+    # pora (2 progi take_profit_step_pct, patrz ta funkcja).
     trade = ActiveTrade(
         user_id=user_id, bot_asset_id=asset.id, position_group_id=position_group_id,
         ticker=asset.ticker, currency=asset.currency,
@@ -844,7 +1054,7 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
         buy_price=buy_price, quantity=quantity, allocated_value=allocated_value,
         average_price=buy_price, dca_level=0, status="OPEN", is_paper=False,
         baseline_owned_quantity=baseline_owned_quantity,
-        grid_anchor_price=buy_price,
+        grid_anchor_price=buy_price, buy_confirmed=False,
     )
     db.session.add(trade)
     db.session.commit()
@@ -857,7 +1067,7 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
     )
     _log(
         user_id, "BUY",
-        f"{asset.ticker}: wejście {quantity} @ ~{buy_price} - LIMIT SELL (target ~{target_price:.4f}) "
-        "zostanie wystawiony przy najbliższym możliwym ticku.",
+        f"{asset.ticker}: wejście {quantity} @ ~{buy_price} - bot zacznie zarządzać wyjściem "
+        "(trailing take-profit + stop-loss) po potwierdzeniu kupna.",
         position_group_id,
     )
