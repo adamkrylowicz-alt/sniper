@@ -662,6 +662,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
 
         was_armed = trade.trail_milestone_steps > 0
         trade.stop_order_id = stop_result.order_id
+        trade.stop_target_price = new_stop_price
         trade.trail_milestone_steps = milestone_steps
         trade.sell_retry_count = 0
         trade.next_sell_retry_at = None
@@ -878,6 +879,14 @@ def _finalize_closed_trade(user_id: int, client: T212Client, trade: ActiveTrade,
     T212 nie ma natywnego one-cancels-other, patrz _manage_trailing_exit).
     filled_via: "take-profit" albo "stop-loss", tylko do logu/wyboru której
     nogi szukać jako osieroconej.
+
+    close_price = trade.stop_target_price (patrz models.py::ActiveTrade,
+    dodane 2026-07-21, żeby zysk/strata zrealizowana dało się policzyć bez
+    dziennika/T212) - PRZYBLIŻENIE dla "stop-loss" (Market Order po
+    przebiciu stopu może wykonać się z poślizgiem), a dla "take-profit" (stara
+    ścieżka sell_order_id sprzed przeprojektowania, patrz komentarz przy
+    ActiveTrade.sell_order_id) w ogóle nieznane - stop_target_price dotyczy
+    tylko nogi STOP, więc zostaje NULL.
     """
     sibling_id = trade.stop_order_id if filled_via == "take-profit" else trade.sell_order_id
     if sibling_id:
@@ -890,6 +899,8 @@ def _finalize_closed_trade(user_id: int, client: T212Client, trade: ActiveTrade,
                 f"{filled_via} nie powiodło się (mogła się wykonać w tym samym momencie) - {exc}",
                 trade.position_group_id,
             )
+    if filled_via == "stop-loss":
+        trade.close_price = trade.stop_target_price
     trade.status = "CLOSED"
     trade.closed_at = dt.datetime.utcnow()
     db.session.commit()

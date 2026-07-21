@@ -506,6 +506,22 @@ class ActiveTrade(db.Model):
     buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
     trail_milestone_steps = db.Column(db.Integer, nullable=False, default=0)
     stop_order_id = db.Column(db.String(64), nullable=True)
+    # Cena, na jaką ustawiony jest AKTUALNY stop_order_id (zapisywana przy
+    # każdym uzbrojeniu/przesunięciu w _manage_trailing_exit) - jedyny sposób
+    # na przybliżoną cenę wyjścia bez odpytywania historii zleceń T212
+    # (get_order_history, patrz t212_client.py - wymaga dodatkowego
+    # zapytania w ciasnym rate limicie demo, a kształt pola z ceną wykonania
+    # w odpowiedzi nie był jeszcze na żywo zweryfikowany). Realne wykonanie
+    # STOP-a to Market Order po przebiciu tej ceny, więc może się nieznacznie
+    # różnić (poślizg) - to przybliżenie, nie gwarancja co do grosza.
+    stop_target_price = db.Column(db.Numeric(12, 4), nullable=True)
+    # Zapisywane przy zamknięciu pozycji (_finalize_closed_trade) - kopia
+    # stop_target_price z chwili zamknięcia, żeby zysk/strata zrealizowana
+    # dało się policzyć bez grzebania w (skasowanym w międzyczasie 21.07)
+    # dzienniku ani bez ponownego pytania T212. NULL dla pozycji zamkniętych
+    # PRZED dodaniem tego pola (2026-07-21) - nie da się tego odtworzyć
+    # wstecz bez dostępu do historii zleceń T212.
+    close_price = db.Column(db.Numeric(12, 4), nullable=True)
 
     # Ile tickera user posiadał w portfolio T212 TUŻ PRZED złożeniem tego
     # zlecenia kupna (patrz services/bot_engine.py::_enter_position). Gdy
