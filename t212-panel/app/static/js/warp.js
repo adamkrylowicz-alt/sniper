@@ -338,7 +338,17 @@ async function loadPendingOrders() {
             const side = qty >= 0 ? "KUP" : "SPRZEDAJ";
             const div = document.createElement("div");
             div.className = "pending-orders-list__item";
-            div.textContent = `${o.ticker ?? "?"} · ${side} ${Math.abs(qty)}`;
+
+            const nameEl = document.createElement("span");
+            nameEl.className = "pending-orders-list__name";
+            nameEl.textContent = o.name || o.ticker || "?";
+            div.appendChild(nameEl);
+
+            const metaEl = document.createElement("span");
+            metaEl.className = "pending-orders-list__meta";
+            metaEl.textContent = `${o.ticker ?? "?"} · ${side} ${Math.abs(qty)}`;
+            div.appendChild(metaEl);
+
             container.appendChild(div);
         });
     } catch (err) {

@@ -27,7 +27,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from ..extensions import db
-from ..models import OrderLog
+from ..models import Instrument, OrderLog
 from ..services import logo_cache
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
@@ -186,6 +186,19 @@ def pending_orders():
         return jsonify(ok=False, error=str(exc)), 500
     except T212APIError as exc:
         return jsonify(ok=False, error=str(exc)), 502
+
+    # Doklejenie pełnej nazwy spółki - ten sam wzorzec co Warp/Focus/Aktywa/
+    # Virtual Pie/Bot (friendly_name() + Instrument.name), brakowało tutaj
+    # (zgłoszone przez Adama 2026-07-21) - bez tego widget pokazywał sam
+    # ticker (np. "SPCX_US_EQ"), nieczytelny na pierwszy rzut oka.
+    tickers = [o.get("ticker") for o in orders if o.get("ticker")]
+    instruments_by_ticker = (
+        {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
+        if tickers else {}
+    )
+    for order in orders:
+        instrument = instruments_by_ticker.get(order.get("ticker"))
+        order["name"] = friendly_name(instrument.name) if instrument else None
 
     return jsonify(ok=True, orders=orders)
 
