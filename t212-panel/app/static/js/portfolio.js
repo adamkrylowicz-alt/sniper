@@ -39,7 +39,7 @@ function renderPortfolio(positions, totalValue, totalPpl) {
             : `<span class="pie-asset-row__avatar" style="width:28px;height:28px;font-size:12px;background: hsl(${p.hue}, 55%, 38%);">${escapeHtml(p.initial)}</span>`;
 
         return `
-            <tr>
+            <tr class="${p.ppl >= 0 ? "portfolio-row--profit" : "portfolio-row--loss"}">
                 <td>
                     <a href="/instrument/${encodeURIComponent(p.ticker)}" class="pie-asset-row__ticker-link">
                         ${avatar}

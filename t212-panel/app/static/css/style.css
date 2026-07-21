@@ -1795,6 +1795,12 @@ img.focus-tile__logo {
 .focus-tile__pnl--profit { color: var(--buy-green); }
 .focus-tile__pnl--loss { color: var(--sell-red); }
 
+/* Zakladka Aktywa (/warp/portfolio) - subtelne tlo calego wiersza wg
+   zysku/straty, nie tylko kolorowana liczba w ostatniej kolumnie - latwiej
+   ogarnac portfel jednym rzutem oka bez czytania kazdej wartosci osobno. */
+.portfolio-row--profit { background: color-mix(in srgb, var(--buy-green) 10%, transparent); }
+.portfolio-row--loss { background: color-mix(in srgb, var(--sell-red) 10%, transparent); }
+
 .focus-candle-up { fill: var(--buy-green); stroke: var(--buy-green); }
 .focus-candle-down { fill: var(--sell-red); stroke: var(--sell-red); }
 

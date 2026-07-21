@@ -40,7 +40,7 @@
             </thead>
             <tbody>
                 {% for p in positions %}
-                <tr>
+                <tr class="{{ 'portfolio-row--profit' if p.ppl >= 0 else 'portfolio-row--loss' }}">
                     <td>
                         <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
                             {% if p.logo_filename %}
