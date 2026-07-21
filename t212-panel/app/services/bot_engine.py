@@ -42,6 +42,12 @@ Silnik Micro-Grid Bota:
    uniemożliwił bezpieczną weryfikację pól /equity/metadata/instruments) -
    zamiast tego odrzucenie przez T212 (np. brak wsparcia ułamków) jest po
    prostu logowane jako ERROR, bot spróbuje ponownie przy kolejnym tick-u.
+   Wyjątek dodany 2026-07-21 (znalezione na żywo - MAIN_US_EQ, potem
+   IPOE_US_EQ/SOFI): zła precyzja ilości (quantity-precision-mismatch) NIE
+   czeka na kolejny tick - _place_buy_with_precision_fallback() od razu
+   przelicza ilość do precyzji podanej w komunikacie T212 i ponawia RAZ w
+   tym samym wywołaniu (zaokrąglenie W GÓRĘ, żeby zainwestowana wartość
+   nigdy nie spadła poniżej zamierzonej kwoty).
 5. Trailing exit (zastąpił sztywny take_profit_usd, 2026-07-21 na życzenie
    Adama - patrz uzasadnienie w RiskSettings.take_profit_step_pct). Pierwsza
    wersja (tego samego dnia) próbowała trzymać RÓWNOCZEŚNIE LIMIT SELL
@@ -116,8 +122,9 @@ niezależne przyczyny):
 from __future__ import annotations
 
 import datetime as dt
+import re
 import uuid
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_UP, Decimal, InvalidOperation
 
 from flask import current_app
 
@@ -141,6 +148,56 @@ BOT_ENVIRONMENT = "demo"
 MIN_ORDER_VALUE_ESTIMATE = Decimal("1.20")
 
 SELLING_EQUITY_NOT_OWNED_ERROR_TYPE = "/api-errors/selling-equity-not-owned"
+
+# Znalezione na żywo 2026-07-21 (MAIN_US_EQ, potem IPOE_US_EQ/SOFI) - T212
+# wymaga RÓŻNEJ liczby miejsc po przecinku w ilości w zależności od instrumentu
+# (my zawsze liczymy quantize(Decimal("0.0001")), czyli 4 - część spółek
+# akceptuje tylko 3). Zamiast twardo obniżać precyzję dla WSZYSTKICH
+# instrumentów (zbędna utrata dokładności tam, gdzie 4 miejsca działają), bot
+# reaguje NA błąd konkretnego zlecenia - patrz _place_buy_with_precision_fallback.
+QUANTITY_PRECISION_MISMATCH_ERROR_TYPE = "/api-errors/quantity-precision-mismatch"
+
+
+def _required_precision(exc: T212APIError) -> int | None:
+    """
+    Wyciąga wymaganą liczbę miejsc po przecinku z komunikatu T212 przy
+    quantity-precision-mismatch (np. "invalid quantity precision 3" -> 3).
+    None gdy to inny typ błędu albo T212 kiedyś zmieni format komunikatu -
+    wywołujący ma wtedy zrezygnować z automatycznego retry, nie zgadywać.
+    """
+    payload = exc.payload
+    if not isinstance(payload, dict) or payload.get("type") != QUANTITY_PRECISION_MISMATCH_ERROR_TYPE:
+        return None
+    match = re.search(r"(\d+)", str(payload.get("detail", "")))
+    return int(match.group(1)) if match else None
+
+
+def _place_buy_with_precision_fallback(
+    client: T212Client, ticker: str, quantity: Decimal, price: Decimal,
+):
+    """
+    Składa LIMIT BUY; jeśli T212 odrzuci z powodu złej precyzji ilości,
+    przelicza ilość do wymaganej liczby miejsc po przecinku i próbuje RAZ
+    jeszcze tą samą ceną. Zaokrągla W GÓRĘ (ROUND_UP), nie w dół - żeby
+    zainwestowana wartość nigdy nie wypadła PONIŻEJ zamierzonej kwoty
+    (ustalone z Adamem 2026-07-21: "podciągaj wartość jak będzie potrzebna").
+    Rzuca dalej oryginalny/nowy T212APIError, jeśli mimo to się nie uda albo
+    błąd jest innego typu - wywołujący loguje ERROR jak dotychczas.
+
+    Zwraca (OrderResult, faktycznie użyta ilość) - wywołujący MUSI użyć
+    zwróconej ilości przy zapisie ActiveTrade/allocated_value, nie
+    oryginalnej `quantity` przekazanej tutaj.
+    """
+    try:
+        return client.place_limit_order(ticker, quantity, price), quantity
+    except T212APIError as exc:
+        precision = _required_precision(exc)
+        if precision is None:
+            raise
+        adjusted = quantity.quantize(Decimal(1).scaleb(-precision), rounding=ROUND_UP)
+        if adjusted <= 0 or adjusted == quantity:
+            raise
+        return client.place_limit_order(ticker, adjusted, price), adjusted
 
 # Backoff (minuty) między kolejnymi próbami LIMIT SELL dla pozycji, która
 # jeszcze nie ma potwierdzonej ilości w portfolio T212 (patrz
@@ -665,7 +722,9 @@ def _trigger_dca_buys(user_id: int, client: T212Client, settings: RiskSettings) 
             continue
 
         try:
-            buy_result = client.place_limit_order(trade.ticker, dca_quantity, current_price)
+            buy_result, dca_quantity = _place_buy_with_precision_fallback(
+                client, trade.ticker, dca_quantity, current_price,
+            )
         except T212APIError as exc:
             _log(
                 user_id, "ERROR",
@@ -1045,10 +1104,11 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
     # Jeśli cena i tak odjedzie zanim się wypełni, _retry_pending_buys()
     # (wołane z tick()) anuluje i ponowi po nowej cenie - patrz ta funkcja.
     try:
-        buy_result = client.place_limit_order(asset.ticker, quantity, price)
+        buy_result, quantity = _place_buy_with_precision_fallback(client, asset.ticker, quantity, price)
     except T212APIError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: zakup nieudany - {exc}")
         return
+    allocated_value = quantity * buy_price
 
     # LIMIT SELL NIE jest wystawiany tutaj (patrz historia buga w docstringu
     # modułu) - zakup może wciąż być w kolejce znacznie dłużej niż sensowny
