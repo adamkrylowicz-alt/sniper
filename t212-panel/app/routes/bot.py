@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 
+import pytz
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from .. import cipher
@@ -28,6 +29,8 @@ from ..services import bot_credentials, bot_engine, price_feed
 from ..utils import avatar_hue, current_user_id, friendly_name, login_required
 
 bot_bp = Blueprint("bot", __name__, url_prefix="/bot")
+
+_AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
 
 
 def _get_or_create_settings(user_id: int) -> RiskSettings:
@@ -49,13 +52,24 @@ def view():
     user_id = current_user_id()
     settings = _get_or_create_settings(user_id)
 
-    logs = (
+    # created_at w bazie jest w UTC (dt.datetime.utcnow() w bot_engine.py::_log) -
+    # przeliczone tutaj na czas Amsterdamu (Adam zgłosił 2026-07-21: "wyswietla
+    # 21 a jest 23", dziennik pokazywał surowe UTC bez konwersji/etykiety).
+    logs_raw = (
         BotAuditLog.query
         .filter_by(user_id=user_id)
         .order_by(BotAuditLog.created_at.desc())
         .limit(50)
         .all()
     )
+    logs = [
+        {
+            "action_type": l.action_type,
+            "message": l.message,
+            "created_at_local": pytz.utc.localize(l.created_at).astimezone(_AMSTERDAM_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        }
+        for l in logs_raw
+    ]
 
     # Hydratacja do prostych dict-ów - ten sam wzorzec co routes/pie.py::detail.
     # Pełna nazwa spółki jako główny tekst (nie sam ticker) - ten sam wzorzec

@@ -179,7 +179,7 @@
     <table class="history-table" id="bot-log-table">
         <thead>
             <tr>
-                <th>Czas</th>
+                <th>Czas (Amsterdam)</th>
                 <th>Typ</th>
                 <th>Wiadomość</th>
             </tr>
@@ -187,7 +187,7 @@
         <tbody>
             {% for l in logs %}
             <tr>
-                <td>{{ l.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
+                <td>{{ l.created_at_local }}</td>
                 <td class="history-table__status history-table__status--{{ l.action_type|lower }}">{{ l.action_type }}</td>
                 <td>{{ l.message }}</td>
             </tr>
