@@ -37,6 +37,10 @@ TICKER_MAP: dict[str, str] = {
     "RHMd_EQ": "RHM.XETRA",
     "1YD_EQ": "AVGO",           # Broadcom, T212 używa lokalnego symbolu Frankfurt
     "SPCX_US_EQ": "SPCX",      # SpaceX - IPO czerwiec 2026
+    "IPOE_US_EQ": "SOFI",      # T212 trzyma stary kod SPAC-a (Social Capital Hedosophia IV),
+                               # spółka od dawna handluje jako SoFi Technologies pod symbolem SOFI -
+                               # automatyczne mapowanie dawało martwe "IPOE" (bez ceny u Finnhub/Yahoo),
+                               # znalezione 2026-07-21 gdy bot dodał ten ticker i nie mógł wejść w pozycję.
 }
 
 
