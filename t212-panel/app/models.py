@@ -385,20 +385,21 @@ class RiskSettings(db.Model):
 
     max_spread_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.05)
 
-    # Trailing exit (zamiast dawnego sztywnego take_profit_usd, 2026-07-21) -
+    # Trailing STOP (zamiast dawnego sztywnego take_profit_usd, 2026-07-21) -
     # patrz services/bot_engine.py::_manage_trailing_exit. Procent, nie stała
     # kwota - żeby krok/stop skalowały się z ceną instrumentu (Adam: sztywna
     # kwota EUR na drogiej spółce jak ASML to szum, na groszówce to przepaść).
-    # take_profit_step_pct: o ile % ceny (od average_price) przesuwa się w
-    # górę LIMIT SELL po każdym kolejnym progu. Bot NIE wystawia zlecenia od
-    # razu po kupnie - czeka aż cena minie 2 progi, dopiero wtedy wystawia
-    # LIMIT SELL jeden próg NIŻEJ niż aktualny (żeby zablokować już osiągnięty
-    # zysk, nie cały bieżący szczyt), i przesuwa go w górę o kolejny próg za
-    # każdym razem gdy cena mija następny.
+    # JEDNO zlecenie na raz (przeprojektowane tego samego dnia - T212 nie
+    # pozwala trzymać LIMIT SELL + STOP równocześnie na te same akcje, patrz
+    # docs/IDEAS_v2.md pkt 4): bot NIE wystawia nic od razu po kupnie - czeka
+    # aż cena minie 2 progi (take_profit_step_pct), dopiero wtedy uzbraja
+    # pojedynczy STOP na average_price*(1-stop_loss_pct), i przesuwa TEN SAM
+    # STOP w górę o kolejny próg za każdym razem gdy cena mija następny.
     take_profit_step_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.003)
-    # stop_loss_pct: od average_price, uzbrajany DOPIERO gdy take-profit
-    # zdąży się uzbroić (2 progi) - ochrona przed oddaniem całego zysku i
-    # wejściem pod kreskę, nie stop od samego wejścia.
+    # stop_loss_pct: dystans STOP-a od average_price przy PIERWSZYM uzbrojeniu
+    # (dokładnie na progu 2) - ochrona kapitału, nie stop od samego wejścia.
+    # Przy kolejnych progach STOP przesuwa się wg take_profit_step_pct, nie
+    # wg tego pola - patrz _manage_trailing_exit.
     stop_loss_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.02)
 
     max_daily_loss = db.Column(db.Numeric(12, 2), nullable=False, default=10.0)
@@ -470,6 +471,12 @@ class ActiveTrade(db.Model):
     currency = db.Column(db.String(10), nullable=False)
 
     buy_order_id = db.Column(db.String(64), nullable=False)
+    # Dawna noga LIMIT SELL (take-profit) z pierwszej wersji trailing exitu
+    # (dwunożne ręczne OCO, patrz services/bot_engine.py::_manage_trailing_exit) -
+    # od przeprojektowania 2026-07-21 na pojedynczy trailing STOP już nie jest
+    # zakładana dla nowych pozycji. Zostaje jako pole migracyjne: jeśli jakaś
+    # pozycja ma ją jeszcze ustawioną (założoną PRZED przeprojektowaniem),
+    # _manage_trailing_exit() ją anuluje i zeruje przy najbliższej okazji.
     sell_order_id = db.Column(db.String(64), nullable=True)
 
     # "Gonienie" ceny LIMIT BUY (patrz services/bot_engine.py::_retry_pending_buys) -
@@ -488,14 +495,14 @@ class ActiveTrade(db.Model):
     next_sell_retry_at = db.Column(db.DateTime, nullable=True)
     sell_blocked = db.Column(db.Boolean, nullable=False, default=False)
 
-    # Trailing exit (patrz RiskSettings.take_profit_step_pct/stop_loss_pct i
-    # services/bot_engine.py::_manage_trailing_exit). buy_confirmed zastępuje
-    # stare "sell_order_id IS NOT NULL" jako sygnał "kupno rozliczone" - bo
-    # teraz sell_order_id bywa puste przez jakiś czas PO potwierdzeniu kupna
-    # (bot czeka na 2 progi zanim cokolwiek wystawi). trail_milestone_steps -
-    # ile progów take-profit już uzbrojono (0 = jeszcze żaden). stop_order_id -
-    # druga, ochronna noga obok sell_order_id (ręczne OCO - jak jedna się
-    # wykona, reconcile() anuluje drugą).
+    # Trailing STOP (patrz RiskSettings.take_profit_step_pct/stop_loss_pct i
+    # services/bot_engine.py::_manage_trailing_exit). buy_confirmed sygnalizuje
+    # "kupno rozliczone" (bot czeka na 2 progi zanim cokolwiek wystawi).
+    # trail_milestone_steps - na którym progu jest obecnie uzbrojony STOP
+    # (0 = jeszcze żaden). stop_order_id - JEDYNA aktywna noga wyjścia od
+    # przeprojektowania 2026-07-21 (dawniej druga, ochronna noga obok
+    # sell_order_id w ręcznym OCO - teraz sell_order_id już nie jest zakładane
+    # dla nowych pozycji, patrz komentarz przy tym polu).
     buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
     trail_milestone_steps = db.Column(db.Integer, nullable=False, default=0)
     stop_order_id = db.Column(db.String(64), nullable=True)

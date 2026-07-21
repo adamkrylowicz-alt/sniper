@@ -109,15 +109,25 @@ tuż poniżej high poprzedniej świecy 1-min), bardzo ciasny trailing stop
    błędem T212 `400 selling-equity-not-owned` - broker traktuje akcje jako
    już "zaklepane" przez pierwsze zlecenie, więc drugie resting-sell na tę
    samą ilość jest odrzucane. Backoff na tę ścieżkę dodany (żeby nie
-   spamować logu co tick), ale sama mechanika wymaga przeprojektowania.
-   Do przegadania (NIE zrobione jeszcze):
-   - Syntetyczny stop-loss (bot sam pilnuje ceny, Market Sell przy przebiciu)
-     - wada: nie chroni gdy bot offline (dokładnie problem który miał
-       rozwiązać prawdziwy STOP).
-   - Odwrócić mechanikę: trzymać TYLKO STOP, ale przesuwany w górę (klasyczny
-     trailing stop od dołu) zamiast rosnącego LIMIT SELL od góry - jedno
-     resting zlecenie, chroni zawsze, ale zamyka na cofnięciu ceny, nie na
-     sztywnym +krok jak w pierwotnym pomyśle Adama.
+   spamować logu co tick), ale sama mechanika wymagała przeprojektowania.
+
+   **ROZWIĄZANE (2026-07-21, tego samego dnia)**: wybrana druga z dwóch
+   rozważanych opcji - odwrócona mechanika, TYLKO jeden resting STOP,
+   przesuwany w górę (klasyczny trailing stop), zamiast pary rosnący LIMIT
+   SELL + osobny STOP. Odrzucona alternatywa: syntetyczny stop-loss (bot sam
+   pilnuje ceny, Market Sell przy przebiciu) - wada nie do zaakceptowania,
+   nie chroni gdy bot offline (dokładnie problem który miał rozwiązać
+   prawdziwy STOP). Nowa mechanika (`_manage_trailing_exit` w
+   `bot_engine.py`): STOP siada na `average_price*(1-stop_loss_pct)` przy
+   pierwszym uzbrojeniu (próg 2), potem przesuwa się w górę o
+   `take_profit_step_pct` na każdym kolejnym progu (Cancel-Replace, ZAWSZE
+   tylko jedno zlecenie). Trade-off świadomie zaakceptowany: pozycja zamyka
+   się na cofnięciu ceny o `stop_loss_pct` od ostatniego szczytu, nie na
+   sztywnym +krok jak w pierwotnym pomyśle - w zamian zero ryzyka OCO i
+   ochrona przeżywa restart/awarię procesu bota. Migracja: `ActiveTrade.sell_order_id`
+   (stara noga LIMIT SELL) zostaje w schemacie jako pole czysto migracyjne -
+   jeśli jakaś pozycja ma je jeszcze ustawione z przed przeprojektowania,
+   pierwszy tick po restarcie appki je anuluje i zeruje.
 
 ## Otwarte pytania (do rozstrzygnięcia przed kodowaniem)
 - Czy EOD ma sens bez stabilnego źródła świec 1-min? Jakie API rozważyć
