@@ -123,6 +123,15 @@ def _register_scheduler(app: Flask) -> None:
         func=lambda: bot_engine.tick(app),
         trigger="interval", seconds=60, id="bot_tick", replace_existing=True,
     )
+    # Dzienny raport zysk/strata mailem (ustalone z Adamem 2026-07-21) - 22:01
+    # czasu Amsterdamu (timezone="Europe/Amsterdam", APScheduler sam ogarnia
+    # przejście CEST/CET, nie trzeba przeliczać na UTC ręcznie), tuż po
+    # zamknięciu sesji USA (~22:00 CEST latem) - łapie cały dzień handlu.
+    scheduler.add_job(
+        func=lambda: bot_engine.daily_report(app),
+        trigger="cron", hour=22, minute=1, timezone="Europe/Amsterdam",
+        id="bot_daily_report", replace_existing=True,
+    )
     scheduler.start()
 
 

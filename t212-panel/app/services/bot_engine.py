@@ -130,10 +130,10 @@ from pathlib import Path
 from flask import current_app
 
 from ..extensions import db
-from ..models import ActiveTrade, BotAsset, BotAuditLog, RiskSettings
+from ..models import ActiveTrade, BotAsset, BotAuditLog, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from . import bot_credentials, price_feed
+from . import bot_credentials, mailer, price_feed
 from .t212_client import T212APIError, T212Client
 
 BOT_ENVIRONMENT = "demo"
@@ -1177,3 +1177,94 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
         "(trailing take-profit + stop-loss) po potwierdzeniu kupna.",
         position_group_id,
     )
+
+
+def daily_report(app) -> None:
+    """
+    Wołane raz dziennie o 22:01 czasu Amsterdamu (patrz
+    app/__init__.py::_register_scheduler, tuż po zamknięciu NASDAQ/NYSE) -
+    liczy zysk/stratę za ostatnie 24h i wysyła mailem na REPORT_TO_EMAIL (ten
+    sam adres co "Zgłoś problem", patrz routes/report.py/services/mailer.py).
+    Jeden wspólny mail dla wszystkich userów z choć jednym RiskSettings
+    (czyli którzy kiedykolwiek dotknęli bota) - appka jest jednoosobowa w
+    praktyce, ale to nie zakłada tego na sztywno.
+
+    Zrealizowany zysk/strata: pozycje CLOSED w ostatnich 24h, liczone z
+    ActiveTrade.close_price (dodane 2026-07-21 - patrz models.py, NULL dla
+    starej ścieżki take-profit sprzed przeprojektowania OCO, wtedy pozycja
+    jest wypisana bez kwoty zamiast zgadywać). Niezrealizowany: WSZYSTKIE
+    aktualnie otwarte pozycje (nie tylko z ostatnich 24h - to stan "teraz",
+    nie zdarzenie z okna czasowego), wyceniane żywą ceną z price_feed (ta
+    sama funkcja co bot używa do decyzji).
+    """
+    with app.app_context():
+        cutoff = dt.datetime.utcnow() - dt.timedelta(hours=24)
+        sections: list[str] = []
+
+        for settings in RiskSettings.query.all():
+            user = User.query.get(settings.user_id)
+            if user is None:
+                continue
+
+            closed = (
+                ActiveTrade.query
+                .filter_by(user_id=settings.user_id, is_paper=False, status="CLOSED")
+                .filter(ActiveTrade.closed_at >= cutoff)
+                .all()
+            )
+            realized_total = Decimal("0")
+            realized_unknown = 0
+            closed_lines = []
+            for t in closed:
+                if t.close_price is not None:
+                    pnl = (t.close_price - t.buy_price) * t.quantity
+                    realized_total += pnl
+                    closed_lines.append(f"  ZAMKNIĘTA {t.ticker}: {pnl:+.2f} {t.currency} (wejście {t.buy_price}, wyjście {t.close_price})")
+                else:
+                    realized_unknown += 1
+                    closed_lines.append(f"  ZAMKNIĘTA {t.ticker}: cena wyjścia nieznana (sprzed 2026-07-21)")
+
+            open_trades = ActiveTrade.query.filter_by(user_id=settings.user_id, is_paper=False, status="OPEN").all()
+            unrealized_total = Decimal("0")
+            unrealized_known = 0
+            open_lines = []
+            for t in open_trades:
+                price = price_feed.get_live_price(current_app.config.get("FINNHUB_API_KEY"), t.ticker)
+                if price is None:
+                    open_lines.append(f"  OTWARTA {t.ticker}: brak żywej ceny")
+                    continue
+                pnl = (price - t.average_price) * t.quantity
+                unrealized_total += pnl
+                unrealized_known += 1
+                open_lines.append(f"  OTWARTA {t.ticker}: {pnl:+.2f} niezrealizowane (średnia {t.average_price}, teraz {price})")
+
+            if not closed and not open_trades:
+                continue  # user ma RiskSettings, ale nigdy nie miał żadnej pozycji - nic do raportowania
+
+            lines = [
+                f"=== {user.username} ===",
+                f"Zrealizowany zysk/strata (24h): {realized_total:+.2f} "
+                f"({len(closed)} zamkniętych" + (f", {realized_unknown} bez znanej ceny wyjścia" if realized_unknown else "") + ")",
+                f"Niezrealizowany zysk/strata (teraz): {unrealized_total:+.2f} "
+                f"({unrealized_known}/{len(open_trades)} otwartych wycenionych)",
+            ]
+            lines += closed_lines + open_lines
+            sections.append("\n".join(lines))
+
+        if not sections:
+            return  # nikt nigdy nie uzywal bota - nic do raportowania
+
+        body_text = "\n\n".join(sections)
+        try:
+            mailer.send_report(
+                smtp_host=current_app.config["SMTP_HOST"], smtp_port=current_app.config["SMTP_PORT"],
+                smtp_user=current_app.config["SMTP_USER"], smtp_password=current_app.config["SMTP_PASSWORD"],
+                mail_from=current_app.config["SMTP_FROM"], mail_to=current_app.config["REPORT_TO_EMAIL"],
+                subject=f"[SNAJPER] Dzienny raport bota - {dt.datetime.utcnow().strftime('%Y-%m-%d')} (UTC)",
+                body_text=body_text,
+            )
+        except (mailer.MailerNotConfiguredError, mailer.MailSendError) as exc:
+            # Brak dobrego miejsca na zalogowanie tego usera (to nie akcja
+            # z UI konkretnego usera) - tylko do stdout/stderr procesu
+            # (widoczne w /tmp/sniper_start.log).
+            print(f"[daily_report] wysyłka nie powiodła się: {exc}")
