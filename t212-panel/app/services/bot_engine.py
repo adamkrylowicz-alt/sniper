@@ -1103,12 +1103,20 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     usera (WŁASNA lista bota, patrz models.py::BotAsset - niezależna od
     Smart Virtual Pie) z is_penny_stock=False - jeśli nie ma już otwartej
     pozycji na tym aktywie, otwiera nową.
+
+    "Już otwarta" sprawdzane PO TICKERZE (user_id + ticker), NIE po
+    bot_asset_id - znaleziony realny bug 2026-07-21: usunięcie tickera z
+    listy bota i dodanie go z powrotem tworzy NOWY wiersz BotAsset (nowe
+    id), więc stara otwarta pozycja (przypisana do już nieistniejącego
+    bot_asset_id) stawała się "niewidoczna" dla tego sprawdzenia - bot
+    otwierał DRUGĄ, niezależną pozycję na tym samym tickerze (ASMLa_EQ,
+    złapane na żywo: dwie otwarte pozycje jednocześnie).
     """
     assets = BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all()
     for asset in assets:
         if not _market_open(asset.currency):
             continue  # giełda właściwa dla tej waluty zamknięta - patrz _market_open
-        already_open = ActiveTrade.query.filter_by(bot_asset_id=asset.id, status="OPEN").first()
+        already_open = ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN").first()
         if already_open:
             continue
         _enter_position(user_id, asset, settings)
