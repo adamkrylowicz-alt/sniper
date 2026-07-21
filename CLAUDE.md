@@ -17,6 +17,7 @@
 - `t212-panel/migrate_add_*.py` — jednorazowe, idempotentne migracje SQLite (ALTER TABLE) — uruchamiane ręcznie po uploadzie, bo `db.create_all()` nie dokłada kolumn do istniejących tabel
 
 ## Ważne konteksty
+- **Strefy czasowe**: WSZYSTKIE znaczniki czasu w bazie (`bot_audit_log.created_at`, `ActiveTrade.created_at` itd.) są w **UTC** (`dt.datetime.utcnow()` w kodzie) - NIE lokalny czas Adama. Adam jest w Amsterdamie (CEST latem = UTC+2, CET zimą = UTC+1). Ma to znaczenie przy ocenie czy giełda jest otwarta: Euronext Amsterdam/Xetra Frankfurt (spółki `*a_EQ`/`*d_EQ`, EUR) handlują ~9:00-17:30 CEST, NASDAQ/NYSE (`*_US_EQ`, USD) ~15:30-22:00 CEST latem (obie strefy DST przesuwają się w różnych terminach, więc offset USA vs Europa nie zawsze jest stały cały rok) - zlecenie LIMIT BUY złożone po zamknięciu europejskiej giełdy realnie ruszy dopiero następnego dnia handlowego, to nie błąd bota, tylko normalne zamknięcie rynku.
 - T212 API: rate limity na demo są bardzo restrykcyjne, niektóre endpointy zwracają 403 na demo
 - Zero-Knowledge encryption na auth (cipher.py) — master_key nigdy nie trafia do bazy w formie jawnej
 - Warp Mode = one-click trading grid (siatka 3x3)
