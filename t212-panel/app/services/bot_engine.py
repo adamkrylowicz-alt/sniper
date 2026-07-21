@@ -125,6 +125,7 @@ import datetime as dt
 import re
 import uuid
 from decimal import ROUND_UP, Decimal, InvalidOperation
+from pathlib import Path
 
 from flask import current_app
 
@@ -234,8 +235,31 @@ def _next_tick_error_delay(consecutive_errors: int) -> dt.timedelta:
     return dt.timedelta(minutes=TICK_ERROR_BACKOFF_MINUTES[idx])
 
 
+# Plik na bledy bota (ERROR), OSOBNO od BotAuditLog/UI - ustalone z Adamem
+# 2026-07-21, po tym jak powtarzajace sie bledy (429 rate limit, precyzja
+# ilosci) zalewaly Dziennik bota w appce szumem, przez ktory nie bylo widac
+# "pozadanych" wpisow (BUY/INFO/WARN o realnym postepie). instance/ - obok
+# sniper.db, jest juz gitignored i traktowane jako stan per-instalacja.
+BOT_ERROR_LOG_FILENAME = "bot_errors.log"
+
+
+def _log_error_to_file(user_id: int, message: str) -> None:
+    path = Path(current_app.instance_path) / BOT_ERROR_LOG_FILENAME
+    timestamp = dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{timestamp} UTC | user={user_id} | {message}\n")
+
+
 def _log(user_id: int, action_type: str, message: str, position_group_id: str | None = None) -> None:
-    """Zapis do BotAuditLog + commit natychmiast (każdy wpis niezależny, ten sam styl co OrderLog)."""
+    """
+    ERROR leci do osobnego pliku tekstowego (_log_error_to_file), NIE do
+    BotAuditLog/Dziennika w appce - patrz komentarz przy BOT_ERROR_LOG_FILENAME.
+    Wszystko inne (BUY/INFO/WARN) zapisywane jak dotychczas, z commitem
+    natychmiast (każdy wpis niezależny, ten sam styl co OrderLog).
+    """
+    if action_type == "ERROR":
+        _log_error_to_file(user_id, message)
+        return
     db.session.add(BotAuditLog(
         user_id=user_id, action_type=action_type, message=message,
         position_group_id=position_group_id,

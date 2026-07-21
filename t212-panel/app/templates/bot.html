@@ -168,11 +168,15 @@
     <p class="auth-box__hint" id="bot-settings-status"></p>
     </details>
 
-    <h2 class="section-heading" id="section-log">DZIENNIK BOTA (ostatnie 50)</h2>
+    <div class="section-heading section-heading--with-action" id="section-log">
+        <span>DZIENNIK BOTA (ostatnie 50)</span>
+        <button type="button" id="btn-bot-clear-log" class="section-heading__action">Wyczyść log</button>
+    </div>
+    <p class="auth-box__hint" id="bot-log-status"></p>
     {% if not logs %}
-    <p class="auth-box__hint">Brak wpisów.</p>
+    <p class="auth-box__hint" id="bot-log-empty-hint">Brak wpisów.</p>
     {% else %}
-    <table class="history-table">
+    <table class="history-table" id="bot-log-table">
         <thead>
             <tr>
                 <th>Czas</th>

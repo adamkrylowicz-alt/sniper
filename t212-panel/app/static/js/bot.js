@@ -120,6 +120,45 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // Wyczyść log (BUY/INFO/WARN - błędy już tu nie trafiają, patrz
+    // bot_engine.py::_log, osobny plik instance/bot_errors.log).
+    const clearLogBtn = document.getElementById("btn-bot-clear-log");
+    if (clearLogBtn) {
+        clearLogBtn.addEventListener("click", async () => {
+            const logStatus = document.getElementById("bot-log-status");
+            if (!(await confirmDialog("Wyczyścić cały dziennik bota? Tej operacji nie da się cofnąć."))) return;
+
+            clearLogBtn.disabled = true;
+            try {
+                const resp = await fetch("/bot/log/clear", { method: "POST" });
+                const data = await resp.json();
+                if (data.ok) {
+                    playSuccess();
+                    const table = document.getElementById("bot-log-table");
+                    if (table) table.remove();
+                    let emptyHint = document.getElementById("bot-log-empty-hint");
+                    if (!emptyHint) {
+                        emptyHint = document.createElement("p");
+                        emptyHint.className = "auth-box__hint";
+                        emptyHint.id = "bot-log-empty-hint";
+                        logStatus.insertAdjacentElement("afterend", emptyHint);
+                    }
+                    emptyHint.textContent = "Brak wpisów.";
+                    logStatus.textContent = "Dziennik wyczyszczony.";
+                } else {
+                    playError();
+                    logStatus.textContent = data.error || "Błąd czyszczenia logu.";
+                }
+            } catch (err) {
+                playError();
+                logStatus.textContent = "Błąd sieci.";
+                console.error(err);
+            } finally {
+                clearLogBtn.disabled = false;
+            }
+        });
+    }
+
     /*
     === Aktywa bota - własna, niezależna od Pie lista (patrz models.py::BotAsset) ===
     Wyszukiwarka reużywa GET /settings/watchlist/search (lokalny cache

@@ -817,6 +817,19 @@ img.tile__logo {
     border-bottom: 1px solid var(--hairline);
     scroll-margin-top: 16px;
 }
+.section-heading--with-action { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.section-heading__action {
+    font-size: 12px;
+    letter-spacing: normal;
+    color: var(--text-muted);
+    background: none;
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.section-heading__action:hover { color: var(--accent-amber); border-color: var(--accent-amber); }
 
 /* <details> zwijane sekcje (np. Ustawienia ryzyka w bot.html) - domyślnie
    zwinięte, summary wygląda jak .section-heading + strzałka obrotowa. */

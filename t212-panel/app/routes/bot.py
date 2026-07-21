@@ -293,6 +293,21 @@ def deactivate():
     return jsonify(ok=True)
 
 
+@bot_bp.route("/log/clear", methods=["POST"])
+@login_required
+def clear_log():
+    """
+    Czyści Dziennik bota (BotAuditLog) TYLKO dla bieżącego usera - błędy
+    (ERROR) już tu nie trafiają (patrz bot_engine.py::_log, osobny plik
+    instance/bot_errors.log), więc to czyści wyłącznie "pożądane" wpisy
+    (BUY/INFO/WARN).
+    """
+    user_id = current_user_id()
+    BotAuditLog.query.filter_by(user_id=user_id).delete()
+    db.session.commit()
+    return jsonify(ok=True)
+
+
 @bot_bp.route("/status", methods=["GET"])
 @login_required
 def status():
