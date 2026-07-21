@@ -15,6 +15,13 @@ t212-panel/nohup.out
 # Stary, popsuty backup z 17.07 - nie wersjonujemy
 backup 17 07 2026/
 
+# Reczny zrzut calego proda z NAS-a (21.07) - pomogl zdiagnozowac rozjazd
+# prod<->git tego dnia, ale to nie kod, nie wersjonujemy
+backup 21 07/
+
+# Backup konfiguracji NAS-a (Synology .dss) - nie kod appki
+pliki/nas config backup/
+
 # Python
 __pycache__/
 *.pyc
