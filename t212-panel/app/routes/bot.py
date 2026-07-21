@@ -25,7 +25,7 @@ from .. import cipher
 from ..extensions import db
 from ..models import ApiKeySet, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..services import bot_credentials, bot_engine, price_feed
-from ..utils import avatar_hue, current_user_id, login_required
+from ..utils import avatar_hue, current_user_id, friendly_name, login_required
 
 bot_bp = Blueprint("bot", __name__, url_prefix="/bot")
 
@@ -58,17 +58,26 @@ def view():
     )
 
     # Hydratacja do prostych dict-ów - ten sam wzorzec co routes/pie.py::detail.
+    # Pełna nazwa spółki jako główny tekst (nie sam ticker) - ten sam wzorzec
+    # co Warp/Focus/Aktywa/Virtual Pie, znaleziony brakujący tutaj 2026-07-21.
+    all_bot_assets = BotAsset.query.filter_by(user_id=user_id).order_by(BotAsset.created_at.desc()).all()
+    tickers = [a.ticker for a in all_bot_assets]
+    instruments_by_ticker = (
+        {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
+        if tickers else {}
+    )
     bot_assets = [
         {
             "id": a.id,
             "ticker": a.ticker,
             "display_ticker": a.display_ticker,
+            "name": friendly_name(instruments_by_ticker[a.ticker].name) if a.ticker in instruments_by_ticker else "",
             "currency": a.currency,
             "entry_amount": str(a.entry_amount),
             "is_penny_stock": a.is_penny_stock,
             "hue": avatar_hue(a.ticker),
         }
-        for a in BotAsset.query.filter_by(user_id=user_id).order_by(BotAsset.created_at.desc()).all()
+        for a in all_bot_assets
     ]
 
     return render_template(
