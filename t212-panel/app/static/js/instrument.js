@@ -371,6 +371,14 @@ document.getElementById("btn-instrument-back").addEventListener("click", () => {
     }
 });
 
+// Klik na liczbę "Akcje" w widgecie "Twoja inwestycja" = skrót do MAX w ILOŚĆ
+// (ten sam efekt co ręczne kliknięcie przycisku MAX niżej) - potem wystarczy
+// od razu kliknąć SPRZEDAJ, bez szukania przycisku w innym miejscu ekranu.
+document.getElementById("position-qty").addEventListener("click", () => {
+    const maxBtn = document.querySelector('.tile__preset[data-qty="max"]');
+    if (maxBtn) maxBtn.click();
+});
+
 // --- Init ---
 
 setupPresets();

@@ -1952,6 +1952,12 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__position-cell { display: flex; flex-direction: column; gap: 2px; }
 .instrument-detail__position-label { font-size: 11px; color: var(--text-muted); }
 .instrument-detail__position-value { font-size: 15px; font-weight: 600; color: var(--text-bright); }
+.instrument-detail__position-value--clickable {
+    cursor: pointer;
+    text-decoration: underline dotted;
+    text-underline-offset: 2px;
+}
+.instrument-detail__position-value--clickable:hover { color: var(--accent-amber); }
 
 .instrument-detail__qty-row { max-width: 420px; margin: 0 auto 12px; }
 .instrument-detail__qty-presets { grid-template-columns: repeat(5, 1fr); }
