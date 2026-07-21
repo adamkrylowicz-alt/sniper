@@ -61,6 +61,17 @@ Silnik Micro-Grid Bota:
    każdy kolejny próg przesuwa TEN SAM STOP w górę (Cancel-Replace) zamiast
    dokładać drugie zlecenie - patrz pełny docstring _manage_trailing_exit().
    Zero ręcznego OCO do pilnowania, bo nigdy nie ma dwóch zleceń na raz.
+6. Okna sesji giełdowej (dodane 2026-07-21, patrz stałe EU_SESSION_WINDOW/
+   US_SESSION_WINDOW i funkcja _market_open()) - zanim to dodano,
+   ASMLa_EQ retry'owało bez sensu CAŁĄ NOC, mimo że Euronext Amsterdam był
+   dawno zamknięty. Teraz każda funkcja, która ponawia/wystawia/przesuwa
+   zlecenie (_process_entries, _retry_pending_buys, _retry_pending_sells,
+   _manage_trailing_exit, _trigger_dca_buys) pomija pozycję/aktywo, jeśli
+   WŁAŚCIWA dla jego waluty giełda jest teraz zamknięta (poza oknem
+   9:05-17:25 dla EUR / 15:35-21:55 dla USD, czas Amsterdamu, tylko dni
+   robocze). _detect_exit_fills/_confirm_dca_fills CELOWO bez tego gate'u -
+   to tylko odczyt stanu już złożonych zleceń, nie warto opóźniać wykrycia
+   wykonania.
 
 Bot działa WYŁĄCZNIE na demo (patrz routes/bot.py - blokada environment="live"
 na poziomie aktywacji, bo T212 nie wspiera zleceń LIMIT na live) - stąd
@@ -127,6 +138,7 @@ import uuid
 from decimal import ROUND_UP, Decimal, InvalidOperation
 from pathlib import Path
 
+import pytz
 from flask import current_app
 
 from ..extensions import db
@@ -149,6 +161,34 @@ BOT_ENVIRONMENT = "demo"
 MIN_ORDER_VALUE_ESTIMATE = Decimal("1.20")
 
 SELLING_EQUITY_NOT_OWNED_ERROR_TYPE = "/api-errors/selling-equity-not-owned"
+
+# Okna sesji (ustalone z Adamem 2026-07-21, po tym jak ASMLa_EQ retry'owało
+# bez sensu CAŁĄ NOC podczas gdy Euronext Amsterdam był dawno zamknięty -
+# każda z tych funkcji poniżej dzieli ten sam problem: goni cenę/zarządza
+# zleceniem giełdy, która jest zamknięta, marnując ciasny rate limit demo).
+# Godziny to CZAS LOKALNY Amsterdamu (pytz sam ogarnia CET/CEST) - dla EUR
+# przyjmujemy Euronext/Xetra (9:00-17:30 nominalnie), dla USD NASDAQ/NYSE
+# (15:30-22:00 nominalnie latem). -5/+5 minut bufora na otwarciu/zamknięciu -
+# pierwsze/ostatnie minuty sesji mają najszersze spready. Świadome
+# uproszczenie: NIE uwzględnia świąt giełdowych (jak MIN_ORDER_VALUE_ESTIMATE
+# wyżej) - tylko dni robocze (pon-pt) i te dwa stałe okna.
+_AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
+EU_SESSION_WINDOW = (dt.time(9, 5), dt.time(17, 25))
+US_SESSION_WINDOW = (dt.time(15, 35), dt.time(21, 55))
+
+
+def _market_open(currency: str) -> bool:
+    """
+    Czy giełda WŁAŚCIWA dla waluty instrumentu (USD -> NASDAQ/NYSE, wszystko
+    inne -> Euronext/Xetra) jest teraz otwarta, patrz stałe *_SESSION_WINDOW
+    wyżej. Poza tym oknem (albo w weekend) bot NIC nie robi dla danej pozycji/
+    aktywa - ani nowego wejścia, ani retry/trailing/DCA.
+    """
+    now_local = dt.datetime.now(_AMSTERDAM_TZ)
+    if now_local.weekday() >= 5:  # sobota=5, niedziela=6
+        return False
+    window = US_SESSION_WINDOW if currency == "USD" else EU_SESSION_WINDOW
+    return window[0] <= now_local.time() <= window[1]
 
 # Znalezione na żywo 2026-07-21 (MAIN_US_EQ, potem IPOE_US_EQ/SOFI) - T212
 # wymaga RÓŻNEJ liczby miejsc po przecinku w ilości w zależności od instrumentu
@@ -433,6 +473,7 @@ def _retry_pending_sells(
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()
     )
+    candidates = [t for t in candidates if _market_open(t.currency)]
     if not candidates:
         return
 
@@ -485,6 +526,7 @@ def _retry_pending_buys(
         .filter(db.or_(ActiveTrade.next_buy_retry_at.is_(None), ActiveTrade.next_buy_retry_at <= now))
         .all()
     )
+    candidates = [t for t in candidates if _market_open(t.currency)]
     if not candidates:
         return
 
@@ -597,6 +639,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()
     )
+    candidates = [t for t in candidates if _market_open(t.currency)]
     if not candidates:
         return
 
@@ -721,6 +764,7 @@ def _trigger_dca_buys(user_id: int, client: T212Client, settings: RiskSettings) 
         .filter(ActiveTrade.dca_level < settings.max_dca_levels - 1)
         .all()
     )
+    candidates = [t for t in candidates if _market_open(t.currency)]
     if not candidates:
         return
 
@@ -1062,6 +1106,8 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     """
     assets = BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all()
     for asset in assets:
+        if not _market_open(asset.currency):
+            continue  # giełda właściwa dla tej waluty zamknięta - patrz _market_open
         already_open = ActiveTrade.query.filter_by(bot_asset_id=asset.id, status="OPEN").first()
         if already_open:
             continue
