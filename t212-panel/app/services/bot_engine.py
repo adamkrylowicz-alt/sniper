@@ -176,6 +176,30 @@ _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
 EU_SESSION_WINDOW = (dt.time(9, 5), dt.time(17, 25))
 US_SESSION_WINDOW = (dt.time(15, 35), dt.time(21, 55))
 
+# Konto Adama jest w EUR - kupno/sprzedaż instrumentu w USD wymaga DWÓCH
+# konwersji walutowych (EUR->USD przy kupnie, USD->EUR przy sprzedaży),
+# każda z opłatą FX T212 0.15% (patrz docs/IDEAS_v2.md "Koszty i opłaty").
+# Surowa cena instrumentu w USD tego nie widzi - żeby EUR->USD->EUR wyszło
+# na zero, cena musi wzrosnąć o ok. 2*0.15% = 0.3% (przybliżenie dla małych
+# opłat: 1/(1-fx)^2 - 1 ≈ 2*fx). Bez tego bot "zamykałby zysk" trailing
+# stopem na progu, który po przewalutowaniu jest już stratą albo zerem
+# (zgłoszone przez Adama 2026-07-22, przed pierwszym dzisiejszym wejściem
+# w pozycję USD).
+FX_FEE_PCT = Decimal("0.0015")
+FX_ROUND_TRIP_PCT = FX_FEE_PCT * 2
+
+# Filtr trendu przy PIERWSZYM wejściu (dca_level=0) - dodane 2026-07-22 na
+# życzenie Adama, żeby bot nie kupował ślepo bez sprawdzenia kierunku
+# ("kup i módl się"). Dotyczy WYŁĄCZNIE _enter_position (nowa pozycja) -
+# _trigger_dca_buys (dokupywanie w dołki na już otwartej pozycji) to
+# świadomie CAŁA strategia Micro-Grid/DCA, filtr by ją unieważnił, więc
+# tam się nie stosuje. Świece dzienne (price_feed.get_mini_chart_ohlc,
+# Finnhub->Yahoo) - jeśli cena spadła o więcej niż
+# ENTRY_TREND_MAX_DROP_PCT w ostatnich ENTRY_TREND_LOOKBACK_DAYS dniach,
+# traktujemy to jako "łapanie spadającego noża" i pomijamy wejście.
+ENTRY_TREND_LOOKBACK_DAYS = 6
+ENTRY_TREND_MAX_DROP_PCT = Decimal("0.03")
+
 
 def _market_open(currency: str) -> bool:
     """
@@ -563,7 +587,10 @@ def _retry_pending_buys(
         if Decimal(str(pending_order.get("filledQuantity", 0))) > 0:
             continue  # częściowo już wypełnione - nie anulujemy w połowie, niech dokończy
 
-        current_price = price_feed.get_live_price(current_app.config.get("FINNHUB_API_KEY"), trade.ticker)
+        current_price = price_feed.get_live_price(
+            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
+            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+        )
         if current_price is None or current_price <= 0:
             _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
             continue
@@ -679,22 +706,34 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
                 trade.position_group_id,
             )
 
-        current_price = price_feed.get_live_price(current_app.config.get("FINNHUB_API_KEY"), trade.ticker)
+        current_price = price_feed.get_live_price(
+            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
+            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+        )
         if current_price is None or current_price <= 0:
             continue  # brak ceny - spróbujemy przy kolejnym ticku, nic pilnego do zrobienia
 
-        profit_pct = (current_price - trade.average_price) / trade.average_price
+        # Dla USD: liczymy progi/STOP względem ref_price (average_price
+        # podbite o round-trip FX), nie surowej average_price - patrz
+        # FX_ROUND_TRIP_PCT wyżej. Dla EUR (konto Adama jest w EUR, zero
+        # konwersji) ref_price == average_price, zero zmiany zachowania.
+        ref_price = (
+            trade.average_price * (1 + FX_ROUND_TRIP_PCT) if trade.currency == "USD"
+            else trade.average_price
+        )
+
+        profit_pct = (current_price - ref_price) / ref_price
         milestone_steps = int(profit_pct / step) if profit_pct > 0 else 0
         if milestone_steps < 2:
-            continue  # jeszcze przed progiem uzbrojenia (potrzeba 2 progów)
+            continue  # jeszcze przed progiem uzbrojenia (potrzeba 2 progów, po odjęciu FX dla USD)
 
         if milestone_steps <= trade.trail_milestone_steps and trade.stop_order_id is not None:
             continue  # STOP już uzbrojony na tym (albo wyższym) progu, nic do zrobienia
 
         if milestone_steps == 2:
-            new_stop_price = (trade.average_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
+            new_stop_price = (ref_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
         else:
-            new_stop_price = (trade.average_price * (1 + step * (milestone_steps - 2))).quantize(Decimal("0.0001"))
+            new_stop_price = (ref_price * (1 + step * (milestone_steps - 2))).quantize(Decimal("0.0001"))
 
         if trade.stop_order_id:
             try:
@@ -791,7 +830,10 @@ def _trigger_dca_buys(user_id: int, client: T212Client, settings: RiskSettings) 
         if trigger_price <= 0:
             continue  # grid_anchor_price=0 (np. stara pozycja sprzed migracji) - DCA celowo wyłączone
 
-        current_price = price_feed.get_live_price(current_app.config.get("FINNHUB_API_KEY"), trade.ticker)
+        current_price = price_feed.get_live_price(
+            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
+            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+        )
         if current_price is None or current_price <= 0 or current_price > trigger_price:
             continue  # cena jeszcze nie spadła dość nisko (albo brak danych) - nic do zrobienia
 
@@ -1167,16 +1209,20 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     otwierał DRUGĄ, niezależną pozycję na tym samym tickerze (ASMLa_EQ,
     złapane na żywo: dwie otwarte pozycje jednocześnie).
 
-    NAJWYŻEJ JEDNO nowe wejście na tick (return po pierwszym udanym
-    _enter_position) - znaleziony realny bug 2026-07-22: przy kilku
-    BotAssetach na tej samej giełdzie (np. 5 tickerów EUR po otwarciu
-    Euronext) wszystkie próbowały wejść w TYM SAMYM ticku, jedno zaraz po
-    drugim - demo T212 ma tak ciasny rate limit na /equity/orders (patrz
-    "0/1 pozostało" w logu), że tylko pierwsze zlecenie się udawało, a
-    reszta dostawała 429 co tick (co 60s) w nieskończoność, bez szans na
-    wejście. Jeden entry na tick naturalnie rozkłada zlecenia w czasie
-    (kolejny asset dostanie szansę w następnym ticku, gdy limit się odnowi)
-    zamiast próbować wszystkich naraz.
+    NAJWYŻEJ JEDNO nowe wejście na tick, ale TYLKO jeśli faktycznie dotarło
+    do T212 (return dopiero gdy _enter_position zwróci True) - znaleziony
+    realny bug 2026-07-22: przy kilku BotAssetach na tej samej giełdzie
+    (np. 5 tickerów EUR po otwarciu Euronext) wszystkie próbowały wejść w
+    TYM SAMYM ticku, jedno zaraz po drugim - demo T212 ma tak ciasny rate
+    limit na /equity/orders (patrz "0/1 pozostało" w logu), że tylko
+    pierwsze zlecenie się udawało, a reszta dostawała 429 co tick (co 60s)
+    w nieskończoność, bez szans na wejście. Jeden entry na tick naturalnie
+    rozkłada zlecenia w czasie (kolejny asset dostanie szansę w
+    następnym ticku, gdy limit się odnowi) zamiast próbować wszystkich
+    naraz. Odrzucenia PRZED kontaktem z T212 (brak ceny, filtr trendu -
+    patrz _entry_trend_ok) NIE zużywają tego slotu (continue, nie return) -
+    inaczej jeden asset zablokowany trendem/brakiem ceny wiecznie
+    zasłaniałby kolejne w liście.
     """
     assets = BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all()
     for asset in assets:
@@ -1185,29 +1231,73 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
         already_open = ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN").first()
         if already_open:
             continue
-        _enter_position(user_id, asset, settings)
-        return
+        if _enter_position(user_id, asset, settings):
+            return
 
 
-def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> None:
+def _entry_trend_ok(ticker: str) -> bool:
+    """
+    Filtr trendu przy wejściu - patrz ENTRY_TREND_* wyżej. Zwraca True
+    (wejście dozwolone) gdy trend jest OK ALBO gdy nie da się go ocenić
+    (brak świec z Finnhub/Yahoo) - filtr to DODATKOWA ochrona, nie twardy
+    wymóg, przejściowa awaria źródła danych nie powinna całkiem zatrzymać
+    wejść bota.
+    """
+    candles = price_feed.get_mini_chart_ohlc(
+        current_app.config.get("FINNHUB_API_KEY"), ticker, days=ENTRY_TREND_LOOKBACK_DAYS,
+    )
+    if not candles or len(candles) < 2:
+        return True
+
+    oldest_close = Decimal(str(candles[0]["c"]))
+    newest_close = Decimal(str(candles[-1]["c"]))
+    if oldest_close <= 0:
+        return True
+
+    drop_pct = (oldest_close - newest_close) / oldest_close
+    return drop_pct <= ENTRY_TREND_MAX_DROP_PCT
+
+
+def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> bool:
+    """
+    Zwraca True gdy dotarliśmy do faktycznego kontaktu z T212 (zlecenie
+    wysłane, niezależnie od sukcesu) albo do zapisu pozycji papierowej -
+    to "zużywa" slot jednego wejścia na tick (patrz _process_entries).
+    Zwraca False przy wcześniejszych odrzuceniach (brak poświadczeń/ceny,
+    filtr trendu, zła ilość) - te NIE dotykają T212 wcale (tylko Finnhub/
+    Yahoo/Alpaca i lokalne liczenie), więc _process_entries może
+    bezpiecznie spróbować kolejnego assetu w TYM SAMYM ticku zamiast
+    czekać do następnego.
+    """
     master_key = bot_credentials.get_master_key(user_id)
     if master_key is None:
-        return  # nie powinno się zdarzyć - user_id pochodzi z bot_credentials.active_user_ids()
+        return False  # nie powinno się zdarzyć - user_id pochodzi z bot_credentials.active_user_ids()
 
     creds = get_decrypted_credentials(user_id, master_key, BOT_ENVIRONMENT)
     if creds is None:
         _log(user_id, "ERROR", f"{asset.ticker}: brak zapisanego klucza API demo.")
-        return
+        return False
 
-    price = price_feed.get_live_price(current_app.config.get("FINNHUB_API_KEY"), asset.ticker)
+    price = price_feed.get_live_price(
+        current_app.config.get("FINNHUB_API_KEY"), asset.ticker,
+        current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+    )
     if price is None or price <= 0:
         _log(user_id, "ERROR", f"{asset.ticker}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
-        return
+        return False
+
+    if not _entry_trend_ok(asset.ticker):
+        _log(
+            user_id, "INFO",
+            f"{asset.ticker}: pomijam wejście - cena spadła o więcej niż {ENTRY_TREND_MAX_DROP_PCT * 100}% "
+            f"w ostatnich {ENTRY_TREND_LOOKBACK_DAYS} dniach (nie łapiemy spadającego noża).",
+        )
+        return False
 
     quantity = (asset.entry_amount / price).quantize(Decimal("0.0001"))
     if quantity <= 0:
         _log(user_id, "ERROR", f"{asset.ticker}: wyliczona ilość <= 0 (kwota {asset.entry_amount} / cena {price}).")
-        return
+        return False
 
     buy_price = price
     allocated_value = quantity * buy_price
@@ -1236,7 +1326,7 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
             "ŻADNE zlecenie nie poszło do T212 (i żaden trailing exit nie jest symulowany).",
             position_group_id,
         )
-        return
+        return True
 
     client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
 
@@ -1263,7 +1353,7 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
         buy_result, quantity = _place_buy_with_precision_fallback(client, asset.ticker, quantity, price)
     except T212APIError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: zakup nieudany - {exc}")
-        return
+        return True  # dotarliśmy do T212 (zlecenie odrzucone, ale slot na ten tick zużyty)
     allocated_value = quantity * buy_price
 
     # LIMIT SELL NIE jest wystawiany tutaj (patrz historia buga w docstringu
@@ -1298,6 +1388,7 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> No
         "(trailing take-profit + stop-loss) po potwierdzeniu kupna.",
         position_group_id,
     )
+    return True
 
 
 def daily_report(app) -> None:
@@ -1350,7 +1441,10 @@ def daily_report(app) -> None:
             unrealized_known = 0
             open_lines = []
             for t in open_trades:
-                price = price_feed.get_live_price(current_app.config.get("FINNHUB_API_KEY"), t.ticker)
+                price = price_feed.get_live_price(
+                    current_app.config.get("FINNHUB_API_KEY"), t.ticker,
+                    current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+                )
                 if price is None:
                     open_lines.append(f"  OTWARTA {t.ticker}: brak żywej ceny")
                     continue

@@ -30,6 +30,8 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
     --accent-glow: rgba(168, 85, 255, 0.35);
     --buy-green: #2FD98A;
     --sell-red: #FF5C5C;
+    --currency-eur: #FF9F45;
+    --currency-usd: #4EA1FF;
 }
 
 /* Motyw jasny - nadpisuje te same zmienne na <html data-theme="light">.
@@ -45,6 +47,8 @@ html[data-theme="light"] {
     --accent-glow: rgba(109, 40, 217, 0.2);
     --buy-green: #15803D;
     --sell-red: #DC2626;
+    --currency-eur: #C2560B;
+    --currency-usd: #1D6FD1;
 }
 
 * { box-sizing: border-box; }
@@ -1497,6 +1501,13 @@ img.tile__logo {
 }
 .pie-asset-row__ticker { font-weight: 600; font-size: 13px; }
 .pie-asset-row__currency { color: var(--text-muted); font-size: 11px; }
+
+/* Kolorowanie waluty aktywa (EUR/USD) - odróżnia na pierwszy rzut oka bez
+   czytania tickera, celowo NIE zielony/czerwony (te są już zajęte przez
+   zysk/stratę - patrz --buy-green/--sell-red - kolizja by myliła). */
+.currency-badge { font-weight: 600; }
+.currency-badge--eur { color: var(--currency-eur); }
+.currency-badge--usd { color: var(--currency-usd); }
 .pie-asset-row__weight-pct {
     margin-left: auto;
     color: var(--accent-amber);

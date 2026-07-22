@@ -58,6 +58,15 @@ class Config:
     # Darmowe konto: https://finnhub.io/register
     FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 
+    # Alpaca Market Data API - główne źródło ceny "na żywo" dla tickerów
+    # `*_US_EQ` w bocie (patrz services/price_feed.py::get_live_price),
+    # Finnhub->Yahoo zostaje jako fallback. Dodane 2026-07-22 na życzenie
+    # Adama (nowy dostawca danych dla rynków USA). Endpoint Market Data jest
+    # wspólny dla kluczy paper/live - klucz zaczynający się na "PK" działa
+    # tu tak samo jak klucz live.
+    ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY")
+    ALPACA_API_SECRET = os.environ.get("ALPACA_API_SECRET")
+
     # Klucz publikowalny (publishable) do Logo.dev - logotypy spółek w Watchlist
     # i Smart Virtual Pie (patrz services/logo_cache.py). Clearbit Logo API,
     # którego appka używała wcześniej, jest MARTWE (wygaszone przez HubSpot,

@@ -16,7 +16,7 @@
                 <span class="instrument-detail__ticker">{{ display_ticker }}</span>
                 {% if is_leveraged %}<span class="badge badge--leverage">DŹWIGNIA</span>{% endif %}
             </div>
-            <span class="instrument-detail__subtitle">{{ name }}{% if currency %} · {{ currency }}{% endif %}</span>
+            <span class="instrument-detail__subtitle">{{ name }}{% if currency %} · <span class="currency-badge currency-badge--{{ currency|lower }}">{{ currency }}</span>{% endif %}</span>
         </div>
 
         <div class="instrument-detail__price-wrap">

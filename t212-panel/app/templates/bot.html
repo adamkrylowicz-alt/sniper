@@ -79,7 +79,7 @@
                 <div class="pie-asset-row__title-line">
                     <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__ticker-link">
                         <span class="pie-asset-row__ticker">{{ a.name or a.display_ticker }}</span>
-                        <span class="pie-asset-row__currency">{{ a.display_ticker }}{% if a.currency %} · {{ a.currency }}{% endif %}</span>
+                        <span class="pie-asset-row__currency">{{ a.display_ticker }}{% if a.currency %} · <span class="currency-badge currency-badge--{{ a.currency|lower }}">{{ a.currency }}</span>{% endif %}</span>
                     </a>
                 </div>
                 <div class="pie-asset-row__fields">

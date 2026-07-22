@@ -45,7 +45,7 @@ function renderPortfolio(positions, totalValue, totalPpl) {
                         ${avatar}
                         <span>
                             <span class="pie-asset-row__ticker">${escapeHtml(p.name || p.display_ticker)}</span>
-                            <span class="pie-asset-row__currency">${escapeHtml(p.display_ticker)}${p.currency ? " · " + escapeHtml(p.currency) : ""}</span>
+                            <span class="pie-asset-row__currency">${escapeHtml(p.display_ticker)}${p.currency ? " · " + `<span class="currency-badge currency-badge--${escapeHtml(p.currency.toLowerCase())}">${escapeHtml(p.currency)}</span>` : ""}</span>
                         </span>
                     </a>
                 </td>

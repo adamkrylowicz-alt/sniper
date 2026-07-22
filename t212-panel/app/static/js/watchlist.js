@@ -57,7 +57,15 @@ function renderResults(results) {
         // spółki o podobnej krótkiej nazwie (różni "bottlerzy" Coca-Coli).
         const descLine = document.createElement("span");
         descLine.className = "watchlist-results__desc";
-        descLine.textContent = `${instrumentTypeLabel(r.type)} · ${r.currency || "waluta nieznana"}`;
+        descLine.textContent = `${instrumentTypeLabel(r.type)} · `;
+        if (r.currency) {
+            const currencyBadge = document.createElement("span");
+            currencyBadge.className = `currency-badge currency-badge--${r.currency.toLowerCase()}`;
+            currencyBadge.textContent = r.currency;
+            descLine.appendChild(currencyBadge);
+        } else {
+            descLine.append("waluta nieznana");
+        }
         label.appendChild(descLine);
 
         row.appendChild(label);

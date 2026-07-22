@@ -50,7 +50,7 @@
                             {% endif %}
                             <span>
                                 <span class="pie-asset-row__ticker">{{ p.name or p.display_ticker }}</span>
-                                <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · {{ p.currency }}{% endif %}</span>
+                                <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
                             </span>
                         </a>
                     </td>

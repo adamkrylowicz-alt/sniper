@@ -26,6 +26,17 @@ dla tickerów spoza US rozwiązuje właściwy symbol Yahoo przez yahoo_resolver.
 (np. "ASMLa_EQ" -> "ASML.AS") - bez tego bot nigdy nie dostawał ceny dla
 żadnego nie-amerykańskiego tickera (znaleziony realny bug produkcyjny,
 2026-07-20 - patrz historia w bot_engine.py).
+
+ALPACA (dodane 2026-07-22, na życzenie Adama - "na rynki usa mam nowego
+dostawce danych alpaca"): dla tickerów `*_US_EQ` GŁÓWNE źródło ceny "na żywo"
+(get_live_price) to teraz Alpaca Market Data API (REST, klucz+secret w
+ALPACA_API_KEY/ALPACA_API_SECRET), Finnhub->Yahoo zostaje jako fallback gdy
+Alpaca zawiedzie (brak klucza, błąd sieci, symbol spoza pokrycia). Dla
+tickerów spoza USD (EUR itd.) Alpaca w ogóle nie jest próbowane - zero zmiany
+zachowania, wciąż Finnhub->Yahoo jak dotychczas. Endpoint Market Data API jest
+WSPÓLNY dla kluczy paper i live trading (inaczej niż endpoint do składania
+zleceń) - klucz zaczynający się na "PK" (paper) działa tu identycznie jak
+klucz live.
 """
 
 from __future__ import annotations
@@ -41,12 +52,14 @@ from .finnhub_client import t212_to_finnhub
 logger = logging.getLogger(__name__)
 
 FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
+ALPACA_DATA_BASE_URL = "https://data.alpaca.markets/v2"
 REQUEST_TIMEOUT = 10  # sekund
 
 CACHE_TTL_SECONDS = 30 * 60  # dane do MINI-wykresu, nie do decyzji tradingowych
 _cache_ohlc: dict[str, tuple[float, list[dict] | None]] = {}  # {"AAPL_US_EQ:30": (monotonic_ts, candles)}
 
 _KNOWN_SUFFIXES = ("_US_EQ", "_EQ")
+_US_SUFFIX = "_US_EQ"
 
 
 def _to_finnhub_symbol(t212_ticker: str) -> str:
@@ -237,13 +250,56 @@ def _fetch_yahoo_quote(ticker: str) -> Decimal | None:
     return Decimal(str(price))
 
 
-def get_live_price(api_key: str | None, ticker: str) -> Decimal | None:
+def _fetch_alpaca_quote(api_key: str, api_secret: str, ticker: str) -> Decimal | None:
     """
-    Cena "na żywo" do decyzji bota - Finnhub /quote jako główne źródło (PRD:
-    "Domyślnie Finnhub"), Yahoo Finance jako fallback. Zwraca None jeśli OBA
-    źródła zawiodą - wywołujący (bot_engine.py) ma wtedy pominąć wejście,
-    nie zgadywać ceny.
+    Ostatnia zawarta transakcja (latest trade) z Alpaca Market Data API -
+    tylko dla tickerów `*_US_EQ` (patrz get_live_price), symbol identyczny
+    jak dla Finnhub (_to_finnhub_symbol ucina sufiks T212).
     """
+    try:
+        resp = requests.get(
+            f"{ALPACA_DATA_BASE_URL}/stocks/{_to_finnhub_symbol(ticker)}/trades/latest",
+            headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": api_secret},
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Alpaca latest trade: błąd sieci dla %s: %s", ticker, exc)
+        return None
+
+    if resp.status_code != 200:
+        logger.warning("Alpaca latest trade: HTTP %s dla %s", resp.status_code, ticker)
+        return None
+
+    try:
+        price = resp.json().get("trade", {}).get("p")
+    except ValueError:
+        return None
+
+    if not price:
+        return None
+    return Decimal(str(price))
+
+
+def get_live_price(
+    api_key: str | None,
+    ticker: str,
+    alpaca_api_key: str | None = None,
+    alpaca_api_secret: str | None = None,
+) -> Decimal | None:
+    """
+    Cena "na żywo" do decyzji bota. Dla tickerów `*_US_EQ`: Alpaca Market Data
+    API jako GŁÓWNE źródło (dodane 2026-07-22, na życzenie Adama - nowy
+    dostawca danych dla rynków USA), Finnhub -> Yahoo jako fallback gdyby
+    Alpaca zawiodło. Dla wszystkich innych tickerów (EUR itd.): bez zmian,
+    Finnhub jako główne (PRD: "Domyślnie Finnhub"), Yahoo Finance jako
+    fallback. Zwraca None jeśli WSZYSTKIE źródła zawiodą - wywołujący
+    (bot_engine.py) ma wtedy pominąć wejście, nie zgadywać ceny.
+    """
+    if ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret:
+        price = _fetch_alpaca_quote(alpaca_api_key, alpaca_api_secret, ticker)
+        if price is not None:
+            return price
+
     if api_key:
         price = _fetch_finnhub_quote(api_key, ticker)
         if price is not None:

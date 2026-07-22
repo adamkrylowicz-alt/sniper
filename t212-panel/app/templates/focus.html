@@ -34,9 +34,9 @@
                         <span class="focus-tile__title-text">
                             <span class="focus-tile__ticker">{{ tile.name or ticker.split('_')[0] }}</span>
                             {% if tile.name %}
-                            <span class="focus-tile__subtitle">{{ ticker.split('_')[0] }}{% if tile.currency %} · {{ tile.currency }}{% endif %}</span>
+                            <span class="focus-tile__subtitle">{{ ticker.split('_')[0] }}{% if tile.currency %} · <span class="currency-badge currency-badge--{{ tile.currency|lower }}">{{ tile.currency }}</span>{% endif %}</span>
                             {% elif tile.currency %}
-                            <span class="focus-tile__subtitle">{{ tile.currency }}</span>
+                            <span class="focus-tile__subtitle"><span class="currency-badge currency-badge--{{ tile.currency|lower }}">{{ tile.currency }}</span></span>
                             {% endif %}
                         </span>
                     </a>
