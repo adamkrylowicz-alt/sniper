@@ -221,6 +221,52 @@ ENTRY_TREND_MAX_DROP_PCT = Decimal("0.03")
 # wyboru, bot i tak nie otworzy więcej niż to jednocześnie.
 MAX_CONCURRENT_POSITIONS = 10
 
+# Stop-loss oparty o realna zmiennosc instrumentu (ATR - Average True Range)
+# ZAMIAST sztywnego % (RiskSettings.stop_loss_pct) - dodane 2026-07-22 na
+# zyczenie Adama po analizie dnia, patrz docs/IDEAS_v2.md "Zarzadzanie
+# ryzykiem": "Stop Loss: 1.8 x ATR(14)" - ten sam mnoznik. Dane: swiece
+# dzienne z price_feed.get_mini_chart_ohlc (Finnhub->Yahoo, TEN SAM caly
+# mechanizm co filtr trendu wyzej, wlacznie z jego wlasnym 30-min cache'em -
+# zero nowego obciazenia zewnetrznych API na kazdy tick). Gdy danych brak
+# (429, brak pokrycia symbolu, za krotka historia) - _get_atr_stop_distance
+# zwraca None, a _manage_trailing_exit CICHO spada z powrotem na stary
+# stop_loss_pct - zero twardej zaleznosci od tego nowego zrodla danych.
+ATR_PERIOD = 14
+ATR_LOOKBACK_DAYS = ATR_PERIOD + 5  # bufor - swiece dzienne maja dziury (weekendy/swieta)
+ATR_STOP_MULTIPLIER = Decimal("1.8")
+
+
+def _compute_atr(candles: list[dict] | None, period: int = ATR_PERIOD) -> Decimal | None:
+    """
+    True Range dla swiecy i = max(high-low, |high-prev_close|, |low-prev_close|),
+    ATR = prosta srednia (nie wygladzanie Wildera, dla prostoty) ostatnich
+    `period` wartosci TR. Wymaga co najmniej period+1 swiec (potrzebny
+    poprzedni close pierwszej liczonej swiecy) - None gdy za malo danych.
+    """
+    if not candles or len(candles) < period + 1:
+        return None
+
+    true_ranges = []
+    for i in range(1, len(candles)):
+        high = Decimal(str(candles[i]["h"]))
+        low = Decimal(str(candles[i]["l"]))
+        prev_close = Decimal(str(candles[i - 1]["c"]))
+        true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
+
+    last_n = true_ranges[-period:]
+    return sum(last_n) / len(last_n)
+
+
+def _get_atr_stop_distance(ticker: str) -> Decimal | None:
+    """Dystans W WALUCIE INSTRUMENTU (nie %) = ATR(14) * ATR_STOP_MULTIPLIER, albo None gdy brak danych."""
+    candles = price_feed.get_mini_chart_ohlc(
+        current_app.config.get("FINNHUB_API_KEY"), ticker, days=ATR_LOOKBACK_DAYS,
+    )
+    atr = _compute_atr(candles)
+    if atr is None:
+        return None
+    return atr * ATR_STOP_MULTIPLIER
+
 
 # Znalezione na żywo 2026-07-21 (MAIN_US_EQ, potem IPOE_US_EQ/SOFI) - T212
 # wymaga RÓŻNEJ liczby miejsc po przecinku w ilości w zależności od instrumentu
@@ -708,13 +754,29 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
     1. Bot NIC nie wystawia dopóki cena nie minie DWÓCH progów
        (2 * take_profit_step_pct powyżej ref_price) - BEZ ZMIAN, żeby zwykły
        szum tuż po zakupie nie wyciął pozycji.
-    2. Po minięciu progu uzbrojenia, target STOP-a liczony jest CO TICK jako
-       max(ref_price * (1 - stop_loss_pct), current_price * (1 - step)) -
-       czyli albo klasyczna ochrona kapitału (na wypadek gdyby cena ledwo
-       przekroczyła próg uzbrojenia), albo procent take_profit_step_pct POD
-       AKTUALNĄ ceną, zależnie co jest wyżej. Ten drugi człon rośnie razem z
-       każdym tickiem gdy cena idzie w górę - STOP goni szczyt, nie czeka na
-       kolejny okrągły próg.
+    2. PIERWSZE uzbrojenie (przejście z brak-STOP-a na jest-STOP) siada na
+       protective_floor - szeroka ochrona kapitału, patrz 2a - i TYLKO wtedy.
+    2a. protective_floor OPARTY O ATR ZAMIAST SZTYWNEGO % (dodane 2026-07-22,
+        DRUGA zmiana tego samego dnia, na życzenie Adama - "boostowanie
+        logiki stoploss") - gdy da się policzyć ATR(14) instrumentu (świece
+        dzienne, patrz _get_atr_stop_distance), floor = ref_price - ATR*1.8
+        (mnożnik z docs/IDEAS_v2.md). Skaluje się z REALNĄ zmiennością
+        instrumentu zamiast jednego sztywnego % dla wszystkiego (ASML rusza
+        się dziennie inaczej niż spokojna spółka dywidendowa). Gdy danych
+        brak (429/brak pokrycia/za krótka historia) - CICHY fallback na
+        stary ref_price * (1 - stop_loss_pct), zero twardej zależności.
+    2b. KAŻDY KOLEJNY tick (już uzbrojony) liczy candidate = max(dotychczasowy
+        stop_target_price, current_price * (1 - step)) - STOP goni szczyt,
+        nigdy się nie cofa, floor z punktu 2 już się NIE przelicza ponownie.
+        **Bug znaleziony i naprawiony 2026-07-22 przy dopinaniu ATR**: pierwsza
+        wersja tej samej doby liczyła max(protective_floor, continuous_target)
+        na KAŻDYM ticku od razu po uzbrojeniu - matematycznie, dla dowolnego
+        realistycznego step<50%, current_price*(1-step) w momencie samego
+        uzbrojenia jest ZAWSZE wyższy niż jakikolwiek floor poniżej ref_price
+        (dowód: current_price >= ref_price*(1+2*step), więc current_price*
+        (1-step) ≈ ref_price*(1+step) > ref_price > floor) - czyli floor
+        (2% albo ATR) był martwym kodem, szeroki bufor "chroniący kapitał"
+        tuż po uzbrojeniu w ogóle się nie włączał, STOP od razu był ciasny.
     3. Żeby nie zarzynać ciasnego rate limitu demo Cancel-Replace'em przy
        KAŻDYM drobnym ruchu ceny w górę, STOP przesuwa się dopiero gdy nowy
        target jest o co najmniej MIN_TRAIL_REQUOTE_FRACTION * step wyższy niż
@@ -786,15 +848,32 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         if milestone_steps < 2:
             continue  # jeszcze przed progiem uzbrojenia (potrzeba 2 progów, po odjęciu FX dla USD)
 
-        # Ciagly target: albo ochrona kapitalu (stop_loss_pct pod ref_price),
-        # albo step pod AKTUALNA cena - cokolwiek wyzej. Drugi czlon rosnie
-        # z kazdym tickiem gdy cena idzie w gore, wiec STOP goni szczyt
-        # zamiast czekac na kolejny pelny prog (patrz docstring, pkt 2).
-        protective_floor = (ref_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
-        continuous_target = (current_price * (1 - step)).quantize(Decimal("0.0001"))
-        candidate_stop = max(protective_floor, continuous_target)
+        if trade.stop_order_id is None:
+            # PIERWSZE uzbrojenie - szeroka ochrona kapitalu (ATR gdy da sie
+            # policzyc, inaczej stary sztywny %), NIE ciasny trailing. Bug
+            # znaleziony 2026-07-22 przy dopinaniu ATR: matematycznie, dla
+            # KAZDEGO realistycznego step<50%, current_price*(1-step) w
+            # momencie uzbrojenia jest ZAWSZE wyzszy niz ref_price*(1-X)
+            # (dowod: current_price >= ref_price*(1+2*step), wiec
+            # current_price*(1-step) >= ref_price*(1+step-2*step^2) >
+            # ref_price > kazdy floor ponizej ref_price) - czyli max() z
+            # poprzedniej wersji ZAWSZE wybieral ciasny target, floor byl
+            # martwym kodem, szeroki bufor "chroniacy kapital" przy pierwszym
+            # uzbrojeniu w ogole sie nie wlaczal. Naprawione: floor liczony
+            # WYLACZNIE tutaj, raz, przy przejsciu z nieuzbrojonej na
+            # uzbrojona - kolejne tiki juz go nie przeliczaja (patrz else).
+            atr_distance = _get_atr_stop_distance(trade.ticker)
+            if atr_distance is not None:
+                candidate_stop = (ref_price - atr_distance).quantize(Decimal("0.0001"))
+            else:
+                candidate_stop = (ref_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
+        else:
+            # JUZ uzbrojony - czysty ciagly trailing wzgledem WLASNEGO
+            # poprzedniego poziomu (nigdy w dol), bez ponownego przeliczania
+            # floora - patrz uzasadnienie wyzej.
+            continuous_target = (current_price * (1 - step)).quantize(Decimal("0.0001"))
+            candidate_stop = max(trade.stop_target_price, continuous_target)
 
-        if trade.stop_order_id is not None:
             min_requote_threshold = trade.stop_target_price * (1 + step * MIN_TRAIL_REQUOTE_FRACTION)
             if candidate_stop < min_requote_threshold:
                 continue  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
