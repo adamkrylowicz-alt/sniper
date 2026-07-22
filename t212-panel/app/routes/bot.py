@@ -24,7 +24,7 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 
 from .. import cipher
 from ..extensions import db
-from ..models import ApiKeySet, BotAsset, BotAuditLog, Instrument, RiskSettings, User
+from ..models import ActiveTrade, ApiKeySet, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..services import bot_credentials, bot_engine, price_feed
 from ..utils import avatar_hue, current_user_id, friendly_name, login_required
 
@@ -75,11 +75,24 @@ def view():
     # Pełna nazwa spółki jako główny tekst (nie sam ticker) - ten sam wzorzec
     # co Warp/Focus/Aktywa/Virtual Pie, znaleziony brakujący tutaj 2026-07-21.
     all_bot_assets = BotAsset.query.filter_by(user_id=user_id).order_by(BotAsset.created_at.desc()).all()
-    tickers = [a.ticker for a in all_bot_assets]
+    open_trades = (
+        ActiveTrade.query
+        .filter_by(user_id=user_id, status="OPEN")
+        .order_by(ActiveTrade.created_at.desc())
+        .all()
+    )
+
+    tickers = list({a.ticker for a in all_bot_assets} | {t.ticker for t in open_trades})
     instruments_by_ticker = (
         {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
         if tickers else {}
     )
+    # display_ticker (forma krotka do UI) zyje na BotAsset, nie na ActiveTrade -
+    # dociagane przez bot_asset_id, z fallbackiem na surowy ticker gdyby
+    # BotAsset zostal juz usuniety spod pozycji (pozycja zostaje otwarta nawet
+    # po usunieciu tickera z listy bota, patrz _process_entries).
+    display_ticker_by_bot_asset_id = {a.id: a.display_ticker for a in all_bot_assets}
+
     bot_assets = [
         {
             "id": a.id,
@@ -94,12 +107,33 @@ def view():
         for a in all_bot_assets
     ]
 
+    open_positions = [
+        {
+            "id": t.id,
+            "ticker": t.ticker,
+            "display_ticker": display_ticker_by_bot_asset_id.get(t.bot_asset_id, t.ticker),
+            "name": friendly_name(instruments_by_ticker[t.ticker].name) if t.ticker in instruments_by_ticker else "",
+            "currency": t.currency,
+            "quantity": str(t.quantity),
+            "average_price": str(t.average_price),
+            "dca_level": t.dca_level,
+            "trail_milestone_steps": t.trail_milestone_steps,
+            "stop_target_price": str(t.stop_target_price) if t.stop_target_price is not None else None,
+            "sell_blocked": t.sell_blocked,
+            "is_paper": t.is_paper,
+            "created_at_local": pytz.utc.localize(t.created_at).astimezone(_AMSTERDAM_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+            "hue": avatar_hue(t.ticker),
+        }
+        for t in open_trades
+    ]
+
     return render_template(
         "bot.html",
         settings=settings,
         credentials_active=bot_credentials.is_active(user_id),
         logs=logs,
         bot_assets=bot_assets,
+        open_positions=open_positions,
     )
 
 
@@ -327,6 +361,27 @@ def clear_log():
     """
     user_id = current_user_id()
     BotAuditLog.query.filter_by(user_id=user_id).delete()
+    db.session.commit()
+    return jsonify(ok=True)
+
+
+@bot_bp.route("/positions/<int:trade_id>/unblock", methods=["POST"])
+@login_required
+def unblock_position(trade_id):
+    """
+    Reczne odblokowanie pozycji po sell_blocked=True (blad T212 inny niz
+    "selling-equity-not-owned" przy wystawianiu/przesuwaniu trailing STOP-a -
+    patrz bot_engine.py::_bump_retry - taki blad sam sie nigdy nie naprawi,
+    bo retry z backoffem byłby tylko powtarzaniem tego samego błędu w kółko).
+    Nie probuje nic naprawic samo z siebie - tylko zdejmuje blokade, zeby
+    _manage_trailing_exit sprobowal ponownie na najblizszym ticku (np. po
+    tym jak Adam recznie poprawil przyczyne na koncie T212).
+    """
+    user_id = current_user_id()
+    trade = ActiveTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+    trade.sell_blocked = False
+    trade.sell_retry_count = 0
+    trade.next_sell_retry_at = None
     db.session.commit()
     return jsonify(ok=True)
 

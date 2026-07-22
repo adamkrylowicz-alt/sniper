@@ -1103,6 +1103,13 @@ img.tile__logo {
 .history-table__status--rejected { color: var(--sell-red); }
 .history-table__status--blocked { color: var(--accent-amber); }
 
+/* Dziennik bota (BotAuditLog.action_type) + tabela Otwarte pozycje - te same
+   klasy nigdy nie mialy stylu, wpisy/status renderowaly sie bez koloru. */
+.history-table__status--buy { color: var(--buy-green); }
+.history-table__status--info { color: var(--text-bright); }
+.history-table__status--warn { color: var(--accent-amber); }
+.history-table__status--error { color: var(--sell-red); }
+
 .history-table__details {
     color: var(--text-muted);
     font-size: 10px;

@@ -159,6 +159,39 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    // Odblokowanie zablokowanej pozycji (sell_blocked=True) - delegacja na
+    // tabeli, bo wierszy z przyciskiem moze byc kilka naraz.
+    const positionsTable = document.getElementById("bot-positions-table");
+    if (positionsTable) {
+        positionsTable.addEventListener("click", async (ev) => {
+            const btn = ev.target.closest("[data-unblock-position]");
+            if (!btn) return;
+            const row = btn.closest("tr[data-trade-id]");
+            const tradeId = row?.dataset.tradeId;
+            if (!tradeId) return;
+
+            if (!(await confirmDialog("Odblokować tę pozycję? Bot spróbuje ponownie wystawić/przesunąć trailing STOP na najbliższym ticku."))) return;
+
+            btn.disabled = true;
+            try {
+                const resp = await fetch(`/bot/positions/${tradeId}/unblock`, { method: "POST" });
+                const data = await resp.json();
+                if (data.ok) {
+                    playSuccess();
+                    const statusCell = row.querySelector("td:last-child");
+                    statusCell.innerHTML = '<span class="history-table__status history-table__status--buy">OK</span>';
+                } else {
+                    playError();
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                playError();
+                console.error(err);
+                btn.disabled = false;
+            }
+        });
+    }
+
     /*
     === Aktywa bota - własna, niezależna od Pie lista (patrz models.py::BotAsset) ===
     Wyszukiwarka reużywa GET /settings/watchlist/search (lokalny cache

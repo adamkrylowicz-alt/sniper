@@ -15,6 +15,7 @@
     <nav class="tabs section-nav" aria-label="Sekcje strony">
         <a class="tab" href="#section-activation">Aktywacja</a>
         <a class="tab" href="#section-assets">Aktywa</a>
+        <a class="tab" href="#section-positions">Otwarte pozycje</a>
         <a class="tab" href="#section-risk">Ustawienia ryzyka</a>
         <a class="tab" href="#section-log">Dziennik</a>
     </nav>
@@ -109,6 +110,63 @@
         </div>
         {% endfor %}
     </div>
+    {% endif %}
+
+    <h2 class="section-heading" id="section-positions">OTWARTE POZYCJE</h2>
+    <p class="auth-box__hint">
+        Pozycje, na których bot aktualnie trzyma kapitał - niezależnie od tego
+        czy trailing STOP zdążył się już uzbroić. "Zablokowana" oznacza że
+        T212 odrzucił wystawienie/przesunięcie STOP-a błędem innym niż zwykłe
+        "akcje jeszcze niesprzedane" - taki błąd sam się nie naprawi, bot
+        przestaje próbować dopóki nie klikniesz "Odblokuj".
+    </p>
+    {% if not open_positions %}
+    <p class="auth-box__hint">Brak otwartych pozycji.</p>
+    {% else %}
+    <table class="history-table" id="bot-positions-table">
+        <thead>
+            <tr>
+                <th>Aktywo</th>
+                <th>Ilość</th>
+                <th>Śr. cena wejścia</th>
+                <th>Trailing STOP</th>
+                <th>Otwarta od (Amsterdam)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in open_positions %}
+            <tr data-trade-id="{{ p.id }}">
+                <td>
+                    <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
+                        <span class="pie-asset-row__ticker">{{ p.name or p.display_ticker }}</span>
+                        <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
+                    </a>
+                </td>
+                <td>{{ p.quantity }}{% if p.dca_level %} <span class="auth-box__hint">(DCA {{ p.dca_level }})</span>{% endif %}</td>
+                <td>{{ p.average_price }}</td>
+                <td>
+                    {% if p.stop_target_price %}
+                        {{ p.stop_target_price }} <span class="auth-box__hint">(próg {{ p.trail_milestone_steps }})</span>
+                    {% else %}
+                        <span class="auth-box__hint">jeszcze nieuzbrojony</span>
+                    {% endif %}
+                </td>
+                <td>{{ p.created_at_local }}</td>
+                <td>
+                    {% if p.is_paper %}
+                    <span class="history-table__status history-table__status--info">PAPER</span>
+                    {% elif p.sell_blocked %}
+                    <span class="history-table__status history-table__status--error">ZABLOKOWANA</span>
+                    <button type="button" class="section-heading__action" data-unblock-position>Odblokuj</button>
+                    {% else %}
+                    <span class="history-table__status history-table__status--buy">OK</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
     {% endif %}
 
     <details class="collapsible" id="section-risk">
