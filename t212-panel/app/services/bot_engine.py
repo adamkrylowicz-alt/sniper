@@ -420,31 +420,46 @@ def _confirm_buy_fill(
             )
             return
 
-    sell_qty = min(filled_qty, trade.quantity)
-    partial = sell_qty < trade.quantity
+    # Znaleziony realny bug 2026-07-22: dawniej `sell_qty = min(filled_qty,
+    # trade.quantity)` obcinało WYŁĄCZNIE w dół (częściowe wykonanie), a
+    # nadwyżkę (filled_qty > requested) ciche wyrzucało - trade.quantity
+    # zostawało przy zamówionej ilości, jakby nic się nie stało. Nadwyżka
+    # realnie może się zdarzyć: _retry_pending_buys() robi cancel-then-replace
+    # gdy cena odjedzie, a jeśli stare zlecenie wypełni się DOKŁADNIE w
+    # momencie próby anulowania (T212 potwierdza cancel mimo że fill już
+    # poszedł), zarówno stare, jak i nowe zlecenie mogą się wykonać - bot
+    # kupuje 2x. Bez tej poprawki taki podwójny zakup byłby całkowicie
+    # niewidoczny w bazie/dzienniku, mimo że na koncie T212 leżałaby
+    # faktycznie podwójna pozycja.
     requested_qty = trade.quantity
-
-    if partial:
-        trade.quantity = sell_qty
-        trade.allocated_value = (sell_qty * trade.buy_price).quantize(Decimal("0.01"))
-        trade.average_price = trade.buy_price
+    trade.quantity = filled_qty
+    trade.allocated_value = (filled_qty * trade.buy_price).quantize(Decimal("0.01"))
+    trade.average_price = trade.buy_price
 
     trade.buy_confirmed = True
     trade.sell_retry_count = 0
     trade.next_sell_retry_at = None
     db.session.commit()
 
-    if partial:
+    if filled_qty < requested_qty:
         _log(
             user_id, "WARN",
-            f"{trade.ticker}: kupno potwierdzone CZĘŚCIOWO ({sell_qty} z {requested_qty}) - "
+            f"{trade.ticker}: kupno potwierdzone CZĘŚCIOWO ({filled_qty} z {requested_qty}) - "
             "bot zacznie zarządzać wyjściem (trailing take-profit) na najbliższym ticku.",
+            trade.position_group_id,
+        )
+    elif filled_qty > requested_qty:
+        _log(
+            user_id, "WARN",
+            f"{trade.ticker}: kupno potwierdzone Z NADWYŻKĄ ({filled_qty} zamiast {requested_qty}) - "
+            "prawdopodobne PODWÓJNE wykonanie zlecenia (cancel/replace race w _retry_pending_buys), "
+            "sprawdź ręcznie w T212. Bot i tak zarządzi wyjściem dla CAŁEJ faktycznej ilości.",
             trade.position_group_id,
         )
     else:
         _log(
             user_id, "INFO",
-            f"{trade.ticker}: kupno potwierdzone ({sell_qty}) - bot zacznie zarządzać "
+            f"{trade.ticker}: kupno potwierdzone ({filled_qty}) - bot zacznie zarządzać "
             "wyjściem (trailing take-profit) na najbliższym ticku.",
             trade.position_group_id,
         )
@@ -870,7 +885,12 @@ def _confirm_dca_fills(
             if filled_qty <= 0:
                 continue  # zniknęło z pending, brak przyrostu - jeszcze się księguje, sprawdzimy później
 
-        leg_qty = min(filled_qty, trade.dca_pending_quantity)
+        # Ten sam bug co w _confirm_buy_fill (naprawiony 2026-07-22) -
+        # min() ciął WYŁĄCZNIE w dół, nadwyżkę (podwójne wykonanie nogi DCA
+        # przy cancel/replace race) ciche gubił. Doliczamy CAŁĄ faktyczną
+        # ilość, nie tylko zamówioną.
+        leg_qty = filled_qty
+        overfilled = leg_qty > trade.dca_pending_quantity
         leg_price = trade.dca_pending_price
         leg_cost = leg_qty * leg_price
 
@@ -908,13 +928,23 @@ def _confirm_dca_fills(
         trade.dca_pending_baseline_quantity = None
         db.session.commit()
 
-        _log(
-            user_id, "BUY",
-            f"{trade.ticker}: DCA poziom {trade.dca_level} wypełniony ({leg_qty} @ ~{leg_price}) - "
-            f"nowa średnia {trade.average_price}, łącznie {trade.quantity}. Trailing exit zresetowany, "
-            "uzbroi się od nowa od nowej średniej (Cancel-Replace).",
-            trade.position_group_id,
-        )
+        if overfilled:
+            _log(
+                user_id, "WARN",
+                f"{trade.ticker}: DCA poziom {trade.dca_level} wypełniony Z NADWYŻKĄ ({leg_qty} @ ~{leg_price}, "
+                "prawdopodobne PODWÓJNE wykonanie tej nogi - cancel/replace race, sprawdź ręcznie w T212) - "
+                f"nowa średnia {trade.average_price}, łącznie {trade.quantity}. Trailing exit zresetowany, "
+                "uzbroi się od nowa od nowej średniej (Cancel-Replace).",
+                trade.position_group_id,
+            )
+        else:
+            _log(
+                user_id, "BUY",
+                f"{trade.ticker}: DCA poziom {trade.dca_level} wypełniony ({leg_qty} @ ~{leg_price}) - "
+                f"nowa średnia {trade.average_price}, łącznie {trade.quantity}. Trailing exit zresetowany, "
+                "uzbroi się od nowa od nowej średniej (Cancel-Replace).",
+                trade.position_group_id,
+            )
 
 
 def _finalize_closed_trade(user_id: int, client: T212Client, trade: ActiveTrade, filled_via: str) -> None:
@@ -1033,6 +1063,31 @@ def reconcile(user_id: int) -> None:
     if closed_count == 0:
         _log(user_id, "INFO", f"Reconciliation: {len(open_trades)} pozycji sprawdzonych, wszystkie nadal aktualne.")
 
+    # Weryfikacja nadwyżek (dodane 2026-07-22 razem z fixem w _confirm_buy_fill/
+    # _confirm_dca_fills) - dla KAŻDEJ otwartej pozycji, nie tylko tych jeszcze
+    # niepotwierdzonych, porównuje rzeczywiste posiadanie na T212 z tym co baza
+    # oczekuje (baseline_owned_quantity sprzed zlecenia + trade.quantity).
+    # Łapie też nadwyżki potwierdzone JUŻ WCZEŚNIEJ pod starym (przed fixem)
+    # kodem, które wtedy zostały po cichu obcięte i nigdy nie trafiły do logu.
+    try:
+        owned_now = _portfolio_quantities(client)
+    except T212APIError as exc:
+        _log(user_id, "ERROR", f"Reconciliation: błąd pobierania portfolio do weryfikacji nadwyżek - {exc}")
+    else:
+        for trade in open_trades:
+            expected = trade.baseline_owned_quantity + trade.quantity
+            actual = owned_now.get(trade.ticker, Decimal("0"))
+            surplus = actual - expected
+            if surplus > Decimal("0.0001"):
+                _log(
+                    user_id, "WARN",
+                    f"{trade.ticker}: NADWYŻKA wykryta przy weryfikacji - T212 pokazuje {actual}, "
+                    f"baza oczekuje {expected} (baseline {trade.baseline_owned_quantity} + zlecenie "
+                    f"{trade.quantity}), różnica {surplus}. Sprawdź ręcznie w T212 - możliwe podwójne "
+                    "wykonanie zlecenia (cancel/replace race).",
+                    trade.position_group_id,
+                )
+
     if settings is not None:
         _confirm_dca_fills(user_id, client, settings, pending=pending)
         _retry_pending_buys(user_id, client, settings, pending=pending)
@@ -1111,6 +1166,17 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     bot_asset_id) stawała się "niewidoczna" dla tego sprawdzenia - bot
     otwierał DRUGĄ, niezależną pozycję na tym samym tickerze (ASMLa_EQ,
     złapane na żywo: dwie otwarte pozycje jednocześnie).
+
+    NAJWYŻEJ JEDNO nowe wejście na tick (return po pierwszym udanym
+    _enter_position) - znaleziony realny bug 2026-07-22: przy kilku
+    BotAssetach na tej samej giełdzie (np. 5 tickerów EUR po otwarciu
+    Euronext) wszystkie próbowały wejść w TYM SAMYM ticku, jedno zaraz po
+    drugim - demo T212 ma tak ciasny rate limit na /equity/orders (patrz
+    "0/1 pozostało" w logu), że tylko pierwsze zlecenie się udawało, a
+    reszta dostawała 429 co tick (co 60s) w nieskończoność, bez szans na
+    wejście. Jeden entry na tick naturalnie rozkłada zlecenia w czasie
+    (kolejny asset dostanie szansę w następnym ticku, gdy limit się odnowi)
+    zamiast próbować wszystkich naraz.
     """
     assets = BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all()
     for asset in assets:
@@ -1120,6 +1186,7 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
         if already_open:
             continue
         _enter_position(user_id, asset, settings)
+        return
 
 
 def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> None:
