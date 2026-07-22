@@ -41,6 +41,11 @@ TICKER_MAP: dict[str, str] = {
                                # spółka od dawna handluje jako SoFi Technologies pod symbolem SOFI -
                                # automatyczne mapowanie dawało martwe "IPOE" (bez ceny u Finnhub/Yahoo),
                                # znalezione 2026-07-21 gdy bot dodał ten ticker i nie mógł wejść w pozycję.
+    "FB_US_EQ": "META",        # T212 trzyma stary kod sprzed rebrandingu (Facebook Inc. -> Meta
+                               # Platforms, symbol NASDAQ zmieniony z FB na META) - "FB" to teraz
+                               # martwy/inny byt (Alpaca zwracał realną, ale nieaktualną cenę
+                               # $44.61 sprzed dwóch dni zamiast prawdziwej ~$635 pod META) -
+                               # znalezione 2026-07-22, bot kupił FB_US_EQ po błędnej cenie.
 }
 
 

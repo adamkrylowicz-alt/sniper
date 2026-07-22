@@ -63,6 +63,23 @@ _US_SUFFIX = "_US_EQ"
 
 
 def _to_finnhub_symbol(t212_ticker: str) -> str:
+    """
+    Dla tickerów `*_US_EQ` sprawdza NAJPIERW finnhub_client.py::TICKER_MAP
+    (wyjątki gdzie T212 trzyma stary/martwy symbol - np. FB_US_EQ (Meta
+    Platforms sprzed rebrandingu z FB na META) czy IPOE_US_EQ (SoFi
+    Technologies, stary kod SPAC-a)) - bez tego auto-obcięcie sufiksu
+    dawałoby BŁĘDNY, ale technicznie istniejący symbol (np. "FB" to inny,
+    martwy byt na Alpaca - zwraca prawdziwą, ale sprzed dni cenę zamiast
+    błędu "brak danych", co jest dużo groźniejsze - realny bug znaleziony
+    2026-07-22, bot wszedł w pozycję po cenie $44.61 zamiast ~$635).
+    Ograniczone do tickerów US - reszta TICKER_MAP to symbole w przestrzeni
+    Yahoo (np. "RHM.XETRA"), których Finnhub/Alpaca by nie zrozumiały.
+    """
+    if t212_ticker.endswith(_US_SUFFIX):
+        from .finnhub_client import TICKER_MAP
+        if t212_ticker in TICKER_MAP:
+            return TICKER_MAP[t212_ticker]
+
     symbol = t212_ticker
     for suffix in _KNOWN_SUFFIXES:
         if symbol.endswith(suffix):
