@@ -200,6 +200,18 @@ FX_ROUND_TRIP_PCT = FX_FEE_PCT * 2
 ENTRY_TREND_LOOKBACK_DAYS = 6
 ENTRY_TREND_MAX_DROP_PCT = Decimal("0.03")
 
+# Twardy limit RÓWNOCZEŚNIE otwartych pozycji (real, nie paper) - dodane
+# 2026-07-22 na życzenie Adama. Powód: rozbudowanie listy BotAsset do 38
+# kandydatów (żeby filtr trendu miał z czego wybierać) doprowadziło do 17
+# jednocześnie otwartych pozycji tego samego dnia - każda z nich to
+# osobne zapytania do T212 co tick (pending orders, trailing exit, DCA),
+# więc strona "Aktywa" zaczęła stale pokazywać "Z cache" (jej własny
+# request o portfolio przegrywał o ten sam ciasny budżet demo z tickiem
+# bota). Limit dotyczy TYLKO liczby otwartych pozycji, NIE liczby
+# kandydatów na liście BotAsset - można mieć dowolnie dużo tickerów do
+# wyboru, bot i tak nie otworzy więcej niż to jednocześnie.
+MAX_CONCURRENT_POSITIONS = 10
+
 
 def _market_open(currency: str) -> bool:
     """
@@ -1280,6 +1292,10 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     inaczej jeden asset zablokowany trendem/brakiem ceny wiecznie
     zasłaniałby kolejne w liście.
     """
+    open_count = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False).count()
+    if open_count >= MAX_CONCURRENT_POSITIONS:
+        return  # limit otwartych pozycji osiągnięty (patrz MAX_CONCURRENT_POSITIONS) - nic nowego dziś
+
     now = dt.datetime.utcnow()
     assets = BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all()
     for asset in assets:
