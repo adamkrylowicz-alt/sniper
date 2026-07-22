@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat \"/c/Users/Adam/projekty/sniper/pliki/to do.txt\" 2>&1)",
+      "Read(//c/Users/Adam/projekty/sniper/pliki/**)"
+    ]
+  }
+}
