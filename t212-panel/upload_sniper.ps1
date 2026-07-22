@@ -58,6 +58,7 @@ $relFiles = @(
     "services\bot_credentials.py"
     "services\bot_engine.py"
     "services\finnhub_client.py"
+    "services\market_hours.py"
     "services\yahoo_resolver.py"
     "static\css\style.css"
     "static\js\common.js"
