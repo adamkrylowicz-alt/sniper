@@ -138,6 +138,8 @@
             {% for p in open_positions %}
             <tr data-trade-id="{{ p.id }}">
                 <td>
+                    <span class="market-dot {{ 'market-dot--open' if p.market_open else 'market-dot--closed' }}"
+                          title="{{ 'Giełda otwarta - bot aktywnie zarządza pozycją' if p.market_open else 'Giełda zamknięta - bot wznowi zarządzanie po otwarciu sesji' }}"></span>
                     <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
                         <span class="pie-asset-row__ticker">{{ p.name or p.display_ticker }}</span>
                         <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>

@@ -123,6 +123,10 @@ def view():
             "is_paper": t.is_paper,
             "created_at_local": pytz.utc.localize(t.created_at).astimezone(_AMSTERDAM_TZ).strftime("%Y-%m-%d %H:%M:%S"),
             "hue": avatar_hue(t.ticker),
+            # Gielda WLASCIWA dla waluty tej pozycji - patrz bot_engine._market_open.
+            # Poza tym oknem bot nic aktywnie nie robi dla niej (ale zlecenie
+            # STOP juz wystawione na T212 zostaje i wykona sie samo u brokera).
+            "market_open": bot_engine._market_open(t.currency),
         }
         for t in open_trades
     ]

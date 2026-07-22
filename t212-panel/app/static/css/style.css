@@ -1110,6 +1110,18 @@ img.tile__logo {
 .history-table__status--warn { color: var(--accent-amber); }
 .history-table__status--error { color: var(--sell-red); }
 
+/* Kropka "gielda otwarta/zamknieta" przy tickerze w tabeli Otwarte pozycje -
+   ten sam wzorzec wizualny co .topbar__conn-dot. */
+.market-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+.market-dot--open { background: var(--buy-green); box-shadow: 0 0 4px var(--buy-green); }
+.market-dot--closed { background: var(--sell-red); box-shadow: 0 0 4px var(--sell-red); }
+
 .history-table__details {
     color: var(--text-muted);
     font-size: 10px;
