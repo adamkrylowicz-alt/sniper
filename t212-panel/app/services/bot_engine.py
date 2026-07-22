@@ -187,6 +187,16 @@ from .market_hours import (  # noqa: E402
 FX_FEE_PCT = Decimal("0.0015")
 FX_ROUND_TRIP_PCT = FX_FEE_PCT * 2
 
+# Ciagly trailing (przeprojektowane 2026-07-22, patrz _manage_trailing_exit) -
+# minimalna poprawa wzgledem AKTUALNEGO stop_target_price zeby w ogole
+# oplacalo sie robic Cancel-Replace. Bez tego progu STOP probowalby sie
+# przesuwac praktycznie co tick przy najmniejszym ruchu ceny w gore - przy
+# kilkunastu jednoczesnie otwartych pozycjach zjadloby to caly i tak ciasny
+# rate limit demo T212 na drobne, nieistotne poprawki. Polowa kroku
+# take_profit_step_pct to kompromis: duzo czesciej niz dawny "tylko przy
+# pelnym progu", ale nie przy kazdym centcie.
+MIN_TRAIL_REQUOTE_FRACTION = Decimal("0.5")
+
 # Filtr trendu przy PIERWSZYM wejściu (dca_level=0) - dodane 2026-07-22 na
 # życzenie Adama, żeby bot nie kupował ślepo bez sprawdzenia kierunku
 # ("kup i módl się"). Dotyczy WYŁĄCZNIE _enter_position (nowa pozycja) -
@@ -682,35 +692,42 @@ def _retry_pending_buys(
 
 def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettings) -> None:
     """
-    Trailing STOP - JEDNO zlecenie na raz (przeprojektowane 2026-07-21;
-    pierwsza wersja tego samego dnia próbowała trzymać RÓWNOCZEŚNIE LIMIT
-    SELL (take-profit) + STOP (stop-loss) na te same akcje jako ręczne OCO -
-    T212 tego nie pozwala, próba uzbrojenia STOP-a po tym jak LIMIT SELL już
-    rezerwuje akcje kończyła się `400 selling-equity-not-owned` (broker
-    traktuje akcje jako już "zaklepane" przez pierwsze zlecenie), potwierdzone
-    na żywo na koncie demo - patrz docs/IDEAS_v2.md, punkt 4).
+    Trailing STOP - JEDNO zlecenie na raz (przeprojektowane 2026-07-21, patrz
+    docs/IDEAS_v2.md pkt 4 - T212 nie pozwala trzymać LIMIT SELL + STOP
+    równocześnie, 400 selling-equity-not-owned).
 
-    Mechanika (procent od average_price, NIE stała kwota - żeby krok/stop
-    skalowały się z ceną instrumentu, patrz uzasadnienie w
-    RiskSettings.take_profit_step_pct):
+    CIĄGŁY trailing (przeprojektowane DRUGI RAZ 2026-07-22, na życzenie Adama
+    po analizie realnych wyników - poprzednia wersja przesuwała STOP TYLKO
+    przy pełnym minięciu kolejnego progu take_profit_step_pct, więc STOP
+    zawsze siedział dokładnie jeden krok ZA ostatnim minionym progiem, a nie
+    za faktycznym szczytem ceny. Realny przykład z 22.07: ASMLa_EQ doszło do
+    progu ~4 (cena +0.9-1.2% od wejścia), po czym się cofnęło i wykonało na
+    poziomie progu 3 (+0.3%) - oddaliśmy z powrotem prawie cały papierowy
+    zysk, zanim ochrona w ogóle zadziałała):
 
     1. Bot NIC nie wystawia dopóki cena nie minie DWÓCH progów
-       (2 * take_profit_step_pct powyżej average_price) - jak dawniej, żeby
-       zwykły szum tuż po zakupie nie wyciął pozycji.
-    2. Przy pierwszym uzbrojeniu (dokładnie na progu 2) STOP siada na
-       average_price * (1 - stop_loss_pct) - klasyczna ochrona kapitału,
-       dokładnie tam gdzie dawniej siadał osobny STOP.
-    3. Każdy kolejny próg PRZESUWA TEN SAM STOP w górę (Cancel-Replace) na
-       average_price * (1 + take_profit_step_pct * (milestone_steps - 2)) -
-       od progu 3 w górę zaczyna już blokować realny zysk, nie tylko chronić
-       kapitał. Formuła rośnie monotonicznie z milestone_steps, więc STOP
-       nigdy nie cofa się w dół.
+       (2 * take_profit_step_pct powyżej ref_price) - BEZ ZMIAN, żeby zwykły
+       szum tuż po zakupie nie wyciął pozycji.
+    2. Po minięciu progu uzbrojenia, target STOP-a liczony jest CO TICK jako
+       max(ref_price * (1 - stop_loss_pct), current_price * (1 - step)) -
+       czyli albo klasyczna ochrona kapitału (na wypadek gdyby cena ledwo
+       przekroczyła próg uzbrojenia), albo procent take_profit_step_pct POD
+       AKTUALNĄ ceną, zależnie co jest wyżej. Ten drugi człon rośnie razem z
+       każdym tickiem gdy cena idzie w górę - STOP goni szczyt, nie czeka na
+       kolejny okrągły próg.
+    3. Żeby nie zarzynać ciasnego rate limitu demo Cancel-Replace'em przy
+       KAŻDYM drobnym ruchu ceny w górę, STOP przesuwa się dopiero gdy nowy
+       target jest o co najmniej MIN_TRAIL_REQUOTE_FRACTION * step wyższy niż
+       obecny stop_target_price - "ciągły" w praktyce znaczy "dużo częściej
+       niż dawniej", nie "dosłownie co tick".
+    4. trail_milestone_steps (int(profit_pct / step)) zostaje wyliczane jak
+       dawniej WYŁĄCZNIE do wyświetlenia w UI ("próg N") - nie steruje już
+       SAMYM poziomem STOP-a, tylko bramką uzbrojenia (krok 1).
 
     Migracja ze starego dwunożnego OCO: jeśli pozycja ma jeszcze
-    trade.sell_order_id (LIMIT SELL założony PRZED tym przeprojektowaniem),
-    ten tick go najpierw anuluje i zeruje - dopiero potem liczy/wystawia
-    pojedynczy STOP jak wyżej (może się to zdarzyć na tym samym ticku, gdy
-    stary LIMIT SELL faktycznie jeszcze wisiał na koncie).
+    trade.sell_order_id (LIMIT SELL założony PRZED przeprojektowaniem
+    21.07), ten tick go najpierw anuluje i zeruje - dopiero potem liczy/
+    wystawia pojedynczy STOP jak wyżej.
     """
     step = settings.take_profit_step_pct
     if step <= 0:
@@ -769,13 +786,18 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         if milestone_steps < 2:
             continue  # jeszcze przed progiem uzbrojenia (potrzeba 2 progów, po odjęciu FX dla USD)
 
-        if milestone_steps <= trade.trail_milestone_steps and trade.stop_order_id is not None:
-            continue  # STOP już uzbrojony na tym (albo wyższym) progu, nic do zrobienia
+        # Ciagly target: albo ochrona kapitalu (stop_loss_pct pod ref_price),
+        # albo step pod AKTUALNA cena - cokolwiek wyzej. Drugi czlon rosnie
+        # z kazdym tickiem gdy cena idzie w gore, wiec STOP goni szczyt
+        # zamiast czekac na kolejny pelny prog (patrz docstring, pkt 2).
+        protective_floor = (ref_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
+        continuous_target = (current_price * (1 - step)).quantize(Decimal("0.0001"))
+        candidate_stop = max(protective_floor, continuous_target)
 
-        if milestone_steps == 2:
-            new_stop_price = (ref_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
-        else:
-            new_stop_price = (ref_price * (1 + step * (milestone_steps - 2))).quantize(Decimal("0.0001"))
+        if trade.stop_order_id is not None:
+            min_requote_threshold = trade.stop_target_price * (1 + step * MIN_TRAIL_REQUOTE_FRACTION)
+            if candidate_stop < min_requote_threshold:
+                continue  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
 
         if trade.stop_order_id:
             try:
@@ -783,25 +805,24 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             except T212APIError as exc:
                 _bump_retry(
                     user_id, trade,
-                    f"przesunięcie trailing STOP na próg {milestone_steps} - anulowanie starego "
+                    f"przesunięcie ciągłego trailing STOP - anulowanie starego "
                     f"({trade.stop_order_id}) nie powiodło się (mógł się już wykonać) - {exc}",
                 )
                 continue
 
         try:
-            stop_result = client.place_stop_order(trade.ticker, -trade.quantity, new_stop_price)
+            stop_result = client.place_stop_order(trade.ticker, -trade.quantity, candidate_stop)
         except T212APIError as exc:
             trade.stop_order_id = None
             _bump_retry(
                 user_id, trade,
-                f"uzbrojenie trailing STOP na próg {milestone_steps} (target {new_stop_price}) "
-                f"nie powiodło się - {exc}",
+                f"uzbrojenie ciągłego trailing STOP (target {candidate_stop}) nie powiodło się - {exc}",
             )
             continue
 
         was_armed = trade.trail_milestone_steps > 0
         trade.stop_order_id = stop_result.order_id
-        trade.stop_target_price = new_stop_price
+        trade.stop_target_price = candidate_stop
         trade.trail_milestone_steps = milestone_steps
         trade.sell_retry_count = 0
         trade.next_sell_retry_at = None
@@ -809,7 +830,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         _log(
             user_id, "INFO",
             f"{trade.ticker}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} "
-            f"na próg {milestone_steps} (target {new_stop_price}).",
+            f"na {candidate_stop} (próg {milestone_steps}, cena teraz {current_price}).",
             trade.position_group_id,
         )
 
