@@ -299,6 +299,26 @@ def _next_tick_error_delay(consecutive_errors: int) -> dt.timedelta:
     return dt.timedelta(minutes=TICK_ERROR_BACKOFF_MINUTES[idx])
 
 
+# (user_id, ticker) -> (kolejnych nieudanych prób wejścia z rzędu, kiedy
+# wolno spróbować znowu). W pamięci procesu, jak _tick_error_backoff wyżej.
+# Dodane 2026-07-22 - znaleziony realny problem: MAIN_US_EQ, potem DIS_US_EQ
+# nieprzerwanie łapały 429 przy próbie wejścia, a każda taka próba (nawet
+# nieudana) "zużywa slot" jednego wejścia na tick (patrz _process_entries) -
+# ticker wcześniej na liście BotAsset blokował WSZYSTKIE kolejne w kolejce,
+# W NIESKOŃCZONOŚĆ, aż ktoś ręcznie go usunął z listy. Teraz po serii
+# nieudanych prób ticker dostaje rosnący backoff i _process_entries go
+# POMIJA (nie próbuje w ogóle, nie zużywa slotu) dopóki backoff nie minie -
+# reszta listy przestaje być zakładnikiem jednego zepsutego/rate-limitowanego
+# assetu, bez potrzeby ręcznego usuwania.
+_entry_fail_backoff: dict[tuple[int, str], tuple[int, dt.datetime]] = {}
+ENTRY_FAIL_BACKOFF_MINUTES = (2, 5, 15, 30, 60)
+
+
+def _next_entry_fail_delay(consecutive_fails: int) -> dt.timedelta:
+    idx = min(consecutive_fails - 1, len(ENTRY_FAIL_BACKOFF_MINUTES) - 1)
+    return dt.timedelta(minutes=ENTRY_FAIL_BACKOFF_MINUTES[idx])
+
+
 # Plik na bledy bota (ERROR), OSOBNO od BotAuditLog/UI - ustalone z Adamem
 # 2026-07-21, po tym jak powtarzajace sie bledy (429 rate limit, precyzja
 # ilosci) zalewaly Dziennik bota w appce szumem, przez ktory nie bylo widac
@@ -1260,6 +1280,7 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     inaczej jeden asset zablokowany trendem/brakiem ceny wiecznie
     zasłaniałby kolejne w liście.
     """
+    now = dt.datetime.utcnow()
     assets = BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all()
     for asset in assets:
         if not _market_open(asset.currency):
@@ -1267,6 +1288,9 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
         already_open = ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN").first()
         if already_open:
             continue
+        backoff = _entry_fail_backoff.get((user_id, asset.ticker))
+        if backoff is not None and now < backoff[1]:
+            continue  # asset "w pauzie" po serii nieudanych prób - pomijamy, próbujemy dalej listy
         if _enter_position(user_id, asset, settings):
             return
 
@@ -1388,8 +1412,17 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> bo
     try:
         buy_result, quantity = _place_buy_with_precision_fallback(client, asset.ticker, quantity, price)
     except T212APIError as exc:
-        _log(user_id, "ERROR", f"{asset.ticker}: zakup nieudany - {exc}")
+        key = (user_id, asset.ticker)
+        consecutive = _entry_fail_backoff.get(key, (0, dt.datetime.utcnow()))[0] + 1
+        delay = _next_entry_fail_delay(consecutive)
+        _entry_fail_backoff[key] = (consecutive, dt.datetime.utcnow() + delay)
+        _log(
+            user_id, "ERROR",
+            f"{asset.ticker}: zakup nieudany ({consecutive}. próba z rzędu) - {exc} - "
+            f"kolejna próba za {int(delay.total_seconds() // 60)} min, w międzyczasie pomijany.",
+        )
         return True  # dotarliśmy do T212 (zlecenie odrzucone, ale slot na ten tick zużyty)
+    _entry_fail_backoff.pop((user_id, asset.ticker), None)
     allocated_value = quantity * buy_price
 
     # LIMIT SELL NIE jest wystawiany tutaj (patrz historia buga w docstringu
