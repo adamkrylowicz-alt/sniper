@@ -32,7 +32,13 @@
                         <span class="focus-tile__logo focus-tile__logo--fallback" style="background: hsl({{ tile.hue }}, 55%, 38%);">{{ tile.initial }}</span>
                         {% endif %}
                         <span class="focus-tile__title-text">
-                            <span class="focus-tile__ticker">{{ tile.name or ticker.split('_')[0] }}</span>
+                            <span class="focus-tile__ticker">
+                                {% if tile.market_open is not none %}
+                                <span class="market-dot {{ 'market-dot--open' if tile.market_open else 'market-dot--closed' }}"
+                                      title="{{ 'Giełda otwarta' if tile.market_open else 'Giełda zamknięta' }}"></span>
+                                {% endif %}
+                                {{ tile.name or ticker.split('_')[0] }}
+                            </span>
                             {% if tile.name %}
                             <span class="focus-tile__subtitle">{{ ticker.split('_')[0] }}{% if tile.currency %} · <span class="currency-badge currency-badge--{{ tile.currency|lower }}">{{ tile.currency }}</span>{% endif %}</span>
                             {% elif tile.currency %}

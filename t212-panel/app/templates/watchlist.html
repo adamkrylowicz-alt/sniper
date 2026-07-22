@@ -59,7 +59,13 @@
                     {% endif %}
 
                     <span class="watchlist-favorites__info">
-                        <span class="watchlist-favorites__name">{{ f.name or f.ticker }}</span>
+                        <span class="watchlist-favorites__name">
+                            {% if f.market_open is not none %}
+                            <span class="market-dot {{ 'market-dot--open' if f.market_open else 'market-dot--closed' }}"
+                                  title="{{ 'Giełda otwarta' if f.market_open else 'Giełda zamknięta' }}"></span>
+                            {% endif %}
+                            {{ f.name or f.ticker }}
+                        </span>
                         <span class="watchlist-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
                     </span>
                 </a>

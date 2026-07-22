@@ -164,17 +164,16 @@ SELLING_EQUITY_NOT_OWNED_ERROR_TYPE = "/api-errors/selling-equity-not-owned"
 
 # Okna sesji (ustalone z Adamem 2026-07-21, po tym jak ASMLa_EQ retry'owało
 # bez sensu CAŁĄ NOC podczas gdy Euronext Amsterdam był dawno zamknięty -
-# każda z tych funkcji poniżej dzieli ten sam problem: goni cenę/zarządza
-# zleceniem giełdy, która jest zamknięta, marnując ciasny rate limit demo).
-# Godziny to CZAS LOKALNY Amsterdamu (pytz sam ogarnia CET/CEST) - dla EUR
-# przyjmujemy Euronext/Xetra (9:00-17:30 nominalnie), dla USD NASDAQ/NYSE
-# (15:30-22:00 nominalnie latem). -5/+5 minut bufora na otwarciu/zamknięciu -
-# pierwsze/ostatnie minuty sesji mają najszersze spready. Świadome
-# uproszczenie: NIE uwzględnia świąt giełdowych (jak MIN_ORDER_VALUE_ESTIMATE
-# wyżej) - tylko dni robocze (pon-pt) i te dwa stałe okna.
-_AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
-EU_SESSION_WINDOW = (dt.time(9, 5), dt.time(17, 25))
-US_SESSION_WINDOW = (dt.time(15, 35), dt.time(21, 55))
+# każda z funkcji poniżej, ktora goni cene/zarzadza zleceniem, dzieli ten sam
+# problem: gielda zamknieta marnuje ciasny rate limit demo na nic).
+# _AMSTERDAM_TZ/EU_SESSION_WINDOW/US_SESSION_WINDOW/_market_open WYDZIELONE
+# do services/market_hours.py 2026-07-22 (uzywane teraz tez przez routes/*.py
+# do kropki "gielda otwarta/zamknieta" w UI - osobny modul bez zaleznosci
+# unika cyklicznego importu z routes/scalping.py, ktory ponizej importuje
+# _log_order stamtad).
+from .market_hours import (  # noqa: E402
+    _AMSTERDAM_TZ, EU_SESSION_WINDOW, US_SESSION_WINDOW, is_market_open as _market_open,
+)
 
 # Konto Adama jest w EUR - kupno/sprzedaż instrumentu w USD wymaga DWÓCH
 # konwersji walutowych (EUR->USD przy kupnie, USD->EUR przy sprzedaży),
@@ -212,19 +211,6 @@ ENTRY_TREND_MAX_DROP_PCT = Decimal("0.03")
 # wyboru, bot i tak nie otworzy więcej niż to jednocześnie.
 MAX_CONCURRENT_POSITIONS = 10
 
-
-def _market_open(currency: str) -> bool:
-    """
-    Czy giełda WŁAŚCIWA dla waluty instrumentu (USD -> NASDAQ/NYSE, wszystko
-    inne -> Euronext/Xetra) jest teraz otwarta, patrz stałe *_SESSION_WINDOW
-    wyżej. Poza tym oknem (albo w weekend) bot NIC nie robi dla danej pozycji/
-    aktywa - ani nowego wejścia, ani retry/trailing/DCA.
-    """
-    now_local = dt.datetime.now(_AMSTERDAM_TZ)
-    if now_local.weekday() >= 5:  # sobota=5, niedziela=6
-        return False
-    window = US_SESSION_WINDOW if currency == "USD" else EU_SESSION_WINDOW
-    return window[0] <= now_local.time() <= window[1]
 
 # Znalezione na żywo 2026-07-21 (MAIN_US_EQ, potem IPOE_US_EQ/SOFI) - T212
 # wymaga RÓŻNEJ liczby miejsc po przecinku w ilości w zależności od instrumentu

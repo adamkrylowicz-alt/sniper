@@ -22,6 +22,7 @@ from flask import Blueprint, abort, current_app, flash, jsonify, redirect, rende
 from ..extensions import db
 from ..models import User, UserSettings
 from ..services import instrument_cache, logo_cache
+from ..services.market_hours import is_market_open as _market_open
 from ..services.t212_client import T212APIError
 from ..utils import avatar_hue, current_user_id, friendly_name, login_required
 from .scalping import _get_client
@@ -168,10 +169,11 @@ def watchlist_view():
     # Hydratacja nazw z cache'u (jeśli dostępne) - żeby nie pokazywać samych
     # surowych tickerów bez kontekstu na liście ulubionych.
     from ..models import Instrument
-    cached = (
-        {i.ticker: friendly_name(i.name) for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers)).all()}
+    instruments_by_ticker = (
+        {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers)).all()}
         if favorite_tickers else {}
     )
+    cached = {t: friendly_name(i.name) for t, i in instruments_by_ticker.items()}
 
     # Automatyczne pobranie BRAKUJĄCYCH logo (ograniczone do kilku na wizytę,
     # patrz docstring ensure_logos_auto) - żadnego przycisku, dzieje się samo.
@@ -187,6 +189,7 @@ def watchlist_view():
             "initial": (cached.get(t) or t)[0].upper(),
             "hue": avatar_hue(t),
             "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),
+            "market_open": _market_open(instruments_by_ticker[t].currency_code) if t in instruments_by_ticker and instruments_by_ticker[t].currency_code else None,
         }
         for t in favorite_tickers
     ]

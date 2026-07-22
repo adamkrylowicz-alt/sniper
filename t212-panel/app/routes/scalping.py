@@ -29,6 +29,7 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 from ..extensions import db
 from ..models import Instrument, OrderLog
 from ..services import logo_cache
+from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
 from ..utils import avatar_hue, current_master_key, current_user_id, friendly_name, login_required
@@ -126,10 +127,16 @@ def warp_view():
     # do klikalnej listy w sidebarze (klik = dodaj/usuń z siatki 3x3).
     grid_set = set(tickers)
     from ..models import Instrument
-    cached_names = (
-        {i.ticker: friendly_name(i.name) for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers_raw)).all()}
+    instruments_by_ticker = (
+        {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(favorite_tickers_raw)).all()}
         if favorite_tickers_raw else {}
     )
+    cached_names = {t: friendly_name(i.name) for t, i in instruments_by_ticker.items()}
+
+    def _tile_market_open(ticker):
+        instrument = instruments_by_ticker.get(ticker)
+        return _market_open(instrument.currency_code) if instrument and instrument.currency_code else None
+
     favorites = [
         {
             "ticker": t,
@@ -138,6 +145,7 @@ def warp_view():
             "hue": avatar_hue(t),
             "in_grid": t in grid_set,
             "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),
+            "market_open": _tile_market_open(t),
         }
         for t in favorite_tickers_raw
     ]
@@ -154,6 +162,7 @@ def warp_view():
             "initial": t.split("_")[0][0].upper(),
             "hue": avatar_hue(t),
             "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),
+            "market_open": _tile_market_open(t),
         }
         for t in tickers
     ]
@@ -449,6 +458,7 @@ def focus_view():
             "ticker": t,
             "name": friendly_name(instruments_by_ticker[t].name) if t in instruments_by_ticker else "",
             "currency": instruments_by_ticker[t].currency_code if t in instruments_by_ticker else "",
+            "market_open": _market_open(instruments_by_ticker[t].currency_code) if t in instruments_by_ticker and instruments_by_ticker[t].currency_code else None,
             "hue": avatar_hue(t),
             "initial": t.split("_")[0][0].upper(),
             "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, t),
@@ -628,11 +638,13 @@ def _fetch_portfolio_live(user_id: int) -> dict:
         cost_basis = quantity * avg_price
         value = quantity * current_price
 
+        currency = instrument.currency_code if instrument else ""
         positions.append({
             "ticker": ticker,
             "display_ticker": ticker.split("_")[0],
             "name": name,
-            "currency": instrument.currency_code if instrument else "",
+            "currency": currency,
+            "market_open": _market_open(currency) if currency else None,
             "quantity": quantity,
             "avg_price": avg_price,
             "current_price": current_price,
@@ -680,6 +692,7 @@ def portfolio_refresh():
                 "display_ticker": p["display_ticker"],
                 "name": p["name"],
                 "currency": p["currency"],
+                "market_open": p["market_open"],
                 "quantity": float(p["quantity"]),
                 "avg_price": float(p["avg_price"]),
                 "current_price": float(p["current_price"]),

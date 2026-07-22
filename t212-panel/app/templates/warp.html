@@ -58,7 +58,13 @@
                         </span>
                         {% endif %}
                         <span class="sidebar-favorites__info">
-                            <span class="sidebar-favorites__name">{{ f.name or f.ticker }}</span>
+                            <span class="sidebar-favorites__name">
+                                {% if f.market_open is not none %}
+                                <span class="market-dot {{ 'market-dot--open' if f.market_open else 'market-dot--closed' }}"
+                                      title="{{ 'Giełda otwarta' if f.market_open else 'Giełda zamknięta' }}"></span>
+                                {% endif %}
+                                {{ f.name or f.ticker }}
+                            </span>
                             <span class="sidebar-favorites__ticker">{{ f.ticker.split('_')[0] }}</span>
                         </span>
                     </a>
@@ -130,7 +136,13 @@
                         <span class="tile__logo tile__logo--fallback" style="background: hsl({{ tile.hue }}, 55%, 38%);">{{ tile.initial }}</span>
                         {% endif %}
                         <span class="tile__name-wrap">
-                            <span class="tile__name">{{ tile.name or tile.ticker.split('_')[0] }}</span>
+                            <span class="tile__name">
+                                {% if tile.market_open is not none %}
+                                <span class="market-dot {{ 'market-dot--open' if tile.market_open else 'market-dot--closed' }}"
+                                      title="{{ 'Giełda otwarta' if tile.market_open else 'Giełda zamknięta' }}"></span>
+                                {% endif %}
+                                {{ tile.name or tile.ticker.split('_')[0] }}
+                            </span>
                             <span class="tile__ticker">{{ tile.ticker.split('_')[0] }}</span>
                         </span>
                     </a>

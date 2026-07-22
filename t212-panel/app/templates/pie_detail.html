@@ -39,6 +39,8 @@
             <div class="pie-asset-row__main">
                 <div class="pie-asset-row__title-line">
                     <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__ticker-link">
+                        <span class="market-dot {{ 'market-dot--open' if a.market_open else 'market-dot--closed' }}"
+                              title="{{ 'Giełda otwarta' if a.market_open else 'Giełda zamknięta' }}"></span>
                         <span class="pie-asset-row__ticker">{{ a.display_ticker }}</span>
                         <span class="pie-asset-row__currency"><span class="currency-badge currency-badge--{{ a.currency|lower }}">{{ a.currency }}</span></span>
                     </a>

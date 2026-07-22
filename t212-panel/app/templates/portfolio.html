@@ -49,7 +49,13 @@
                             <span class="pie-asset-row__avatar" style="width:28px;height:28px;font-size:12px;background: hsl({{ p.hue }}, 55%, 38%);">{{ p.initial }}</span>
                             {% endif %}
                             <span>
-                                <span class="pie-asset-row__ticker">{{ p.name or p.display_ticker }}</span>
+                                <span class="pie-asset-row__ticker">
+                                    {% if p.market_open is not none %}
+                                    <span class="market-dot {{ 'market-dot--open' if p.market_open else 'market-dot--closed' }}"
+                                          title="{{ 'Giełda otwarta' if p.market_open else 'Giełda zamknięta' }}"></span>
+                                    {% endif %}
+                                    {{ p.name or p.display_ticker }}
+                                </span>
                                 <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
                             </span>
                         </a>

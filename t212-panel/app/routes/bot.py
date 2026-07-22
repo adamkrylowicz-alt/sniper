@@ -103,6 +103,7 @@ def view():
             "entry_amount": str(a.entry_amount),
             "is_penny_stock": a.is_penny_stock,
             "hue": avatar_hue(a.ticker),
+            "market_open": bot_engine._market_open(a.currency),
         }
         for a in all_bot_assets
     ]

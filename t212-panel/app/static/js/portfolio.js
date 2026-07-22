@@ -38,13 +38,17 @@ function renderPortfolio(positions, totalValue, totalPpl) {
             ? `<img class="pie-asset-row__avatar" style="width:28px;height:28px" src="/static/logos/${encodeURIComponent(p.logo_filename)}" alt="${escapeHtml(p.display_ticker)}">`
             : `<span class="pie-asset-row__avatar" style="width:28px;height:28px;font-size:12px;background: hsl(${p.hue}, 55%, 38%);">${escapeHtml(p.initial)}</span>`;
 
+        const marketDot = p.market_open === null || p.market_open === undefined
+            ? ""
+            : `<span class="market-dot ${p.market_open ? "market-dot--open" : "market-dot--closed"}" title="${p.market_open ? "Giełda otwarta" : "Giełda zamknięta"}"></span>`;
+
         return `
             <tr class="${p.ppl >= 0 ? "portfolio-row--profit" : "portfolio-row--loss"}">
                 <td>
                     <a href="/instrument/${encodeURIComponent(p.ticker)}" class="pie-asset-row__ticker-link">
                         ${avatar}
                         <span>
-                            <span class="pie-asset-row__ticker">${escapeHtml(p.name || p.display_ticker)}</span>
+                            <span class="pie-asset-row__ticker">${marketDot}${escapeHtml(p.name || p.display_ticker)}</span>
                             <span class="pie-asset-row__currency">${escapeHtml(p.display_ticker)}${p.currency ? " · " + `<span class="currency-badge currency-badge--${escapeHtml(p.currency.toLowerCase())}">${escapeHtml(p.currency)}</span>` : ""}</span>
                         </span>
                     </a>

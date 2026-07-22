@@ -13,6 +13,10 @@
 
         <div class="instrument-detail__title">
             <div class="instrument-detail__ticker-line">
+                {% if market_open is not none %}
+                <span class="market-dot {{ 'market-dot--open' if market_open else 'market-dot--closed' }}"
+                      title="{{ 'Giełda otwarta' if market_open else 'Giełda zamknięta' }}"></span>
+                {% endif %}
                 <span class="instrument-detail__ticker">{{ display_ticker }}</span>
                 {% if is_leveraged %}<span class="badge badge--leverage">DŹWIGNIA</span>{% endif %}
             </div>

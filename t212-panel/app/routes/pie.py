@@ -25,6 +25,7 @@ from flask import Blueprint, current_app, flash, jsonify, redirect, render_templ
 from ..extensions import db
 from ..models import Instrument, Pie, PieAsset
 from ..services import price_feed
+from ..services.market_hours import is_market_open as _market_open
 from ..services.t212_client import T212APIError
 from ..utils import avatar_hue, current_user_id, friendly_name, login_required
 from .scalping import _get_client, _get_guard, _log_order
@@ -92,6 +93,7 @@ def detail(pie_id):
             "currency": a.currency,
             "target_weight": str(a.target_weight),
             "hue": avatar_hue(a.ticker),
+            "market_open": _market_open(a.currency),
         }
         for a in pie.assets
     ]
