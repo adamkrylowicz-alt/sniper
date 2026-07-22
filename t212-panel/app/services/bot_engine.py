@@ -1074,10 +1074,22 @@ def _detect_exit_fills(user_id: int, client: T212Client, pending_ids: set[str]) 
             _finalize_closed_trade(user_id, client, trade, "take-profit")
             closed_count += 1
         elif trade.stop_order_id and trade.stop_order_id not in pending_ids:
+            # Ten sam mechanizm STOP obsługuje DWA różne etapy trailing exitu
+            # (patrz _manage_trailing_exit): próg 2 to ochrona kapitału
+            # (stop POD ceną wejścia, realna strata), próg 3+ to już
+            # blokowanie ZYSKU (stop NAD ceną wejścia) - komunikat na sztywno
+            # "ze stratą" mylił Adama dwukrotnie (2026-07-22, Siemens x2),
+            # bo próg 3+ to w rzeczywistości zysk. Porównujemy
+            # stop_target_price (gdzie się wykonało) z average_price (skąd
+            # weszliśmy) żeby podpisać właściwie.
+            result_word = (
+                "z ZYSKIEM" if trade.stop_target_price is not None and trade.stop_target_price > trade.average_price
+                else "ze STRATĄ"
+            )
             _log(
                 user_id, "WARN",
-                f"{trade.ticker} (grupa {trade.position_group_id}): STOP (stop-loss) wykonany "
-                "- pozycja zamknięta ze stratą.",
+                f"{trade.ticker} (grupa {trade.position_group_id}): STOP wykonany na {trade.stop_target_price} "
+                f"(wejście {trade.average_price}) - pozycja zamknięta {result_word}.",
                 position_group_id=trade.position_group_id,
             )
             _finalize_closed_trade(user_id, client, trade, "stop-loss")
