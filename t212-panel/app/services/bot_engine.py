@@ -604,6 +604,27 @@ def _retry_pending_buys(
             )
             continue
 
+        # Przeliczamy ILOŚĆ względem NOWEJ ceny, zachowując docelową kwotę
+        # alokacji (BotAsset.entry_amount) - realny bug znaleziony na żywo
+        # 2026-07-22: FB_US_EQ (Meta) miało błędną cenę wejścia 44.61 (martwy
+        # symbol "FB" w Alpaca, patrz TICKER_MAP fix), gdy się poprawiła na
+        # prawdziwe ~632, ten kod PRZED fixem trzymał starą trade.quantity
+        # (policzoną po błędnej, 14x niższej cenie) i tylko podmieniał cenę -
+        # pozycja urosła z zamierzonych 25 USD do 354 USD. Przy normalnych,
+        # małych ruchach ceny błąd jest niezauważalny (parę % dryfu), ale
+        # mechanizm był zepsuty dla KAŻDEGO price-chase, nie tylko tego
+        # ekstremalnego przypadku - stąd fix ogólny, nie tylko dla Meta.
+        asset = BotAsset.query.get(trade.bot_asset_id)
+        target_amount = asset.entry_amount if asset is not None else (trade.quantity * trade.buy_price)
+        new_quantity = (target_amount / current_price).quantize(Decimal("0.0001"))
+        if new_quantity <= 0:
+            _bump_buy_retry(
+                user_id, trade,
+                f"cena odjechała ({current_price} > limit {trade.buy_price}), ale przeliczona ilość <= 0 "
+                f"(kwota {target_amount} / cena {current_price}), pomijam ten tick.",
+            )
+            continue
+
         try:
             client.cancel_order(trade.buy_order_id)
         except T212APIError as exc:
@@ -615,7 +636,7 @@ def _retry_pending_buys(
             continue
 
         try:
-            new_result = client.place_limit_order(trade.ticker, trade.quantity, current_price)
+            new_result = client.place_limit_order(trade.ticker, new_quantity, current_price)
         except T212APIError as exc:
             _bump_buy_retry(
                 user_id, trade,
@@ -624,16 +645,19 @@ def _retry_pending_buys(
             continue
 
         old_price = trade.buy_price
+        old_quantity = trade.quantity
         trade.buy_order_id = new_result.order_id
         trade.buy_price = current_price
         trade.average_price = current_price
-        trade.allocated_value = (trade.quantity * current_price).quantize(Decimal("0.01"))
+        trade.quantity = new_quantity
+        trade.allocated_value = (new_quantity * current_price).quantize(Decimal("0.01"))
         trade.buy_retry_count = 0
         trade.next_buy_retry_at = None
         db.session.commit()
         _log(
             user_id, "INFO",
-            f"{trade.ticker}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej cenie.",
+            f"{trade.ticker}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
+            f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}.",
             trade.position_group_id,
         )
 
