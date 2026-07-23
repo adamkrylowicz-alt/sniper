@@ -1131,20 +1131,44 @@ def _confirm_dca_fills(
             )
 
 
-def _finalize_closed_trade(user_id: int, client: T212Client, trade: ActiveTrade, filled_via: str) -> None:
+_FILLED_ORDER_STATUS = "FILLED"
+
+
+def _lookup_recent_order(client: T212Client, order_id: str) -> dict | None:
+    """
+    Szuka zlecenia w historii T212 (GET /equity/history/orders, zwraca
+    {"order": {..., "status": ...}, "fill": {"price": ..., ...}}) po jego id -
+    pozwala _resolve_vanished_leg() rozróżnić faktyczne wykonanie (status
+    FILLED) od anulowania/odrzucenia. Jedna strona (limit=50, najnowsze
+    pierwsze) wystarcza - szukane zlecenie zniknęło z pending przed chwilą,
+    więc jest na samej górze historii. Błąd API/brak w historii -> None,
+    wywołujący traktuje to jako "jeszcze nie wiadomo", nie jako potwierdzenie.
+    """
+    try:
+        page = client.get_order_history(limit=50)
+    except T212APIError:
+        return None
+    for item in page.get("items", []):
+        order = item.get("order") or {}
+        if str(order.get("id")) == order_id:
+            return item
+    return None
+
+
+def _finalize_closed_trade(
+    user_id: int, client: T212Client, trade: ActiveTrade, filled_via: str, fill_price: float | None = None
+) -> None:
     """
     Oznacza trade jako CLOSED i anuluje "osieroconą" drugą nogę (ręczne OCO -
     T212 nie ma natywnego one-cancels-other, patrz _manage_trailing_exit).
     filled_via: "take-profit" albo "stop-loss", tylko do logu/wyboru której
     nogi szukać jako osieroconej.
 
-    close_price = trade.stop_target_price (patrz models.py::ActiveTrade,
-    dodane 2026-07-21, żeby zysk/strata zrealizowana dało się policzyć bez
-    dziennika/T212) - PRZYBLIŻENIE dla "stop-loss" (Market Order po
-    przebiciu stopu może wykonać się z poślizgiem), a dla "take-profit" (stara
-    ścieżka sell_order_id sprzed przeprojektowania, patrz komentarz przy
-    ActiveTrade.sell_order_id) w ogóle nieznane - stop_target_price dotyczy
-    tylko nogi STOP, więc zostaje NULL.
+    close_price: preferuje rzeczywistą cenę wykonania z historii T212
+    (fill_price, patrz _resolve_vanished_leg) - dopiero gdy ta niedostępna,
+    fallback na trade.stop_target_price dla "stop-loss" (Market Order po
+    przebiciu stopu może wykonać się z poślizgiem, więc to tylko
+    PRZYBLIŻENIE) - dla "take-profit" bez fill_price zostaje NULL (nieznana).
     """
     sibling_id = trade.stop_order_id if filled_via == "take-profit" else trade.sell_order_id
     if sibling_id:
@@ -1157,22 +1181,116 @@ def _finalize_closed_trade(user_id: int, client: T212Client, trade: ActiveTrade,
                 f"{filled_via} nie powiodło się (mogła się wykonać w tym samym momencie) - {exc}",
                 trade.position_group_id,
             )
-    if filled_via == "stop-loss":
+    if fill_price is not None:
+        trade.close_price = fill_price
+    elif filled_via == "stop-loss":
         trade.close_price = trade.stop_target_price
     trade.status = "CLOSED"
     trade.closed_at = dt.datetime.utcnow()
     db.session.commit()
 
 
+def _resolve_vanished_leg(
+    user_id: int, client: T212Client, trade: ActiveTrade, order_id: str, filled_via: str
+) -> bool:
+    """
+    Wołane z _detect_exit_fills() gdy sell_order_id/stop_order_id zniknęło
+    z pending. Zniknięcie z pending SAMO W SOBIE nie dowodzi wykonania -
+    zlecenie mogło też zostać anulowane/odrzucone (np. przez sam
+    _manage_trailing_exit przy cancel/replace tej samej nogi, albo przez
+    T212) - znaleziono 2026-07-23, gdy ASML pokazywał wciąż otwartą pozycję
+    na koncie T212, mimo że bot już oznaczył ją CLOSED wyłącznie na
+    podstawie zniknięcia z pending. Sprawdza realny status w historii T212
+    (_lookup_recent_order) PRZED uznaniem pozycji za zamkniętą.
+    Zwraca True jeśli pozycja została faktycznie zamknięta.
+    """
+    item = _lookup_recent_order(client, order_id)
+    if item is None:
+        _log(
+            user_id, "INFO",
+            f"{trade.ticker} (grupa {trade.position_group_id}): zlecenie {order_id} zniknęło z pending, "
+            "ale nie udało się jeszcze zweryfikować jego statusu w historii T212 - sprawdzę ponownie "
+            "na kolejnym ticku.",
+            trade.position_group_id,
+        )
+        return False
+
+    status = (item.get("order") or {}).get("status")
+    if status != _FILLED_ORDER_STATUS:
+        _log(
+            user_id, "WARN",
+            f"{trade.ticker} (grupa {trade.position_group_id}): zlecenie {order_id} zniknęło z pending, "
+            f"ale status w historii T212 to {status}, NIE {_FILLED_ORDER_STATUS} - nie zostało "
+            "wykonane (anulowane/odrzucone). Pozycja zostaje OPEN, noga zostanie wystawiona od nowa "
+            "na kolejnym ticku.",
+            trade.position_group_id,
+        )
+        if trade.sell_order_id == order_id:
+            trade.sell_order_id = None
+        if trade.stop_order_id == order_id:
+            trade.stop_order_id = None
+        db.session.commit()
+        return False
+
+    fill_price = (item.get("fill") or {}).get("price")
+    if filled_via == "take-profit":
+        _log(
+            user_id, "INFO",
+            f"{trade.ticker} (grupa {trade.position_group_id}): LIMIT SELL (take-profit) wykonany "
+            "- pozycja zamknięta.",
+            position_group_id=trade.position_group_id,
+        )
+    else:
+        # Ten sam mechanizm STOP obsługuje DWA różne etapy trailing exitu
+        # (patrz _manage_trailing_exit): próg 2 to ochrona kapitału
+        # (stop POD ceną wejścia, realna strata), próg 3+ to już
+        # blokowanie ZYSKU (stop NAD ceną wejścia) - komunikat na sztywno
+        # "ze stratą" mylił Adama dwukrotnie (2026-07-22, Siemens x2),
+        # bo próg 3+ to w rzeczywistości zysk. Porównujemy fill_price
+        # (gdzie się realnie wykonało, fallback stop_target_price gdy fill
+        # niedostępny) z average_price (skąd weszliśmy) żeby podpisać
+        # właściwie.
+        reference_price = fill_price if fill_price is not None else trade.stop_target_price
+        result_word = (
+            "z ZYSKIEM" if reference_price is not None and reference_price > trade.average_price
+            else "ze STRATĄ"
+        )
+        _log(
+            user_id, "WARN",
+            f"{trade.ticker} (grupa {trade.position_group_id}): STOP wykonany na "
+            f"{fill_price if fill_price is not None else trade.stop_target_price} "
+            f"(wejście {trade.average_price}) - pozycja zamknięta {result_word}.",
+            position_group_id=trade.position_group_id,
+        )
+
+    # Dopisane 2026-07-23 - do tego dnia wyjścia (STOP/LIMIT SELL) w ogóle
+    # nie trafiały do OrderLog (_log_order wołane tylko przy kupnie, patrz
+    # _enter_position), więc strona Historia (routes/scalping.py::history_view)
+    # nigdy nie pokazywała że/za ile bot sprzedał - Adam pytał "gdzie jest
+    # historia że się sprzedało". Logujemy TYLKO potwierdzone wykonanie
+    # (status="filled"), NIE każde przesunięcie STOP-a przy ciągłym trailingu
+    # (patrz _manage_trailing_exit) - inaczej Historia zalałaby się dziesiątkami
+    # wpisów "sent" per pozycja (10 przesunięć to normalka jednego dnia).
+    _log_order(
+        user_id=user_id, ticker=trade.ticker, side="sell",
+        quantity=trade.quantity,
+        price_snapshot=fill_price if fill_price is not None else trade.stop_target_price,
+        status="filled", t212_order_id=order_id,
+    )
+    _finalize_closed_trade(user_id, client, trade, filled_via, fill_price=fill_price)
+    return True
+
+
 def _detect_exit_fills(user_id: int, client: T212Client, pending_ids: set[str]) -> int:
     """
     Sprawdza czy sell_order_id (take-profit) albo stop_order_id (stop-loss)
-    jakiejś OPEN pozycji zniknęło z pending - jeśli tak, pozycja wykonana,
-    oznacza CLOSED i anuluje osieroconą drugą nogę (patrz
-    _finalize_closed_trade). Wołane z KAŻDEGO tick() (nie tylko reconcile()
-    przy aktywacji) - inaczej pozycja wykonana W TRAKCIE gdy bot jest aktywny
-    nigdy nie zostałaby lokalnie zamknięta, a druga noga wisiałaby na T212
-    bez końca. Zwraca liczbę zamkniętych pozycji.
+    jakiejś OPEN pozycji zniknęło z pending - jeśli tak, weryfikuje w
+    historii T212 czy to faktyczne wykonanie czy anulowanie/odrzucenie
+    (patrz _resolve_vanished_leg) zanim oznaczy CLOSED i anuluje osieroconą
+    drugą nogę (patrz _finalize_closed_trade). Wołane z KAŻDEGO tick() (nie
+    tylko reconcile() przy aktywacji) - inaczej pozycja wykonana W TRAKCIE
+    gdy bot jest aktywny nigdy nie zostałaby lokalnie zamknięta, a druga
+    noga wisiałaby na T212 bez końca. Zwraca liczbę zamkniętych pozycji.
     """
     open_trades = (
         ActiveTrade.query
@@ -1183,35 +1301,11 @@ def _detect_exit_fills(user_id: int, client: T212Client, pending_ids: set[str]) 
     closed_count = 0
     for trade in open_trades:
         if trade.sell_order_id and trade.sell_order_id not in pending_ids:
-            _log(
-                user_id, "INFO",
-                f"{trade.ticker} (grupa {trade.position_group_id}): LIMIT SELL (take-profit) wykonany "
-                "- pozycja zamknięta.",
-                position_group_id=trade.position_group_id,
-            )
-            _finalize_closed_trade(user_id, client, trade, "take-profit")
-            closed_count += 1
+            if _resolve_vanished_leg(user_id, client, trade, trade.sell_order_id, "take-profit"):
+                closed_count += 1
         elif trade.stop_order_id and trade.stop_order_id not in pending_ids:
-            # Ten sam mechanizm STOP obsługuje DWA różne etapy trailing exitu
-            # (patrz _manage_trailing_exit): próg 2 to ochrona kapitału
-            # (stop POD ceną wejścia, realna strata), próg 3+ to już
-            # blokowanie ZYSKU (stop NAD ceną wejścia) - komunikat na sztywno
-            # "ze stratą" mylił Adama dwukrotnie (2026-07-22, Siemens x2),
-            # bo próg 3+ to w rzeczywistości zysk. Porównujemy
-            # stop_target_price (gdzie się wykonało) z average_price (skąd
-            # weszliśmy) żeby podpisać właściwie.
-            result_word = (
-                "z ZYSKIEM" if trade.stop_target_price is not None and trade.stop_target_price > trade.average_price
-                else "ze STRATĄ"
-            )
-            _log(
-                user_id, "WARN",
-                f"{trade.ticker} (grupa {trade.position_group_id}): STOP wykonany na {trade.stop_target_price} "
-                f"(wejście {trade.average_price}) - pozycja zamknięta {result_word}.",
-                position_group_id=trade.position_group_id,
-            )
-            _finalize_closed_trade(user_id, client, trade, "stop-loss")
-            closed_count += 1
+            if _resolve_vanished_leg(user_id, client, trade, trade.stop_order_id, "stop-loss"):
+                closed_count += 1
     return closed_count
 
 
