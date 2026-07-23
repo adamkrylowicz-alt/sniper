@@ -3,6 +3,7 @@
 
 # Sekrety - NIGDY nie commitowac
 pliki/sshkey.txt
+pliki/code-server-password.txt
 t212-panel/.env
 t212-panel/instance/
 
