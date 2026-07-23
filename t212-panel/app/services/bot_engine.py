@@ -145,7 +145,7 @@ from ..extensions import db
 from ..models import ActiveTrade, BotAsset, BotAuditLog, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from . import bot_credentials, mailer, price_feed
+from . import bot_credentials, bot_entry_filters, mailer, price_feed
 from .t212_client import T212APIError, T212Client
 
 BOT_ENVIRONMENT = "demo"
@@ -1305,6 +1305,33 @@ def tick(app) -> None:
             if not settings or not settings.is_bot_active:
                 continue
 
+            # Bezpiecznik dziennej straty - SPRAWDZANY PRZED czymkolwiek innym
+            # w tym ticku. Gdy próg przekroczony: bot się wyłącza (is_bot_active
+            # =False) i tracimy poświadczenia, więc następne ticki go pominą.
+            # Pozycje NIE są zamykane automatycznie - to świadoma decyzja,
+            # panic-sell po przekroczeniu progu potrafi zrealizować stratę
+            # dokładnie w dołku. Bot przestaje DOKŁADAĆ, resztą zarządzasz ręcznie.
+            if not settings.is_paper_trading:
+                breach = bot_entry_filters.check_daily_loss_limit(
+                    user_id,
+                    settings,
+                    lambda ticker: price_feed.get_live_price(
+                        current_app.config.get("FINNHUB_API_KEY"), ticker,
+                        current_app.config.get("ALPACA_API_KEY"),
+                        current_app.config.get("ALPACA_API_SECRET"),
+                    ),
+                )
+                if breach is not None:
+                    bot_credentials.deactivate(user_id)
+                    _log(
+                        user_id, "WARN",
+                        f"STOP: dzienny limit straty przekroczony. Zrealizowane "
+                        f"{breach['realized']:+.2f}, niezrealizowane {breach['unrealized']:+.2f}, "
+                        f"razem {breach['total']:+.2f} (limit {settings.max_daily_loss}). "
+                        "Bot wyłączony - otwarte pozycje ZOSTAJĄ, zarządź nimi ręcznie.",
+                    )
+                    continue
+
             client = _get_client_for_user(user_id, settings)
             if client is not None:
                 now = dt.datetime.utcnow()
@@ -1383,16 +1410,58 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
         return  # limit otwartych pozycji osiągnięty (patrz MAX_CONCURRENT_POSITIONS) - nic nowego dziś
 
     now = dt.datetime.utcnow()
-    assets = BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all()
-    for asset in assets:
+
+    # Krok 1: twarde, DARMOWE odsiewanie (zero zapytań do czegokolwiek) -
+    # giełda zamknięta / pozycja już otwarta / asset w backoffie po serii
+    # nieudanych prób. Dopiero to co zostanie idzie do scoringu.
+    eligible = []
+    for asset in BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all():
         if not _market_open(asset.currency):
             continue  # giełda właściwa dla tej waluty zamknięta - patrz _market_open
-        already_open = ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN").first()
-        if already_open:
+        if ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN").first():
             continue
         backoff = _entry_fail_backoff.get((user_id, asset.ticker))
         if backoff is not None and now < backoff[1]:
-            continue  # asset "w pauzie" po serii nieudanych prób - pomijamy, próbujemy dalej listy
+            continue  # asset "w pauzie" po serii nieudanych prób
+        eligible.append(asset)
+
+    if not eligible:
+        return
+
+    # Krok 2: scoring (patrz services/bot_entry_filters.py). Do 23.07 o tym
+    # który asset dostanie slot decydowała KOLEJNOŚĆ WIERSZY W BAZIE (brak
+    # order_by) - przy 38 kandydatach i limicie 10 pozycji to była największa
+    # strata potencjału w całym silniku. Teraz bot wchodzi w NAJLEPSZEGO.
+    #
+    # Koszt API: ZERO dodatkowych zapytań. candles_getter korzysta z tego
+    # samego 30-minutowego cache co filtr trendu i ATR, a scoring celowo NIE
+    # potrzebuje żywej ceny (używa ceny zamknięcia ostatniej świecy) - żywa
+    # cena jest pobierana dopiero w _enter_position, dla zwycięzcy.
+    scored, stats = bot_entry_filters.rank_candidates(
+        eligible,
+        settings,
+        candles_getter=lambda ticker: price_feed.get_mini_chart_ohlc(
+            current_app.config.get("FINNHUB_API_KEY"),
+            ticker,
+            days=bot_entry_filters.TREND_LOOKBACK_DAYS,
+        ),
+    )
+
+    if not scored:
+        _log(user_id, "INFO", f"Wejścia: żaden kandydat nie przeszedł filtrów ({stats.summary()}).")
+        return
+
+    best_ticker = scored[0][0].ticker
+    _log(
+        user_id, "INFO",
+        f"Wejścia: {stats.summary()}. Najlepszy kandydat: {best_ticker} "
+        f"(score {scored[0][1]:.3f}).",
+    )
+
+    # Krok 3: próbujemy od najlepszego. NAJWYŻEJ JEDNO wejście na tick, ale
+    # tylko jeśli faktycznie dotarło do T212 (return dopiero gdy
+    # _enter_position zwróci True) - patrz docstring tej funkcji.
+    for asset, _score in scored:
         if _enter_position(user_id, asset, settings):
             return
 
@@ -1446,14 +1515,6 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> bo
     )
     if price is None or price <= 0:
         _log(user_id, "ERROR", f"{asset.ticker}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
-        return False
-
-    if not _entry_trend_ok(asset.ticker):
-        _log(
-            user_id, "INFO",
-            f"{asset.ticker}: pomijam wejście - cena spadła o więcej niż {ENTRY_TREND_MAX_DROP_PCT * 100}% "
-            f"w ostatnich {ENTRY_TREND_LOOKBACK_DAYS} dniach (nie łapiemy spadającego noża).",
-        )
         return False
 
     quantity = (asset.entry_amount / price).quantize(Decimal("0.0001"))
