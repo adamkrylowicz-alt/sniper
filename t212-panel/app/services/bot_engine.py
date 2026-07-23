@@ -1232,7 +1232,15 @@ def _resolve_vanished_leg(
         db.session.commit()
         return False
 
-    fill_price = (item.get("fill") or {}).get("price")
+    fill_price_raw = (item.get("fill") or {}).get("price")
+    # BUG znaleziony i naprawiony 2026-07-23 (na żywo, XOM_US_EQ) - fill_price
+    # z JSON-a T212 to zwykły float, ale trade.quantity/_log_order oczekują
+    # Decimal (Decimal * float rzuca TypeError) - _log_order rzucało wyjątek
+    # PRZED wywołaniem _finalize_closed_trade, więc pozycja nigdy nie
+    # zostawała CLOSED - ten sam "STOP wykonany" log powtarzał się co tick
+    # w nieskończoność, a _manage_trailing_exit (widząc dalej status="OPEN")
+    # próbował wystawiać NOWE zlecenia STOP na już nieposiadane akcje.
+    fill_price = Decimal(str(fill_price_raw)) if fill_price_raw is not None else None
     if filled_via == "take-profit":
         _log(
             user_id, "INFO",
