@@ -127,3 +127,38 @@ tuż poniżej high poprzedniej świecy 1-min), bardzo ciasny trailing stop
 - Builder strategii (AND/OR bloków) - osobny model danych, spore query
   wykonywane w tick() dla każdego aktywa - warto rozważyć wpływ na rate
   limit T212/nowego API świec.
+
+## Pomysł: tryb "zarządzaj wszystkim" + łączenie ręcznych zakupów z botem (2026-07-23)
+
+Zgłoszone przez Adama wieczorem, po incydencie gdzie dev i prod (patrz
+`feedback_snajper_bot_scope` / pamięć Claude o współdzielonym kluczu T212)
+przez pomyłkę zarządzały tymi samymi realnymi udziałami naraz. Zasada "bot
+obsługuje tylko to co sam kupił" (`app/services/bot_engine.py::_process_entries`
+sprawdza WYŁĄCZNIE `ActiveTrade`, nigdy realnego portfela T212) jest słuszna
+jako domyślna, ale bywa za sztywna, gdy Adam SAM chce oddać botowi kontrolę
+nad czymś kupionym ręcznie - stąd dwa powiązane pomysły, żaden jeszcze nie
+zaprojektowany ani nie zaimplementowany:
+
+1. **Switch "zarządzaj wszystkim"** ("idę spać, a ty handluj") - globalny
+   przełącznik per user (albo per `RiskSettings`), który na czas jego
+   włączenia pozwala botowi traktować WSZYSTKIE pozycje na koncie T212 (nie
+   tylko te z własnego `ActiveTrade`) jako swoje do zarządzania wyjściem
+   (trailing exit / DCA). Wymaga rozstrzygnięcia: co się dzieje przy wyłączeniu
+   trybu - bot "oddaje" pozycje z powrotem, czy zostają już na stałe pod jego
+   zarządzaniem? Ryzyko: bot nie zna historii/kontekstu ręcznego zakupu
+   (dlaczego kupione, jaki cel), więc "zarządzanie" ograniczałoby się
+   praktycznie do samego mechanizmu wyjścia (trailing stop), nie do wejścia.
+
+2. **Ręczne "adoptowanie" pojedynczej pozycji** - akcja w UI (np. przy
+   pozycji na stronie Aktywa) "przekaż botowi" / "połącz z botem", która
+   tworzy dla wybranego tickera nowy wiersz `ActiveTrade` na podstawie
+   REALNEJ ilości/średniej ceny z portfela T212 (analogiczny mechanizm do
+   ręcznej korekty zrobionej dziś wieczorem przy incydencie z dev/prod -
+   `average_price`/`quantity` wprost z `T212Client.get_portfolio()`,
+   `dca_level=0`, `baseline_owned_quantity=0` żeby cała ilość liczyła się
+   jako "botowa" od tego momentu). Bezpieczniejsze niż globalny switch (jedna
+   pozycja na raz, świadoma decyzja), ale wymaga nowego endpointu +
+   potwierdzenia w UI (żeby nie dało się tego zrobić przez przypadek).
+
+Żadne z powyższych NIE zmienia domyślnego zachowania (bot dalej ignoruje
+nieznane mu pozycje) - to opt-in, per pozycja albo per switch czasowy.
