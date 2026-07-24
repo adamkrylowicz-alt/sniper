@@ -806,7 +806,35 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
     if not candidates:
         return
 
+    # Wykrywanie pozycji sprzedanych RĘCZNIE poza appką (Adam, 2026-07-24:
+    # "skoro go znasz, wyeliminuj ten błąd... jak sprzedam coś z ręki i nie
+    # mam już, to niech bot tego nie próbuje sprzedać") - bez tego bot w
+    # nieskończoność próbowałby uzbroić/przesunąć STOP na 0 akcji, dostając
+    # błąd T212 i tylko odkładając retry z backoffem, nigdy nie rozwiązując
+    # sprawy. Jedno zapytanie /equity/portfolio na cały tick (ten sam wzorzec
+    # co _retry_pending_sells::_portfolio_quantities) - gdy się nie uda
+    # (429/inny błąd), CICHY fallback: pomijamy tę detekcję na tym ticku,
+    # reszta logiki działa jak dotychczas.
+    try:
+        owned_map = _portfolio_quantities(client)
+    except T212APIError:
+        owned_map = None
+
     for trade in candidates:
+        if owned_map is not None and owned_map.get(trade.ticker, Decimal("0")) <= 0:
+            trade.status = "CLOSED"
+            trade.closed_at = dt.datetime.utcnow()
+            trade.stop_order_id = None
+            trade.sell_order_id = None
+            db.session.commit()
+            _log(
+                user_id, "INFO",
+                f"{trade.ticker}: 0 szt. w portfelu T212 (prawdopodobnie sprzedane ręcznie poza appką) - "
+                "pozycja zamknięta lokalnie (cena zamknięcia nieznana), bot przestaje nią zarządzać.",
+                trade.position_group_id,
+            )
+            continue
+
         if trade.sell_order_id:
             old_sell_order_id = trade.sell_order_id
             try:
