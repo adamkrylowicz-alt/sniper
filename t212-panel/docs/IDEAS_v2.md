@@ -87,6 +87,24 @@ Przywrócone jako opcjonalny przełącznik `EODSettings.force_close_enabled`
 TYLKO gdy user je świadomie włączy. Migracja `migrate_add_eod_force_close.py`
 (kolumna dokładana do istniejącej tabeli `eod_settings`).
 
+**ROZSZERZENIE NA USA (2026-07-24, po pierwszym dniu testów bez triggera na
+EUR):** Adam: "zmień EOD na USA także, dodaj tam pozycje wg uznania (duża
+płynność), niech robi cały czas aż do 22:00 lokalnego czasu". `EOD_WINDOW`
+rozszerzone z 16:00-17:30 na **16:00-22:00** Amsterdamu - jeden zakres
+obejmujący koniec sesji EUR (Euronext/Xetra) I całą popołudniową sesję USA
+(NASDAQ/NYSE ~15:35-21:55 CEST), per-tickerowa bramka `market_hours.
+is_market_open()` i tak filtruje właściwą giełdę dla waluty danego tickera.
+`FORCE_CLOSE_TIME` przesunięty z 17:20 na 21:55 (nadal za `force_close_enabled`,
+wyłączone domyślnie). Dodane 15 płynnych spółek USD do `EODAsset` (100 USD
+bazowej kwoty, wybór "wg uznania" - mega-cap, wysoka płynność): Apple,
+Microsoft, Nvidia, Amazon, Alphabet, Meta Platforms (`FB_US_EQ` - stary kod
+T212 sprzed rebrandingu, ten sam `TICKER_MAP` fix co gdzie indziej w appce
+poprawnie mapuje go na META), Tesla, JPMorgan Chase, Visa, Mastercard,
+Johnson & Johnson, Walmart, Walt Disney, Netflix, Bank of America - razem z
+15 istniejącymi EUR daje 30 tickerów na liście. Zweryfikowane realnym
+`get_eod_intraday_1m` dla AAPL i FB (poprawnie zwrócił cenę Meta ~$609, nie
+starą/martwą cenę FB).
+
 ### Dodatkowe wymagania techniczne
 - Rate limiting i cache dla API Trading212 i Finnhub.
 - Obsługa limitów Trading212 (szczególnie przy składaniu zleceń).

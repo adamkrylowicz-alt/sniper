@@ -6,13 +6,17 @@ Micro-Grid (bot_engine.py) i strategii sygnałowej (signal_engine.py). Patrz
 docs/IDEAS_v2.md ("Specjalny moduł EOD") i models.py (komentarz nad
 EODAsset) po pełne uzasadnienie niezależności.
 
-Działa WYŁĄCZNIE pod koniec sesji EUR (16:00-17:30 Amsterdamu, EOD_WINDOW
-niżej) - cel: szybka reakcja na NAGŁE, OSTRE spadki w krótkim czasie (1-5
-minut), nie na powolne pełzanie w dół (to już robi Micro-Grid/Sygnał na
-świecach dziennych). Dane: świece 1-MINUTOWE dzisiejszej sesji
-(price_feed.get_eod_intraday_1m, Yahoo nieoficjalne - patrz docs/IDEAS_v2.md
-pkt 3, decyzja 2026-07-24: żaden tani dostawca nie dawał prawdziwego 1-min
-dla Europy, docelowo IBKR API gdy dostępne).
+Działa 16:00-22:00 czasu Amsterdamu (EOD_WINDOW niżej) - pierwotnie tylko
+koniec sesji EUR, rozszerzone 2026-07-24 (Adam: "zmień EOD na USA także") o
+całą sesję USA (NASDAQ/NYSE ~15:35-21:55 CEST, patrz market_hours.py) - okno
+teraz obejmuje OBIE sesje jednym zakresem czasowym, per-tickerowa bramka
+`market_hours.is_market_open()` i tak filtruje czy WŁAŚCIWA dla waluty
+danego tickera giełda jest akurat otwarta. Cel: szybka reakcja na NAGŁE,
+OSTRE spadki w krótkim czasie (1-5 minut), nie na powolne pełzanie w dół (to
+już robi Micro-Grid/Sygnał na świecach dziennych). Dane: świece 1-MINUTOWE
+dzisiejszej sesji (price_feed.get_eod_intraday_1m, Yahoo nieoficjalne -
+patrz docs/IDEAS_v2.md pkt 3, decyzja 2026-07-24: żaden tani dostawca nie
+dawał prawdziwego 1-min dla Europy, docelowo IBKR API gdy dostępne).
 
 Trigger: dla każdego tickera na liście EODAsset, licz % zmiany od ceny sprzed
 1/2/3/4/5 minut do teraz - bierz NAJGORSZY (najbardziej ujemny) z tych 5
@@ -59,13 +63,15 @@ _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
 # wspiera zleceń LIMIT/STOP na koncie live).
 EOD_ENVIRONMENT = "demo"
 
-# PRD: "Działa tylko pod koniec sesji (od ok. 16:00)" - Adam 2026-07-24:
-# niech normalnie próbuje łapać sygnały do 17:30 (nie 17:25 jak pierwotnie).
-EOD_WINDOW = (dt.time(16, 0), dt.time(17, 30))
-# 5 min bufora przed twardym zamknięciem sesji - używane WYŁĄCZNIE gdy
-# EODSettings.force_close_enabled=True (opcjonalny przełącznik, domyślnie
-# wyłączony, patrz docstring modułu).
-FORCE_CLOSE_TIME = dt.time(17, 20)
+# PRD: "Działa tylko pod koniec sesji (od ok. 16:00)" - Adam 2026-07-24
+# rozszerzył o sesję USA: okno teraz 16:00-22:00 Amsterdamu, obejmuje koniec
+# EUR (Euronext/Xetra do 17:25/17:30) I całą popołudniową sesję USA
+# (NASDAQ/NYSE do ~21:55/22:00 CEST) w jednym zakresie.
+EOD_WINDOW = (dt.time(16, 0), dt.time(22, 0))
+# Tuż przed zamknięciem NASDAQ/NYSE (późniejsza z dwóch sesji) - używane
+# WYŁĄCZNIE gdy EODSettings.force_close_enabled=True (opcjonalny
+# przełącznik, domyślnie wyłączony, patrz docstring modułu).
+FORCE_CLOSE_TIME = dt.time(21, 55)
 
 DROP_LOOKBACK_MINUTES = range(1, 6)  # 1..5 minut wstecz
 
