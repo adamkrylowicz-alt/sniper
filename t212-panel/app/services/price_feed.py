@@ -129,6 +129,28 @@ def _fetch_candles_ohlc(api_key: str, ticker: str, days: int) -> list[dict] | No
     ]
 
 
+def _yahoo_range_for_days(days: int) -> str:
+    """
+    Mapuje żądaną liczbę dni na parametr `range` Yahoo Chart API - dawniej
+    było to na sztywno "3mo" niezależnie od `days` (wystarczające dla
+    dotychczasowych wywołań: ATR/filtr trendu w bot_engine.py, oba <=30 dni).
+    Strategia sygnałowa RSI/MA/ATR (services/signal_engine.py, 2026-07-24)
+    potrzebuje SMA(200) - grubo ponad 3 miesiące dziennych świec - stąd
+    dynamiczny dobór zamiast stałej. Progi z marginesem (SMA200 potrzebuje
+    ~200 sesji giełdowych ≈ 280 dni kalendarzowych, stąd próg 200 dni -> "1y",
+    nie "6mo").
+    """
+    if days <= 90:
+        return "3mo"
+    if days <= 180:
+        return "6mo"
+    if days <= 300:
+        return "1y"
+    if days <= 600:
+        return "2y"
+    return "5y"
+
+
 def _fetch_yahoo_candles_ohlc(ticker: str, days: int) -> list[dict] | None:
     """
     Fallback OHLC (Yahoo Finance Chart API, bez klucza) gdy Finnhub odmówi.
@@ -143,7 +165,7 @@ def _fetch_yahoo_candles_ohlc(ticker: str, days: int) -> list[dict] | None:
     try:
         resp = requests.get(
             f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}",
-            params={"range": "3mo", "interval": "1d"},
+            params={"range": _yahoo_range_for_days(days), "interval": "1d"},
             timeout=REQUEST_TIMEOUT,
             headers={"User-Agent": "Mozilla/5.0"},
         )

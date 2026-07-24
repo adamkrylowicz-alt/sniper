@@ -48,6 +48,7 @@ $relFiles = @(
     "routes\pie.py"
     "routes\bot.py"
     "routes\instrument.py"
+    "routes\signal.py"
     "services\instrument_cache.py"
     "services\logo_cache.py"
     "services\risk_guard.py"
@@ -57,6 +58,7 @@ $relFiles = @(
     "services\price_feed.py"
     "services\bot_credentials.py"
     "services\bot_engine.py"
+    "services\signal_engine.py"
     "services\finnhub_client.py"
     "services\market_hours.py"
     "services\yahoo_resolver.py"
@@ -69,6 +71,7 @@ $relFiles = @(
     "static\js\focus.js"
     "static\js\instrument.js"
     "static\js\portfolio.js"
+    "static\js\signal.js"
     "templates\focus.html"
     "templates\instrument_detail.html"
     "templates\api_keys.html"
@@ -87,6 +90,7 @@ $relFiles = @(
     "templates\pie_list.html"
     "templates\pie_detail.html"
     "templates\bot.html"
+    "templates\signal.html"
 )
 
 Write-Host ""

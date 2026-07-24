@@ -156,7 +156,18 @@ tuż poniżej high poprzedniej świecy 1-min), bardzo ciasny trailing stop
   zakładają JEDNĄ relację ticker->ActiveTrade na Micro-Grid).
 - Builder strategii (AND/OR bloków) - osobny model danych, spore query
   wykonywane w tick() dla każdego aktywa - warto rozważyć wpływ na rate
-  limit T212/nowego API świec.
+  limit T212/nowego API świec. **ŚWIADOMIE ODŁOŻONE (2026-07-24)** - Adam:
+  "koduj, będziemy sprawdzać w boju" - zamiast buildera, warunek wejścia na
+  sztywno zakodowany (RSI(14)<próg ORAZ cena>SMA(200), patrz niżej). Builder
+  zostaje jako możliwe rozszerzenie na później, gdyby sztywny warunek
+  okazał się za mało elastyczny po testach na żywo.
+- **ZAIMPLEMENTOWANE (2026-07-24): strategia sygnałowa RSI/MA/ATR, wersja 1.**
+  Patrz `services/signal_engine.py`, `routes/signal.py`, `/signal/` w UI,
+  oraz wpis w CLAUDE.md z tej daty po pełny opis mechaniki (wejście, wyjście,
+  poświadczenia współdzielone z Micro-Grid). Świadome uproszczenia v1 (do
+  ew. rozbudowy po pierwszych wynikach "w boju"): stop-loss/take-profit
+  STAŁE od wejścia (bez trailingu, w odróżnieniu od Micro-Grid), zero DCA,
+  brak buildera AND/OR (patrz punkt wyżej).
 
 ## Pomysł: tryb "zarządzaj wszystkim" + łączenie ręcznych zakupów z botem (2026-07-23)
 

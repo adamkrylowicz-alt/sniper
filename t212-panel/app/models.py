@@ -591,3 +591,132 @@ class BotAuditLog(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<BotAuditLog {self.action_type} user_id={self.user_id}>"
+
+
+# =============================================================================
+# Strategia sygnałowa RSI/MA/ATR (services/signal_engine.py) - decyzja Adama
+# 2026-07-24 (patrz docs/IDEAS_v2.md, "Otwarte pytania"): OSOBNA strategia,
+# DZIAŁA RÓWNOLEGLE do Micro-Grid Bota (BotAsset/ActiveTrade wyżej), go NIE
+# zastępuje. Ten sam ticker może być jednocześnie na obu listach jako dwie
+# NIEZALEŻNE pozycje - stąd całkowicie własne tabele zamiast rozbudowy
+# istniejących (ten sam wzorzec niezależności co BotAsset vs PieAsset).
+# W odróżnieniu od Micro-Grid: JEDNO wejście na sygnał, bez siatki DCA -
+# PRD nie przewiduje dokupowania dla tej strategii.
+# =============================================================================
+
+class SignalAsset(db.Model):
+    """Ticker obserwowany przez strategię sygnałową - własna, niezależna lista (patrz komentarz wyżej)."""
+    __tablename__ = "signal_assets"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "ticker", name="uq_signal_asset_user_ticker"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+
+    ticker = db.Column(db.String(30), nullable=False)
+    display_ticker = db.Column(db.String(20), nullable=False)
+    currency = db.Column(db.String(10), nullable=False)
+
+    entry_amount = db.Column(db.Numeric(12, 2), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SignalAsset {self.ticker} entry={self.entry_amount}>"
+
+
+class SignalSettings(db.Model):
+    """
+    Konfiguracja ryzyka strategii sygnałowej, JEDNA na użytkownika (analogia
+    do RiskSettings dla Micro-Grid, ale osobna tabela/kolumny - zero
+    współdzielenia parametrów między strategiami).
+
+    RSI(14)/MA(200) (okresy) są STAŁE modułowe w signal_engine.py, nie
+    kolumny tutaj - PRD podaje je jako "warunek bazowy" strategii, nie
+    parametr do stroju; próg RSI i mnożniki ATR (rzeczy, które Adam realnie
+    będzie chciał kręcić "w boju" bez redeployu) SĄ tutaj edytowalne.
+    """
+    __tablename__ = "signal_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True)
+
+    is_active = db.Column(db.Boolean, nullable=False, default=False)
+    # Domyślnie True - ten sam bezpieczny default co RiskSettings.is_paper_trading.
+    is_paper_trading = db.Column(db.Boolean, nullable=False, default=True)
+
+    rsi_threshold = db.Column(db.Numeric(6, 2), nullable=False, default=35)
+    stop_loss_atr_mult = db.Column(db.Numeric(6, 2), nullable=False, default=1.8)
+    take_profit_atr_mult = db.Column(db.Numeric(6, 2), nullable=False, default=3.0)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SignalSettings user_id={self.user_id} active={self.is_active}>"
+
+
+class SignalTrade(db.Model):
+    """
+    Pozycja otwarta przez strategię sygnałową - JEDNO wejście na sygnał, bez
+    poziomów DCA (w odróżnieniu od ActiveTrade/Micro-Grid).
+
+    Wyjście: POJEDYNCZY resting STOP na T212 (stop_order_id, ochrona nawet
+    gdy appka/bot offline - ten sam powód co trailing STOP Micro-Grid) +
+    take-profit pilnowany WYŁĄCZNIE w softwarze (take_profit_price, sprzedaż
+    Market gdy żywa cena go dotknie) - T212 nie pozwala trzymać dwóch
+    jednoczesnych resting orderów na te same udziały (potwierdzone na żywo
+    21.07, patrz docs/IDEAS_v2.md pkt 4), więc druga noga MUSI być
+    programowa, nie prawdziwe zlecenie.
+    """
+    __tablename__ = "signal_trades"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    signal_asset_id = db.Column(db.Integer, db.ForeignKey("signal_assets.id"), nullable=False, index=True)
+
+    ticker = db.Column(db.String(30), nullable=False)
+    currency = db.Column(db.String(10), nullable=False)
+
+    buy_order_id = db.Column(db.String(64), nullable=False)
+    # Ten sam wzorzec co ActiveTrade.baseline_owned_quantity - ile tickera
+    # user posiadał TUŻ PRZED złożeniem tego zlecenia, żeby potwierdzenie
+    # wypełnienia (current_owned - baseline) nigdy nie policzyło cudzej/
+    # wcześniejszej pozycji tego samego tickera jako "swojej".
+    baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
+
+    buy_price = db.Column(db.Numeric(12, 4), nullable=False)
+    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    allocated_value = db.Column(db.Numeric(12, 2), nullable=False)
+
+    atr_at_entry = db.Column(db.Numeric(12, 4), nullable=False)
+    stop_loss_price = db.Column(db.Numeric(12, 4), nullable=False)
+    take_profit_price = db.Column(db.Numeric(12, 4), nullable=False)
+    stop_order_id = db.Column(db.String(64), nullable=True)
+
+    status = db.Column(db.String(10), nullable=False, default="OPEN")
+    is_paper = db.Column(db.Boolean, nullable=False, default=False)
+
+    close_price = db.Column(db.Numeric(12, 4), nullable=True)
+    closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "manual"
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
+    closed_at = db.Column(db.DateTime, nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SignalTrade {self.ticker} status={self.status}>"
+
+
+class SignalAuditLog(db.Model):
+    """Log strategii sygnałowej - analogia do BotAuditLog, osobna tabela (patrz komentarz nad SignalAsset)."""
+    __tablename__ = "signal_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+
+    action_type = db.Column(db.String(10), nullable=False)  # BUY/SELL/ERROR/INFO
+    message = db.Column(db.Text, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<SignalAuditLog {self.action_type} user_id={self.user_id}>"

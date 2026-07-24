@@ -117,11 +117,18 @@ def _register_scheduler(app: Flask) -> None:
     if Config.DEBUG and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
 
-    from .services import bot_engine
+    from .services import bot_engine, signal_engine
 
     scheduler.add_job(
         func=lambda: bot_engine.tick(app),
         trigger="interval", seconds=60, id="bot_tick", replace_existing=True,
+    )
+    # Strategia sygnałowa RSI/MA/ATR (services/signal_engine.py) - osobny job,
+    # osobny silnik, ten sam interwał co Micro-Grid (decyzja Adama 2026-07-24,
+    # patrz docs/IDEAS_v2.md: "osobna strategia", nie rozszerzenie bot_tick).
+    scheduler.add_job(
+        func=lambda: signal_engine.tick(app),
+        trigger="interval", seconds=60, id="signal_tick", replace_existing=True,
     )
     # Dzienny raport zysk/strata mailem (ustalone z Adamem 2026-07-21) - 22:01
     # czasu Amsterdamu (timezone="Europe/Amsterdam", APScheduler sam ogarnia
@@ -177,6 +184,7 @@ def _register_blueprints(app: Flask) -> None:
     from .routes.pie import pie_bp
     from .routes.bot import bot_bp
     from .routes.instrument import instrument_bp
+    from .routes.signal import signal_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(scalping_bp)
@@ -186,3 +194,4 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(pie_bp)
     app.register_blueprint(bot_bp)
     app.register_blueprint(instrument_bp)
+    app.register_blueprint(signal_bp)
