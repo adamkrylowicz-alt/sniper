@@ -73,11 +73,19 @@ ta sama uproszczona filozofia co Sygnał).
 
 **ZMIANA (2026-07-24, jeszcze tego samego dnia, na żywo w trakcie testów):**
 Adam ODRZUCIŁ dwa punkty PRD powyżej: (1) "pozycje NIE są przenoszone na
-następny dzień" - USUNIĘTE wymuszone zamknięcie (`FORCE_CLOSE_TIME`/
-`_force_close_real`), pozycje EOD zostają otwarte i zarządzane WYŁĄCZNIE
-przez stop-loss/take-profit, dokładnie jak w Sygnale, bez sztywnej godziny
-zamknięcia; (2) okno końca sesji wydłużone z 17:25 na **17:30** ("niech
+następny dzień" - USUNIĘTE jako sztywne zachowanie, pozycje EOD domyślnie
+zostają otwarte i zarządzane WYŁĄCZNIE przez stop-loss/take-profit, jak w
+Sygnale; (2) okno końca sesji wydłużone z 17:25 na **17:30** ("niech
 normalnie próbuje złapać do 17:30").
+
+**DOPRECYZOWANIE (2026-07-24, kilka minut później):** Adam zapytał "gdzie
+switch w EOD sell all przed końcem sesji" - chciał zachować MOŻLIWOŚĆ
+wymuszonego zamknięcia, tylko jako świadomy wybór, nie sztywne zachowanie.
+Przywrócone jako opcjonalny przełącznik `EODSettings.force_close_enabled`
+(checkbox w Ustawieniach ryzyka na `/eod/`, domyślnie WYŁĄCZONY) -
+`_force_close_real`/`FORCE_CLOSE_TIME`/17:20 wróciły do kodu, ale działają
+TYLKO gdy user je świadomie włączy. Migracja `migrate_add_eod_force_close.py`
+(kolumna dokładana do istniejącej tabeli `eod_settings`).
 
 ### Dodatkowe wymagania techniczne
 - Rate limiting i cache dla API Trading212 i Finnhub.

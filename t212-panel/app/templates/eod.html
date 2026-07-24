@@ -185,6 +185,16 @@
         <input type="checkbox" id="eod-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
         Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)
     </label>
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="eod-force-close" {{ "checked" if settings.force_close_enabled else "" }}>
+        Wymuś zamknięcie wszystkich pozycji EOD przed końcem sesji (~17:20)
+    </label>
+    <p class="auth-box__hint">
+        Domyślnie WYŁĄCZONE - pozycje zostają otwarte i są zarządzane tylko
+        stop-lossem/take-profitem, dokładnie jak w Sygnale (mogą przetrwać
+        do kolejnego dnia). Zaznacz, jeśli chcesz wymuszoną sprzedaż Market
+        wszystkich otwartych pozycji EOD tuż przed zamknięciem sesji.
+    </p>
 
     <button type="button" id="btn-eod-save-settings" class="auth-form__submit auth-form__submit--sticky">
         Zapisz ustawienia

@@ -219,6 +219,7 @@ def update_settings():
     settings.stop_loss_pct = stop_loss_pct
     settings.take_profit_pct = take_profit_pct
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
+    settings.force_close_enabled = bool(payload.get("force_close_enabled", settings.force_close_enabled))
     db.session.commit()
 
     return jsonify(ok=True)

@@ -779,6 +779,14 @@ class EODSettings(db.Model):
     stop_loss_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.004)
     take_profit_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.006)
 
+    # PRD sugerował sztywne wymuszone zamknięcie pozycji EOD przed końcem
+    # sesji ("nie przenoszą się na kolejny dzień") - Adam (2026-07-24) odrzucił
+    # to jako STAŁE zachowanie, ale chce mieć możliwość włączenia go z powrotem
+    # jako opcjonalny przełącznik zamiast twardo zakodowanego zachowania.
+    # Domyślnie WYŁĄCZONE (pozycje zostają otwarte, zarządzane tylko stop-lossem/
+    # take-profitem, jak w Sygnale) - patrz eod_engine.py::FORCE_CLOSE_TIME.
+    force_close_enabled = db.Column(db.Boolean, nullable=False, default=False)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<EODSettings user_id={self.user_id} active={self.is_active}>"
 
@@ -790,9 +798,9 @@ class EODTrade(db.Model):
     sizingu działał sensownie). Mechanika wyjścia TA SAMA co SignalTrade
     (prawdziwy resting STOP dla stop-loss, take-profit pilnowany w
     softwarze - T212 nie pozwala na dwa resting ordery na te same udziały).
-    BRAK wymuszonego zamknięcia na koniec dnia (Adam 2026-07-24 świadomie
-    odrzucił tę sugestię z PRD) - pozycje zostają otwarte tak długo, aż
-    trafi je stop-loss albo take-profit, dokładnie jak w Sygnale.
+    Wymuszone zamknięcie na koniec dnia jest OPCJONALNE (EODSettings.
+    force_close_enabled, domyślnie wyłączone) - bez niego pozycje zostają
+    otwarte tak długo, aż trafi je stop-loss albo take-profit, jak w Sygnale.
     """
     __tablename__ = "eod_trades"
 
@@ -822,7 +830,7 @@ class EODTrade(db.Model):
     is_paper = db.Column(db.Boolean, nullable=False, default=False)
 
     close_price = db.Column(db.Numeric(12, 4), nullable=True)
-    closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "manual"
+    closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "eod-forced" / "manual"
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)

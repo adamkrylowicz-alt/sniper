@@ -87,6 +87,7 @@ document.addEventListener("DOMContentLoaded", () => {
             stop_loss_pct: document.getElementById("eod-stop-loss").value,
             take_profit_pct: document.getElementById("eod-take-profit").value,
             is_paper_trading: document.getElementById("eod-paper-trading").checked,
+            force_close_enabled: document.getElementById("eod-force-close").checked,
         };
 
         try {
