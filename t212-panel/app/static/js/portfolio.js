@@ -63,7 +63,8 @@ function renderPortfolio(positions, totalValue, totalPpl) {
                 </td>
                 <td class="portfolio-bot-cell" data-ticker="${escapeHtml(p.ticker)}">
                     ${p.bot_managed
-                        ? '<span class="badge badge--bot">Zarządzane przez bota</span>'
+                        ? `<span class="badge badge--bot">Zarządzane przez bota</span>
+                           <button type="button" class="account-bar__btn portfolio-release-btn" data-trade-id="${p.bot_trade_id}">Cofnij</button>`
                         : `<button type="button" class="account-bar__btn portfolio-adopt-btn" data-ticker="${escapeHtml(p.ticker)}" data-on-bot-list="${p.on_bot_list ? "true" : "false"}">Przekaż botowi</button>`}
                 </td>
             </tr>`;
@@ -100,10 +101,12 @@ function renderPortfolio(positions, totalValue, totalPpl) {
 }
 
 /*
-"Przekaz botowi" (patrz routes/bot.py::adopt_position, pomysl #2 z
-docs/IDEAS_v2.md) - delegacja zdarzen na #portfolio-content, bo wiersze sa
-podmieniane w calosci przy kazdym renderPortfolio() (odswiezenie z T212), a
-sam kontener zostaje ten sam element przez cala zywotnosc strony.
+"Przekaz botowi" / "Cofnij" (patrz routes/bot.py::adopt_position/release_position,
+pomysl #2 z docs/IDEAS_v2.md + jego odwrotnosc) - delegacja zdarzen na
+#portfolio-content, bo wiersze sa podmieniane w calosci przy kazdym
+renderPortfolio() (odswiezenie z T212), a sam kontener zostaje ten sam
+element przez cala zywotnosc strony. confirmDialog - ten sam modal co
+bot.js::unblock (common.js), zamiast window.confirm, dla spojnosci wygladu.
 */
 async function adoptPosition(ticker, onBotList) {
     let entryAmount = null;
@@ -116,7 +119,7 @@ async function adoptPosition(ticker, onBotList) {
         if (!entryAmount) return;
     }
 
-    if (!window.confirm(`Przekazać ${ticker} botowi? Od tego momentu bot przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).`)) {
+    if (!(await confirmDialog(`Przekazać ${ticker} botowi? Od tego momentu bot przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).`))) {
         return;
     }
 
@@ -128,21 +131,51 @@ async function adoptPosition(ticker, onBotList) {
         });
         const data = await resp.json();
         if (!data.ok) {
+            playError();
             window.alert(`Nie udało się przekazać ${ticker} botowi: ${data.error}`);
             return;
         }
-        playUpdate();
+        playSuccess();
         refreshPortfolio();
     } catch (err) {
+        playError();
         console.error("Błąd adopcji pozycji:", err);
         window.alert("Błąd sieci przy przekazywaniu pozycji botowi.");
     }
 }
 
+async function releasePosition(tradeId) {
+    if (!(await confirmDialog("Cofnąć tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany)."))) {
+        return;
+    }
+
+    try {
+        const resp = await fetch(`/bot/positions/${tradeId}/release`, { method: "POST" });
+        const data = await resp.json();
+        if (!data.ok) {
+            playError();
+            window.alert(`Nie udało się cofnąć pozycji: ${data.error}`);
+            return;
+        }
+        playSuccess();
+        refreshPortfolio();
+    } catch (err) {
+        playError();
+        console.error("Błąd zwalniania pozycji:", err);
+        window.alert("Błąd sieci przy cofaniu pozycji.");
+    }
+}
+
 document.getElementById("portfolio-content")?.addEventListener("click", (ev) => {
-    const btn = ev.target.closest(".portfolio-adopt-btn");
-    if (!btn) return;
-    adoptPosition(btn.dataset.ticker, btn.dataset.onBotList === "true");
+    const adoptBtn = ev.target.closest(".portfolio-adopt-btn");
+    if (adoptBtn) {
+        adoptPosition(adoptBtn.dataset.ticker, adoptBtn.dataset.onBotList === "true");
+        return;
+    }
+    const releaseBtn = ev.target.closest(".portfolio-release-btn");
+    if (releaseBtn) {
+        releasePosition(releaseBtn.dataset.tradeId);
+    }
 });
 
 /*

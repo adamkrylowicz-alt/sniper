@@ -72,6 +72,9 @@
                     <td class="portfolio-bot-cell" data-ticker="{{ p.ticker }}">
                         {% if p.bot_managed %}
                         <span class="badge badge--bot">Zarządzane przez bota</span>
+                        <button type="button" class="account-bar__btn portfolio-release-btn" data-trade-id="{{ p.bot_trade_id }}">
+                            Cofnij
+                        </button>
                         {% else %}
                         <button type="button" class="account-bar__btn portfolio-adopt-btn"
                                 data-ticker="{{ p.ticker }}" data-on-bot-list="{{ 'true' if p.on_bot_list else 'false' }}">

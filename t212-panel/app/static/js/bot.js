@@ -178,10 +178,41 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await resp.json();
                 if (data.ok) {
                     playSuccess();
-                    const statusCell = row.querySelector("td:last-child");
-                    statusCell.innerHTML = '<span class="history-table__status history-table__status--buy">OK</span>';
+                    const statusEl = row.querySelector(".bot-position-status");
+                    statusEl.innerHTML = '<span class="history-table__status history-table__status--buy">OK</span>';
                 } else {
                     playError();
+                    btn.disabled = false;
+                }
+            } catch (err) {
+                playError();
+                console.error(err);
+                btn.disabled = false;
+            }
+        });
+
+        // "Zwolnij" - odwrotność adopcji (routes/bot.py::release_position):
+        // pozycja znika z tabeli (nie jest juz status="OPEN"), udziały
+        // zostają na koncie T212, bot przestaje ich pilnować.
+        positionsTable.addEventListener("click", async (ev) => {
+            const btn = ev.target.closest("[data-release-position]");
+            if (!btn) return;
+            const row = btn.closest("tr[data-trade-id]");
+            const tradeId = row?.dataset.tradeId;
+            if (!tradeId) return;
+
+            if (!(await confirmDialog("Zwolnić tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie T212 - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany)."))) return;
+
+            btn.disabled = true;
+            try {
+                const resp = await fetch(`/bot/positions/${tradeId}/release`, { method: "POST" });
+                const data = await resp.json();
+                if (data.ok) {
+                    playSuccess();
+                    row.remove();
+                } else {
+                    playError();
+                    window.alert(data.error || "Nie udało się zwolnić pozycji.");
                     btn.disabled = false;
                 }
             } catch (err) {

@@ -497,6 +497,74 @@ def unblock_position(trade_id):
     return jsonify(ok=True)
 
 
+@bot_bp.route("/positions/<int:trade_id>/release", methods=["POST"])
+@login_required
+def release_position(trade_id):
+    """
+    Odwrotność adopt_position() - "Cofnij przekazanie": zwalnia pozycję spod
+    zarządzania bota BEZ sprzedawania czegokolwiek (udziały zostają dokładnie
+    tam gdzie są na T212 - to tylko bot przestaje ich pilnować). Działa na
+    KAŻDEJ otwartej pozycji, nie tylko adoptowanych ręcznie - to ogólny
+    "wyłącznik" jednej pozycji, symetryczny do adopt_position().
+
+    Zanim zwolnimy, anulujemy WSZYSTKIE żywe zlecenia bota powiązane z tą
+    pozycją (trailing STOP, zaległa noga DCA) - inaczej po zwolnieniu
+    zostałby na koncie T212 "osierocony" resting order bota, który mógłby
+    sprzedać akcje mimo że user właśnie poprosił o odzyskanie ręcznej
+    kontroli (dokładnie odwrotność tego czego chciał).
+
+    Status ustawiany na "RELEASED" (NIE "CLOSED" - CLOSED oznacza w całej
+    reszcie kodu realną sprzedaż z close_price, patrz _finalize_closed_trade;
+    tu żadna sprzedaż się nie odbyła). Wszystkie zapytania bota filtrują
+    WYŁĄCZNIE status="OPEN", więc RELEASED znika z jego zarządzania od razu,
+    bez żadnych dalszych zmian w bot_engine.py - i pozwala ponownie
+    "przekazać botowi" tę samą pozycję później (adopt_position widzi wtedy
+    brak wiersza OPEN dla tego tickera).
+    """
+    user_id = current_user_id()
+    trade = ActiveTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+
+    if not trade.buy_confirmed:
+        return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400
+
+    if not trade.is_paper:
+        creds = get_decrypted_credentials(user_id, current_master_key(), "demo")
+        if creds is None:
+            return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
+        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo")
+
+        for order_id in (trade.stop_order_id, trade.sell_order_id, trade.dca_pending_buy_order_id):
+            if not order_id:
+                continue
+            try:
+                client.cancel_order(order_id)
+            except T212APIError as exc:
+                bot_engine._log(
+                    user_id, "INFO",
+                    f"{trade.ticker}: anulowanie zlecenia bota ({order_id}) przy zwalnianiu pozycji "
+                    f"nie powiodło się (mogło się już wykonać/zniknąć) - {exc}",
+                    trade.position_group_id,
+                )
+
+    trade.stop_order_id = None
+    trade.sell_order_id = None
+    trade.dca_pending_buy_order_id = None
+    trade.dca_pending_quantity = None
+    trade.dca_pending_price = None
+    trade.dca_pending_baseline_quantity = None
+    trade.status = "RELEASED"
+    db.session.commit()
+
+    bot_engine._log(
+        user_id, "INFO",
+        f"{trade.ticker}: pozycja zwolniona spod zarządzania bota na żądanie użytkownika "
+        "(udziały zostają na koncie, bot już ich nie pilnuje).",
+        trade.position_group_id,
+    )
+
+    return jsonify(ok=True)
+
+
 @bot_bp.route("/status", methods=["GET"])
 @login_required
 def status():

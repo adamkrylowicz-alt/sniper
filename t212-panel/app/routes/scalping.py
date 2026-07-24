@@ -588,13 +588,15 @@ def _annotate_bot_state(user_id: int, positions: list[dict]) -> list[dict]:
         a.ticker: a for a in
         BotAsset.query.filter_by(user_id=user_id).filter(BotAsset.ticker.in_(tickers)).all()
     }
-    open_tickers = {
-        t.ticker for t in
+    open_trades_by_ticker = {
+        t.ticker: t for t in
         ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").filter(ActiveTrade.ticker.in_(tickers)).all()
     }
     for p in positions:
         asset = bot_assets_by_ticker.get(p["ticker"])
-        p["bot_managed"] = p["ticker"] in open_tickers
+        trade = open_trades_by_ticker.get(p["ticker"])
+        p["bot_managed"] = trade is not None
+        p["bot_trade_id"] = trade.id if trade is not None else None
         p["on_bot_list"] = asset is not None
         p["bot_entry_amount"] = str(asset.entry_amount) if asset else None
     return positions
@@ -736,6 +738,7 @@ def portfolio_refresh():
                 "initial": p["initial"],
                 "logo_filename": p["logo_filename"],
                 "bot_managed": p["bot_managed"],
+                "bot_trade_id": p["bot_trade_id"],
                 "on_bot_list": p["on_bot_list"],
                 "bot_entry_amount": p["bot_entry_amount"],
             }

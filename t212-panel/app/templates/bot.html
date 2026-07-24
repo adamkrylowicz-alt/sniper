@@ -158,14 +158,17 @@
                 </td>
                 <td>{{ p.created_at_local }}</td>
                 <td>
-                    {% if p.is_paper %}
-                    <span class="history-table__status history-table__status--info">PAPER</span>
-                    {% elif p.sell_blocked %}
-                    <span class="history-table__status history-table__status--error">ZABLOKOWANA</span>
-                    <button type="button" class="section-heading__action" data-unblock-position>Odblokuj</button>
-                    {% else %}
-                    <span class="history-table__status history-table__status--buy">OK</span>
-                    {% endif %}
+                    <span class="bot-position-status">
+                        {% if p.is_paper %}
+                        <span class="history-table__status history-table__status--info">PAPER</span>
+                        {% elif p.sell_blocked %}
+                        <span class="history-table__status history-table__status--error">ZABLOKOWANA</span>
+                        <button type="button" class="section-heading__action" data-unblock-position>Odblokuj</button>
+                        {% else %}
+                        <span class="history-table__status history-table__status--buy">OK</span>
+                        {% endif %}
+                    </span>
+                    <button type="button" class="section-heading__action" data-release-position title="Cofnij spod zarządzania bota - udziały zostają na koncie">Zwolnij</button>
                 </td>
             </tr>
             {% endfor %}
