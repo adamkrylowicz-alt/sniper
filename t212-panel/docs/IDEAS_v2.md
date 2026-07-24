@@ -143,7 +143,17 @@ tuż poniżej high poprzedniej świecy 1-min), bardzo ciasny trailing stop
   opłata miesięczna, czasem obniżana/zerowa przy odpowiednim wolumenie
   prowizji u brokera) - i tak znacznie taniej niż Twelve Data Pro. Gdy IBKR
   dojedzie, to docelowe źródło danych dla EOD, Yahoo tylko na czas przejściowy.
-- RSI/MA/ATR: zastępuje obecną strategię Micro-Grid czy działa równolegle?
+- **ROZSTRZYGNIĘTE (2026-07-24): RSI/MA/ATR to OSOBNA strategia, DZIAŁA
+  RÓWNOLEGLE do Micro-Grid Bota, NIE go zastępuje.** Micro-Grid (czysta
+  siatka DCA bez sygnału, `bot_engine.py`, `BotAsset`/`ActiveTrade`) zostaje
+  bez zmian - nowa strategia to osobny silnik obok, prawdopodobnie z
+  WŁASNYMI tabelami/modelem (analogicznie do tego jak `BotAsset` jest
+  CAŁKOWICIE niezależne od `PieAsset`, patrz `models.py::BotAsset`) zamiast
+  rozbudowywania istniejącego. Konsekwencja: użytkownik będzie mógł mieć
+  ten sam ticker jednocześnie w Micro-Grid i w nowej strategii RSI/MA/ATR,
+  jako dwie NIEZALEŻNE pozycje/decyzje - do zaprojektowania jak to się ma
+  do "jeden bot na pozycję" (patrz adopt/release_position wyżej, które
+  zakładają JEDNĄ relację ticker->ActiveTrade na Micro-Grid).
 - Builder strategii (AND/OR bloków) - osobny model danych, spore query
   wykonywane w tick() dla każdego aktywa - warto rozważyć wpływ na rate
   limit T212/nowego API świec.
