@@ -14,6 +14,15 @@ co bylo w cache, tylko status pod tytulem informuje ze sie nie udalo.
 
 const REFRESH_DELAY_MS = 1500;
 
+// Sortowanie klikami w naglowki tabeli - stan trzymany tutaj (nie w DOM), bo
+// tabela jest w calosci podmieniana przy kazdym renderPortfolio() (odswiezenie
+// z T212) - currentPositions/currentTotals to dane z OSTATNIEGO udanego
+// odswiezenia, zeby klik sortujacy mial z czego sortowac bez ponownego
+// zapytania do T212, i zeby wybrany sort PRZETRWAL kolejne auto-odswiezenia.
+let currentPositions = null;
+let currentTotals = { value: 0, ppl: 0 };
+const sortState = { key: null, dir: 1 };
+
 function escapeHtml(text) {
     const div = document.createElement("div");
     div.textContent = text == null ? "" : String(text);
@@ -22,6 +31,12 @@ function escapeHtml(text) {
 
 function pplClass(value) {
     return value >= 0 ? "focus-tile__pnl--profit" : "focus-tile__pnl--loss";
+}
+
+function sortHeaderCell(label, key) {
+    const active = sortState.key === key;
+    const arrow = active ? (sortState.dir === 1 ? "▲" : "▼") : "⇅";
+    return `<th class="history-table__th--sortable${active ? " history-table__th--sortable--active" : ""}" data-sort-key="${key}">${label} <span class="sort-arrow">${arrow}</span></th>`;
 }
 
 function renderPortfolio(positions, totalValue, totalPpl) {
@@ -84,20 +99,59 @@ function renderPortfolio(positions, totalValue, totalPpl) {
                 </span>
             </div>
         </div>
-        <table class="history-table">
+        <table class="history-table" id="portfolio-table">
             <thead>
                 <tr>
-                    <th>Aktywo</th>
-                    <th>Ilość</th>
-                    <th>Średnia cena</th>
-                    <th>Cena teraz</th>
-                    <th>Wartość</th>
-                    <th>Zysk / strata</th>
+                    ${sortHeaderCell("Aktywo", "name")}
+                    ${sortHeaderCell("Ilość", "quantity")}
+                    ${sortHeaderCell("Średnia cena", "avg_price")}
+                    ${sortHeaderCell("Cena teraz", "current_price")}
+                    ${sortHeaderCell("Wartość", "value")}
+                    ${sortHeaderCell("Zysk / strata", "ppl")}
                     <th>Bot</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
         </table>`;
+}
+
+/*
+Sortuje currentPositions (dane z ostatniego udanego /warp/portfolio/refresh)
+wg biezacego sortState i renderuje - NIE dotyka sortState, wywolujacy
+odpowiada za jego ustawienie. "name" sortuje alfabetycznie, reszta kluczy
+numerycznie. Woluje ja zarowno klik w naglowek (sortPositions ponizej) jak i
+refreshPortfolio() (zeby zachowac wybrany sort po auto-odswiezeniu).
+*/
+function renderSorted() {
+    let positions = currentPositions;
+    if (sortState.key) {
+        const key = sortState.key;
+        positions = currentPositions.slice().sort((a, b) => {
+            if (key === "name") {
+                const av = (a.name || a.display_ticker).toLowerCase();
+                const bv = (b.name || b.display_ticker).toLowerCase();
+                return av < bv ? -sortState.dir : av > bv ? sortState.dir : 0;
+            }
+            return (a[key] - b[key]) * sortState.dir;
+        });
+    }
+    renderPortfolio(positions, currentTotals.value, currentTotals.ppl);
+}
+
+/*
+Klik w naglowek (patrz sortHeaderCell wyzej) - ten sam klucz klikniety
+ponownie odwraca kierunek, inny klucz resetuje na rosnaco.
+*/
+function sortPositions(key) {
+    if (!currentPositions) return;  // przed pierwszym udanym odswiezeniem - nie ma jeszcze czego sortowac
+
+    if (sortState.key === key) {
+        sortState.dir *= -1;
+    } else {
+        sortState.key = key;
+        sortState.dir = 1;
+    }
+    renderSorted();
 }
 
 /*
@@ -175,6 +229,11 @@ document.getElementById("portfolio-content")?.addEventListener("click", (ev) => 
     const releaseBtn = ev.target.closest(".portfolio-release-btn");
     if (releaseBtn) {
         releasePosition(releaseBtn.dataset.tradeId);
+        return;
+    }
+    const sortTh = ev.target.closest("[data-sort-key]");
+    if (sortTh) {
+        sortPositions(sortTh.dataset.sortKey);
     }
 });
 
@@ -197,7 +256,10 @@ async function refreshPortfolio() {
             return;
         }
 
-        renderPortfolio(data.positions, data.total_value, data.total_ppl);
+        currentPositions = data.positions;
+        currentTotals = { value: data.total_value, ppl: data.total_ppl };
+
+        renderSorted();  // zachowuje wybrany sort (jesli user juz kliknal jakis naglowek) zamiast wracac do domyslnej kolejnosci z backendu
         playUpdate();
     } catch (err) {
         console.error("Błąd odświeżania portfela:", err);

@@ -1095,6 +1095,12 @@ img.tile__logo {
     color: var(--text-bright);
 }
 
+/* Naglowki z sortowaniem (Aktywa/portfolio.html) - patrz portfolio.js::sortPositions. */
+.history-table__th--sortable { cursor: pointer; user-select: none; }
+.history-table__th--sortable:hover { color: var(--text-bright); }
+.history-table__th--sortable .sort-arrow { margin-left: 4px; opacity: 0.35; font-size: 9px; }
+.history-table__th--sortable--active .sort-arrow { opacity: 1; color: var(--accent-amber); }
+
 .history-table__side--buy { color: var(--buy-green); }
 .history-table__side--sell { color: var(--sell-red); }
 
