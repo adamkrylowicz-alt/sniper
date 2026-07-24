@@ -17,6 +17,7 @@ models.py::BotAsset po uzasadnienie.
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal, InvalidOperation
 
 import pytz
@@ -26,7 +27,9 @@ from .. import cipher
 from ..extensions import db
 from ..models import ActiveTrade, ApiKeySet, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..services import bot_credentials, bot_engine, price_feed
-from ..utils import avatar_hue, current_user_id, friendly_name, login_required
+from ..services.t212_client import T212APIError, T212Client
+from ..utils import avatar_hue, current_master_key, current_user_id, friendly_name, login_required
+from .api_keys import get_decrypted_credentials
 
 bot_bp = Blueprint("bot", __name__, url_prefix="/bot")
 
@@ -178,6 +181,109 @@ def add_bot_asset():
     db.session.add(asset)
     db.session.commit()
     return jsonify(ok=True, id=asset.id)
+
+
+@bot_bp.route("/asset/adopt", methods=["POST"])
+@login_required
+def adopt_position():
+    """
+    "Przekaż botowi" - adoptuje pozycję kupioną RĘCZNIE (Warp/Focus/Pie) do
+    zarządzania przez bota, bez przechodzenia przez _enter_position(). Patrz
+    pomysł #2, docs/IDEAS_v2.md ("Ręczne adoptowanie pojedynczej pozycji",
+    2026-07-23) - świadomie jedna pozycja na raz, z potwierdzeniem w UI,
+    zamiast globalnego switcha "zarządzaj wszystkim" (pomysł #1, NIE
+    zaimplementowany).
+
+    JSON {"ticker": "...", "entry_amount": "1.00"} - entry_amount WYMAGANE
+    tylko jeśli ticker nie jest jeszcze na liście bota (BotAsset), bo określa
+    wielkość PRZYSZŁYCH poziomów DCA (patrz BotAsset.entry_amount) - nie ma
+    wpływu na już istniejącą ilość, która wchodzi 1:1 z portfela T212.
+
+    Nowy ActiveTrade dostaje ilość/średnią cenę WPROST z T212 (nie z
+    lokalnych obliczeń), dca_level=0, baseline_owned_quantity=0 (CAŁA
+    posiadana ilość liczy się jako "botowa" od tego momentu - w odróżnieniu
+    od _enter_position(), gdzie baseline chroni PRZED-istniejące posiadanie
+    przy odejmowaniu; tu adopcja to świadoma decyzja oddania całej pozycji
+    botowi, więc nie ma niczego do ochrony) i buy_confirmed=True (pozycja
+    jest już rozliczona na T212, nie ma na co czekać jak przy świeżym LIMIT
+    BUY). Od najbliższego ticku _manage_trailing_exit ją "widzi" i zaczyna
+    liczyć progi trailing stopu od tej average_price.
+    """
+    user_id = current_user_id()
+    payload = request.get_json(silent=True) or {}
+    ticker = (payload.get("ticker") or "").strip()
+
+    instrument = Instrument.query.get(ticker) if ticker else None
+    if instrument is None:
+        return jsonify(ok=False, error=f"{ticker or '(brak)'} nie znaleziony w lokalnej bazie instrumentów."), 400
+
+    if ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first() is not None:
+        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez bota."), 400
+
+    creds = get_decrypted_credentials(user_id, current_master_key(), "demo")
+    if creds is None:
+        return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
+    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo")
+
+    try:
+        position = client.get_position(ticker)
+    except T212APIError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+
+    if position is None:
+        return jsonify(ok=False, error=f"Nie posiadasz {ticker} w portfelu T212 (demo)."), 400
+
+    try:
+        quantity = Decimal(str(position["quantity"]))
+        avg_price = Decimal(str(position["averagePrice"]))
+    except (KeyError, InvalidOperation, TypeError):
+        return jsonify(ok=False, error="Nieprawidłowe dane pozycji zwrócone przez T212."), 502
+
+    if quantity <= 0:
+        return jsonify(ok=False, error=f"{ticker}: ilość w portfelu wynosi 0."), 400
+
+    asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker).first()
+    if asset is None:
+        try:
+            entry_amount = Decimal(str(payload.get("entry_amount")))
+            if entry_amount <= 0:
+                raise InvalidOperation
+        except (InvalidOperation, ValueError, TypeError):
+            return jsonify(
+                ok=False,
+                error=(
+                    f"{ticker} nie jest jeszcze na liście bota - podaj kwotę wejścia "
+                    "(entry_amount, > 0) na przyszłe poziomy DCA."
+                ),
+            ), 400
+        asset = BotAsset(
+            user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
+            currency=instrument.currency_code or "USD", entry_amount=entry_amount,
+        )
+        db.session.add(asset)
+        db.session.flush()  # potrzebne asset.id do FK ActiveTrade.bot_asset_id poniżej
+
+    position_group_id = str(uuid.uuid4())
+    trade = ActiveTrade(
+        user_id=user_id, bot_asset_id=asset.id, position_group_id=position_group_id,
+        ticker=ticker, currency=instrument.currency_code or "USD",
+        buy_order_id=f"ADOPTED-{uuid.uuid4()}",
+        buy_price=avg_price, quantity=quantity, allocated_value=quantity * avg_price,
+        average_price=avg_price, dca_level=0, grid_anchor_price=avg_price,
+        baseline_owned_quantity=Decimal("0"),
+        status="OPEN", is_paper=False, buy_confirmed=True,
+    )
+    db.session.add(trade)
+    db.session.commit()
+
+    bot_engine._log(
+        user_id, "INFO",
+        f"{ticker}: pozycja adoptowana ręcznie z portfela T212 ({quantity} @ ~{avg_price}) - "
+        "od teraz zarządzana przez trailing exit bota.",
+        position_group_id,
+    )
+
+    return jsonify(ok=True, trade_id=trade.id)
 
 
 @bot_bp.route("/asset/<int:asset_id>/remove", methods=["POST"])

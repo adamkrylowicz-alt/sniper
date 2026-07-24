@@ -1677,6 +1677,13 @@ img.tile__logo {
     border: 1px solid var(--sell-red);
 }
 
+/* "Zarządzane przez bota" - Aktywa/portfolio.html, patrz adopcja pozycji w routes/bot.py::adopt_position. */
+.badge--bot {
+    color: var(--buy-green);
+    background: rgba(50, 172, 106, 0.12);
+    border: 1px solid var(--buy-green);
+}
+
 /* === Focus Mode === */
 .focus-layout {
     display: flex;

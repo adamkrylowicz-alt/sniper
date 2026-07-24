@@ -27,7 +27,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from ..extensions import db
-from ..models import Instrument, OrderLog
+from ..models import ActiveTrade, BotAsset, Instrument, OrderLog
 from ..services import logo_cache
 from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
@@ -571,6 +571,35 @@ def limits():
     return jsonify(ok=True, max_order_value=str(value) if value is not None else None)
 
 
+def _annotate_bot_state(user_id: int, positions: list[dict]) -> list[dict]:
+    """
+    Dolacza do kazdej pozycji flagi o stanie bota (BotAsset/ActiveTrade) - do
+    przycisku "Przekaz botowi" w portfolio.html (patrz routes/bot.py::adopt_position,
+    pomysl #2 z docs/IDEAS_v2.md, 2026-07-23). Zapytania WYLACZNIE do lokalnej
+    bazy (tanie, zero rate limitu T212) - liczone na swiezo przy KAZDYM
+    renderze/refreshu, NIGDY nie wchodza do _portfolio_cache razem z reszta
+    portfela, inaczej adopcja pozycji nie odswiezylaby przycisku na "juz
+    zarzadzane" bez pelnego odswiezenia z T212.
+    """
+    if not positions:
+        return positions
+    tickers = [p["ticker"] for p in positions]
+    bot_assets_by_ticker = {
+        a.ticker: a for a in
+        BotAsset.query.filter_by(user_id=user_id).filter(BotAsset.ticker.in_(tickers)).all()
+    }
+    open_tickers = {
+        t.ticker for t in
+        ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").filter(ActiveTrade.ticker.in_(tickers)).all()
+    }
+    for p in positions:
+        asset = bot_assets_by_ticker.get(p["ticker"])
+        p["bot_managed"] = p["ticker"] in open_tickers
+        p["on_bot_list"] = asset is not None
+        p["bot_entry_amount"] = str(asset.entry_amount) if asset else None
+    return positions
+
+
 @scalping_bp.route("/portfolio", methods=["GET"])
 @login_required
 def portfolio_view():
@@ -588,10 +617,11 @@ def portfolio_view():
     cache) pokazuje czytelny stan "ladowanie" zamiast probowac na sztywno
     i czesto trafiac w blad.
     """
-    cached = _portfolio_cache.get(current_user_id())
+    user_id = current_user_id()
+    cached = _portfolio_cache.get(user_id)
     if cached:
         return render_template(
-            "portfolio.html", positions=cached["positions"],
+            "portfolio.html", positions=_annotate_bot_state(user_id, cached["positions"]),
             total_value=cached["total_value"], total_ppl=cached["total_ppl"],
             error=None, has_cache=True,
         )
@@ -674,8 +704,9 @@ def portfolio_refresh():
     portfolio_view). Decimal -> float, bo to tylko do wyswietlenia w JS,
     nie do dalszych precyzyjnych obliczen.
     """
+    user_id = current_user_id()
     try:
-        result = _fetch_portfolio_live(current_user_id())
+        result = _fetch_portfolio_live(user_id)
     except RuntimeError as exc:
         return jsonify(ok=False, error=str(exc), rate_limited=False), 500
     except T212APIError as exc:
@@ -683,6 +714,8 @@ def portfolio_refresh():
         # surowego zrzutu wyjatku - 429 na demo T212 jest CZESTY i oczekiwany
         # (bardzo waski limit), nie realny blad wart alarmowania.
         return jsonify(ok=False, error=str(exc), rate_limited=(exc.status_code == 429)), 502
+
+    _annotate_bot_state(user_id, result["positions"])
 
     return jsonify(
         ok=True,
@@ -702,6 +735,9 @@ def portfolio_refresh():
                 "hue": p["hue"],
                 "initial": p["initial"],
                 "logo_filename": p["logo_filename"],
+                "bot_managed": p["bot_managed"],
+                "on_bot_list": p["on_bot_list"],
+                "bot_entry_amount": p["bot_entry_amount"],
             }
             for p in result["positions"]
         ],

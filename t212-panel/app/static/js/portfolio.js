@@ -61,6 +61,11 @@ function renderPortfolio(positions, totalValue, totalPpl) {
                     ${p.ppl >= 0 ? "+" : ""}${p.ppl.toFixed(2)}
                     (${p.ppl_pct >= 0 ? "+" : ""}${p.ppl_pct.toFixed(1)}%)
                 </td>
+                <td class="portfolio-bot-cell" data-ticker="${escapeHtml(p.ticker)}">
+                    ${p.bot_managed
+                        ? '<span class="badge badge--bot">Zarządzane przez bota</span>'
+                        : `<button type="button" class="account-bar__btn portfolio-adopt-btn" data-ticker="${escapeHtml(p.ticker)}" data-on-bot-list="${p.on_bot_list ? "true" : "false"}">Przekaż botowi</button>`}
+                </td>
             </tr>`;
     }).join("");
 
@@ -87,11 +92,58 @@ function renderPortfolio(positions, totalValue, totalPpl) {
                     <th>Cena teraz</th>
                     <th>Wartość</th>
                     <th>Zysk / strata</th>
+                    <th>Bot</th>
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
         </table>`;
 }
+
+/*
+"Przekaz botowi" (patrz routes/bot.py::adopt_position, pomysl #2 z
+docs/IDEAS_v2.md) - delegacja zdarzen na #portfolio-content, bo wiersze sa
+podmieniane w calosci przy kazdym renderPortfolio() (odswiezenie z T212), a
+sam kontener zostaje ten sam element przez cala zywotnosc strony.
+*/
+async function adoptPosition(ticker, onBotList) {
+    let entryAmount = null;
+    if (!onBotList) {
+        const input = window.prompt(
+            `${ticker} nie jest jeszcze na liście bota - podaj kwotę wejścia (na przyszłe poziomy DCA):`
+        );
+        if (input === null) return;
+        entryAmount = input.trim();
+        if (!entryAmount) return;
+    }
+
+    if (!window.confirm(`Przekazać ${ticker} botowi? Od tego momentu bot przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).`)) {
+        return;
+    }
+
+    try {
+        const resp = await fetch("/bot/asset/adopt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticker, entry_amount: entryAmount }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            window.alert(`Nie udało się przekazać ${ticker} botowi: ${data.error}`);
+            return;
+        }
+        playUpdate();
+        refreshPortfolio();
+    } catch (err) {
+        console.error("Błąd adopcji pozycji:", err);
+        window.alert("Błąd sieci przy przekazywaniu pozycji botowi.");
+    }
+}
+
+document.getElementById("portfolio-content")?.addEventListener("click", (ev) => {
+    const btn = ev.target.closest(".portfolio-adopt-btn");
+    if (!btn) return;
+    adoptPosition(btn.dataset.ticker, btn.dataset.onBotList === "true");
+});
 
 /*
 Zamiast tekstowego komunikatu bledu (usuniete na zyczenie Adama, 20.07.2026) -

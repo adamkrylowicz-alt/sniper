@@ -149,7 +149,7 @@ zaprojektowany ani nie zaimplementowany:
    (dlaczego kupione, jaki cel), więc "zarządzanie" ograniczałoby się
    praktycznie do samego mechanizmu wyjścia (trailing stop), nie do wejścia.
 
-2. **Ręczne "adoptowanie" pojedynczej pozycji** - akcja w UI (np. przy
+2. **ZROBIONE (2026-07-24). Ręczne "adoptowanie" pojedynczej pozycji** - akcja w UI (np. przy
    pozycji na stronie Aktywa) "przekaż botowi" / "połącz z botem", która
    tworzy dla wybranego tickera nowy wiersz `ActiveTrade` na podstawie
    REALNEJ ilości/średniej ceny z portfela T212 (analogiczny mechanizm do
@@ -159,6 +159,9 @@ zaprojektowany ani nie zaimplementowany:
    jako "botowa" od tego momentu). Bezpieczniejsze niż globalny switch (jedna
    pozycja na raz, świadoma decyzja), ale wymaga nowego endpointu +
    potwierdzenia w UI (żeby nie dało się tego zrobić przez przypadek).
+   Zaimplementowane jako `POST /bot/asset/adopt` + przycisk "Przekaż botowi"
+   na stronie Aktywa - patrz wpis w CLAUDE.md z 2026-07-24. Switch "zarządzaj
+   wszystkim" (pomysł #1 poniżej) dalej NIEZROBIONY.
 
 Żadne z powyższych NIE zmienia domyślnego zachowania (bot dalej ignoruje
 nieznane mu pozycje) - to opt-in, per pozycja albo per switch czasowy.
