@@ -451,12 +451,23 @@ def activate():
 @bot_bp.route("/deactivate", methods=["POST"])
 @login_required
 def deactivate():
+    """
+    Wyłącza WYŁĄCZNIE Micro-Grid (RiskSettings.is_bot_active=False) - czyści
+    WSPÓLNE poświadczenia (bot_credentials) tylko gdy strategia sygnałowa
+    (SignalSettings.is_active) też jest wyłączona, inaczej ten drugi bot
+    straciłby dostęp do klucza demo bez ostrzeżenia mimo że user go nie
+    dotykał. Lustrzane odbicie routes/signal.py::deactivate().
+    """
     user_id = current_user_id()
-    bot_credentials.deactivate(user_id)
 
     settings = _get_or_create_settings(user_id)
     settings.is_bot_active = False
     db.session.commit()
+
+    from ..models import SignalSettings
+    signal_settings = SignalSettings.query.filter_by(user_id=user_id).first()
+    if not (signal_settings and signal_settings.is_active):
+        bot_credentials.deactivate(user_id)
 
     return jsonify(ok=True)
 
