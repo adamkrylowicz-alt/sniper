@@ -120,9 +120,29 @@ tuż poniżej high poprzedniej świecy 1-min), bardzo ciasny trailing stop
      sztywnym +krok jak w pierwotnym pomyśle Adama.
 
 ## Otwarte pytania (do rozstrzygnięcia przed kodowaniem)
-- Czy EOD ma sens bez stabilnego źródła świec 1-min? Jakie API rozważyć
-  (Twelve Data, Alpha Vantage, Polygon, EOD Historical Data, IEX Cloud) -
-  do sprawdzenia limitów/cen/pokrycia EUR.
+- **ROZSTRZYGNIĘTE (2026-07-24), źródło świec 1-min dla EOD:** sprawdzone
+  wszystkie 5 kandydatów z listy - **IEX Cloud martwe** (zamknięte
+  31.08.2024, nie istnieje w 2026); **Polygon.io** brak free tier, od
+  $99/mies. (Adam już to odrzucił jako "kokosy"); **Alpha Vantage** free
+  tier 25 zapytań/dzień (za mało), premium ~$29/mies. ale 1-min intraday
+  udokumentowany głównie dla US, wsparcie EU niepotwierdzone; **Twelve
+  Data** free/Basic za mało kredytów (8/min, 800/dzień), realtime EU dane
+  dopiero w planie Pro **$229/mies.** (więcej niż Finnhub premium, też
+  "kokosy"); **EOD Historical Data** free bez intraday w ogóle, płatny
+  "EOD+Intraday" €29.99/mies. ale ich WŁASNA dokumentacja ogranicza
+  "Other Markets" (czyli Europę) do **5-min/1h, NIE 1-min** (tylko USA
+  NYSE/NASDAQ ma prawdziwe 1-min) - za grube dla modułu EOD zaprojektowanego
+  pod wykrywanie ostrych spadków w 1-2 minuty.
+  **Decyzja Adama: na razie nieoficjalne Yahoo intraday** (`range=1d&interval=1m`,
+  ten sam mechanizm co istniejący fallback w `price_feed.py::get_mini_chart_ohlc`) -
+  zero kosztu, świadomie akceptowane ryzyko braku SLA. **Docelowo (gdy Adam
+  będzie miał dostęp do IBKR/Interactive Brokers API)**: IBKR TWS/Client
+  Portal API potwierdzone (2026-07-24, web research) że wspiera realne
+  świece 1-min dla europejskich giełd (Xetra, Euronext itd.) - wymaga
+  osobnej subskrypcji danych rynkowych Level 1 PER GIEŁDA (zwykle niewielka
+  opłata miesięczna, czasem obniżana/zerowa przy odpowiednim wolumenie
+  prowizji u brokera) - i tak znacznie taniej niż Twelve Data Pro. Gdy IBKR
+  dojedzie, to docelowe źródło danych dla EOD, Yahoo tylko na czas przejściowy.
 - RSI/MA/ATR: zastępuje obecną strategię Micro-Grid czy działa równolegle?
 - Builder strategii (AND/OR bloków) - osobny model danych, spore query
   wykonywane w tick() dla każdego aktywa - warto rozważyć wpływ na rate
