@@ -117,7 +117,7 @@ def _register_scheduler(app: Flask) -> None:
     if Config.DEBUG and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
 
-    from .services import bot_engine, signal_engine
+    from .services import bot_engine, eod_engine, signal_engine
 
     scheduler.add_job(
         func=lambda: bot_engine.tick(app),
@@ -129,6 +129,13 @@ def _register_scheduler(app: Flask) -> None:
     scheduler.add_job(
         func=lambda: signal_engine.tick(app),
         trigger="interval", seconds=60, id="signal_tick", replace_existing=True,
+    )
+    # Modul EOD (services/eod_engine.py) - TRZECI osobny job, PRD: "co 1
+    # minute sprawdza swiece 1-minutowe" - sam tick() gate'uje sie na
+    # EOD_WINDOW (16:00-17:25 Amsterdam), wiec poza tym oknem to tani no-op.
+    scheduler.add_job(
+        func=lambda: eod_engine.tick(app),
+        trigger="interval", seconds=60, id="eod_tick", replace_existing=True,
     )
     # Dzienny raport zysk/strata mailem (ustalone z Adamem 2026-07-21) - 22:01
     # czasu Amsterdamu (timezone="Europe/Amsterdam", APScheduler sam ogarnia
@@ -185,6 +192,7 @@ def _register_blueprints(app: Flask) -> None:
     from .routes.bot import bot_bp
     from .routes.instrument import instrument_bp
     from .routes.signal import signal_bp
+    from .routes.eod import eod_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(scalping_bp)
@@ -195,3 +203,4 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(bot_bp)
     app.register_blueprint(instrument_bp)
     app.register_blueprint(signal_bp)
+    app.register_blueprint(eod_bp)

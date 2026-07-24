@@ -720,3 +720,125 @@ class SignalAuditLog(db.Model):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<SignalAuditLog {self.action_type} user_id={self.user_id}>"
+
+
+# =============================================================================
+# Moduł EOD (End of Day) - services/eod_engine.py - TRZECI, znowu CAŁKOWICIE
+# OSOBNY silnik (patrz uzasadnienie niezależności przy SignalAsset wyżej,
+# ten sam powód: "Moduł EOD to w praktyce osobny silnik, nie dodatek do
+# tick()", docs/IDEAS_v2.md, ustalenia 2026-07-21). Działa WYŁĄCZNIE pod
+# koniec sesji EUR (16:00-17:25 Amsterdam) na świecach 1-MINUTOWYCH
+# (price_feed.get_eod_intraday_1m, Yahoo nieoficjalne - patrz docs/IDEAS_v2.md
+# pkt 3, decyzja 2026-07-24) - reaguje na OSTRY spadek w 1-5 minut, nie na
+# powolne pełzanie. Pozycje z tego modułu NIE są przenoszone na kolejny dzień
+# (wymuszone zamknięcie tuż przed końcem sesji, patrz eod_engine.FORCE_CLOSE_TIME).
+# =============================================================================
+
+class EODAsset(db.Model):
+    """
+    Lista 'High Conviction' spółek dla modułu EOD (PRD: "Możliwość wyboru
+    listy High Conviction spółek, na których działa moduł EOD") - własna,
+    niezależna od BotAsset/SignalAsset. entry_amount to BAZOWA kwota - realna
+    wielkość wejścia mnoży ją przez tier zależny od ostrości spadku (patrz
+    eod_engine._size_multiplier_for_drop).
+    """
+    __tablename__ = "eod_assets"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "ticker", name="uq_eod_asset_user_ticker"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+
+    ticker = db.Column(db.String(30), nullable=False)
+    display_ticker = db.Column(db.String(20), nullable=False)
+    currency = db.Column(db.String(10), nullable=False)
+
+    entry_amount = db.Column(db.Numeric(12, 2), nullable=False)
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<EODAsset {self.ticker} entry={self.entry_amount}>"
+
+
+class EODSettings(db.Model):
+    """Konfiguracja ryzyka modułu EOD, JEDNA na użytkownika - własne kolumny, zero współdzielenia z Micro-Grid/Sygnał."""
+    __tablename__ = "eod_settings"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True)
+
+    is_active = db.Column(db.Boolean, nullable=False, default=False)
+    is_paper_trading = db.Column(db.Boolean, nullable=False, default=True)
+
+    # Ciasne progi (PRD: "natychmiastowy ciasny Take Profit 0.4-0.9%",
+    # "bardzo ciasny trailing stop 0.3-0.5%") - v1 ma je STAŁE od wejścia
+    # (nie trailing, świadome uproszczenie jak w Sygnale - "sprawdzimy w boju").
+    stop_loss_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.004)
+    take_profit_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.006)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<EODSettings user_id={self.user_id} active={self.is_active}>"
+
+
+class EODTrade(db.Model):
+    """
+    Pozycja modułu EOD - JEDNO wejście na trigger, bez DCA. drop_pct_at_entry/
+    size_multiplier zapisane do audytu (żeby dało się ocenić czy tier
+    sizingu działał sensownie). Mechanika wyjścia TA SAMA co SignalTrade
+    (prawdziwy resting STOP dla stop-loss, take-profit pilnowany w
+    softwarze - T212 nie pozwala na dwa resting ordery na te same udziały) +
+    DODATKOWO wymuszone zamknięcie przed końcem sesji (closed_via="eod-forced").
+    """
+    __tablename__ = "eod_trades"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    eod_asset_id = db.Column(db.Integer, db.ForeignKey("eod_assets.id"), nullable=False, index=True)
+
+    ticker = db.Column(db.String(30), nullable=False)
+    currency = db.Column(db.String(10), nullable=False)
+
+    buy_order_id = db.Column(db.String(64), nullable=False)
+    baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
+
+    buy_price = db.Column(db.Numeric(12, 4), nullable=False)
+    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    allocated_value = db.Column(db.Numeric(12, 2), nullable=False)
+
+    drop_pct_at_entry = db.Column(db.Numeric(6, 4), nullable=False)
+    size_multiplier = db.Column(db.Numeric(4, 2), nullable=False)
+
+    stop_loss_price = db.Column(db.Numeric(12, 4), nullable=False)
+    take_profit_price = db.Column(db.Numeric(12, 4), nullable=False)
+    stop_order_id = db.Column(db.String(64), nullable=True)
+
+    status = db.Column(db.String(10), nullable=False, default="OPEN")
+    is_paper = db.Column(db.Boolean, nullable=False, default=False)
+
+    close_price = db.Column(db.Numeric(12, 4), nullable=True)
+    closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "eod-forced" / "manual"
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
+    closed_at = db.Column(db.DateTime, nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<EODTrade {self.ticker} status={self.status}>"
+
+
+class EODAuditLog(db.Model):
+    """Log modułu EOD - analogia do SignalAuditLog/BotAuditLog."""
+    __tablename__ = "eod_audit_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+
+    action_type = db.Column(db.String(10), nullable=False)  # BUY/SELL/ERROR/INFO
+    message = db.Column(db.Text, nullable=False)
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False, index=True)
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<EODAuditLog {self.action_type} user_id={self.user_id}>"

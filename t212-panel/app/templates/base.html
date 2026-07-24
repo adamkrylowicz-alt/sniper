@@ -6,7 +6,7 @@
     <title>{% block title %}SNAJPER{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
-<body class="{{ 'page-bot' if request.blueprint in ('bot', 'signal') }}">
+<body class="{{ 'page-bot' if request.blueprint in ('bot', 'signal', 'eod') }}">
     <header class="topbar">
         <span class="topbar__mark">◆ SNAJPER</span>
         <nav class="topbar__nav">
@@ -34,6 +34,10 @@
             <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'signal' }}" href="{{ url_for('signal.view') }}">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-6 4 4 8-10"/><path d="M15 5h6v6"/></svg>
                 Sygnał
+            </a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'eod' }}" href="{{ url_for('eod.view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                EOD
             </a>
             <a class="topbar__link {{ 'topbar__link--active' if request.blueprint in ('settings', 'api_keys') }}" href="{{ url_for('settings.index') }}">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg>

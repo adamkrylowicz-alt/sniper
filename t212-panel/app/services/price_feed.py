@@ -186,6 +186,49 @@ def _fetch_yahoo_candles_ohlc(ticker: str, days: int) -> list[dict] | None:
     return candles[-days:]
 
 
+def get_eod_intraday_1m(ticker: str) -> list[dict] | None:
+    """
+    Świece 1-minutowe DZISIEJSZEJ sesji (Yahoo Chart API, `range=1d&interval=1m`)
+    - do modułu EOD (services/eod_engine.py, detekcja ostrych spadków w 1-5
+    minut pod koniec sesji). NIEOFICJALNE API, bez SLA - świadoma decyzja
+    Adama (2026-07-24, patrz docs/IDEAS_v2.md pkt 3): sprawdzone 5 płatnych
+    alternatyw (Twelve Data, Alpha Vantage, Polygon, EOD Historical Data, IEX
+    Cloud) i żadna nie dawała taniego, prawdziwego 1-min dla Europy - Yahoo
+    na razie, docelowo IBKR API gdy dostępne.
+
+    ZERO cache'u (w odróżnieniu od get_mini_chart_ohlc) - to dane do decyzji
+    tradingowej sprzed sekund, nie do mini-wykresu, ten sam powód co
+    get_live_price. Zwraca listę {"t": unix_timestamp, "o","h","l","c"}
+    najstarsza -> najnowsza, albo None (brak danych/błąd/poza sesją -
+    Yahoo dla `range=1d` poza godzinami handlu zwraca pustą/krótką listę).
+    """
+    yahoo_symbol = t212_to_finnhub(ticker)
+    if yahoo_symbol is None:
+        return None
+    try:
+        resp = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}",
+            params={"range": "1d", "interval": "1m"},
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            return None
+        result = resp.json()["chart"]["result"][0]
+        timestamps = result["timestamp"]
+        quote = result["indicators"]["quote"][0]
+        opens, highs, lows, closes = quote["open"], quote["high"], quote["low"], quote["close"]
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+    candles = [
+        {"t": t, "o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
+        for t, o, h, l, c in zip(timestamps, opens, highs, lows, closes)
+        if None not in (o, h, l, c)
+    ]
+    return candles if len(candles) >= 2 else None
+
+
 def get_mini_chart_ohlc(api_key: str | None, ticker: str, days: int = 30) -> list[dict] | None:
     """
     Zwraca listę OHLC (open/high/low/close, najstarsza -> najnowsza) dla

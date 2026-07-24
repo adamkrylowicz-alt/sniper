@@ -63,6 +63,14 @@ Po zakupie: natychmiastowy ciasny Take Profit (0.4-0.9% powyżej ceny zakupu lub
 tuż poniżej high poprzedniej świecy 1-min), bardzo ciasny trailing stop
 (0.3-0.5%). Pozycje z tego modułu NIE są przenoszone na następny dzień.
 
+**ZAIMPLEMENTOWANE (2026-07-24), wersja 1.** Patrz `services/eod_engine.py`,
+`routes/eod.py`, `/eod/` w UI, oraz wpis w CLAUDE.md z tej daty po pełny
+opis. Świadome uproszczenia v1 (do ew. rozbudowy po testach "w boju"):
+tiery sizingu jako STAŁE mnożniki entry_amount (x0.6/x1.0/x1.5) zamiast
+zakresu % kapitału z PRD (unika zależności od odpytywania wartości całego
+konta na każdy tick); stop-loss/take-profit STAŁE od wejścia (nie trailing,
+ta sama uproszczona filozofia co Sygnał).
+
 ### Dodatkowe wymagania techniczne
 - Rate limiting i cache dla API Trading212 i Finnhub.
 - Obsługa limitów Trading212 (szczególnie przy składaniu zleceń).

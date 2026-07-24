@@ -453,10 +453,10 @@ def activate():
 def deactivate():
     """
     Wyłącza WYŁĄCZNIE Micro-Grid (RiskSettings.is_bot_active=False) - czyści
-    WSPÓLNE poświadczenia (bot_credentials) tylko gdy strategia sygnałowa
-    (SignalSettings.is_active) też jest wyłączona, inaczej ten drugi bot
-    straciłby dostęp do klucza demo bez ostrzeżenia mimo że user go nie
-    dotykał. Lustrzane odbicie routes/signal.py::deactivate().
+    WSPÓLNE poświadczenia (bot_credentials) tylko gdy strategia sygnałowa I
+    moduł EOD też są wyłączone (sprawdzenie krzyżowe obu), inaczej któryś z
+    nich straciłby dostęp do klucza demo bez ostrzeżenia mimo że user go nie
+    dotykał. Lustrzane odbicie routes/signal.py::deactivate() / routes/eod.py::deactivate().
     """
     user_id = current_user_id()
 
@@ -464,9 +464,10 @@ def deactivate():
     settings.is_bot_active = False
     db.session.commit()
 
-    from ..models import SignalSettings
+    from ..models import EODSettings, SignalSettings
     signal_settings = SignalSettings.query.filter_by(user_id=user_id).first()
-    if not (signal_settings and signal_settings.is_active):
+    eod_settings = EODSettings.query.filter_by(user_id=user_id).first()
+    if not (signal_settings and signal_settings.is_active) and not (eod_settings and eod_settings.is_active):
         bot_credentials.deactivate(user_id)
 
     return jsonify(ok=True)

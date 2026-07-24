@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block title %}SNAJPER — Moduł EOD{% endblock %}
+
+{% block content %}
+<div class="history-box" id="eod-panel">
+    <h1 class="auth-box__title">MODUŁ EOD (KONIEC SESJI)</h1>
+    <p class="auth-box__hint">
+        TRZECI, osobny silnik - działa WYŁĄCZNIE 16:00-17:25 czasu Amsterdamu
+        na świecach 1-MINUTOWYCH (nieoficjalne Yahoo, bez SLA). Reaguje na
+        NAGŁE, ostre spadki w 1-5 minut - im ostrzejszy spadek, tym większa
+        pozycja (tier x0.6 / x1.0 / x1.5 kwoty wejścia, próg od -2.0%).
+        Pozycje z tego modułu <strong>NIE są przenoszone na kolejny dzień</strong>
+        - wymuszone zamknięcie ~17:20. Działa wyłącznie na koncie
+        <strong>demo</strong> i dzieli poświadczenia z Micro-Grid/Sygnał.
+    </p>
+
+    <nav class="tabs section-nav" aria-label="Sekcje strony">
+        <a class="tab" href="#section-activation">Aktywacja</a>
+        <a class="tab" href="#section-assets">Aktywa</a>
+        <a class="tab" href="#section-positions">Otwarte pozycje</a>
+        <a class="tab" href="#section-risk">Ustawienia ryzyka</a>
+        <a class="tab" href="#section-log">Dziennik</a>
+    </nav>
+
+    <div class="pie-fx-banner {{ '' if credentials_active else 'pie-fx-banner--hidden' }}" id="eod-status-banner">
+        {% if credentials_active %}
+        Moduł AKTYWNY (poświadczenia w pamięci serwera) — {{ "Paper Trading (symulacja)" if settings.is_paper_trading else "REALNE zlecenia na demo T212" }}.
+        {% endif %}
+    </div>
+    {% if settings.is_active and not credentials_active %}
+    <div class="pie-fx-banner">
+        Baza mówi że moduł jest aktywny, ale poświadczenia wygasły (restart
+        appki czyści je celowo) — kliknij "Uruchom" ponownie, żeby faktycznie ruszył.
+    </div>
+    {% endif %}
+
+    <div class="pie-detail__add-asset" id="section-activation">
+        <label class="auth-form__label" for="eod-password">Hasło (do aktywacji)</label>
+        <input type="password" id="eod-password" class="auth-form__input" autocomplete="current-password">
+        <div style="display:flex; gap:8px; margin-top:8px">
+            <button type="button" id="btn-eod-activate" class="account-bar__btn account-bar__btn--start">Uruchom</button>
+            <button type="button" id="btn-eod-deactivate" class="account-bar__btn account-bar__btn--stop">Wyłącz</button>
+        </div>
+        <p class="auth-box__hint" id="eod-activate-status"></p>
+    </div>
+
+    <h2 class="section-heading" id="section-assets">LISTA "HIGH CONVICTION"</h2>
+    <p class="auth-box__hint">
+        Własna, niezależna lista tickerów - bez związku z BotAsset/SignalAsset.
+        Kwota wejścia to BAZA - realna wielkość zależy od ostrości wykrytego spadku.
+    </p>
+
+    <div class="pie-detail__add-asset">
+        <label class="auth-form__label" for="eod-asset-default-amount">Bazowa kwota wejścia dla nowo dodawanych pozycji</label>
+        <input type="number" id="eod-asset-default-amount" class="auth-form__input" min="0" step="0.01" placeholder="np. 25.00 (wymagane przed dodaniem)">
+
+        <label class="auth-form__label" for="eod-asset-search" style="margin-top:12px; display:block">Dodaj aktywo</label>
+        <input
+            type="text" id="eod-asset-search" class="auth-form__input"
+            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..." autocomplete="off"
+        >
+        <div id="eod-asset-tabs" class="tabs" role="tablist"></div>
+        <div id="eod-asset-results" class="watchlist-results watchlist-results--browse"></div>
+        <button type="button" id="eod-asset-load-more" class="account-bar__btn" style="margin-top:8px; display:none">
+            Załaduj więcej
+        </button>
+        <p class="auth-box__hint" id="eod-asset-status"></p>
+    </div>
+
+    {% if not eod_assets %}
+    <p class="auth-box__hint">Lista jest pusta — dodaj aktywa powyżej.</p>
+    {% else %}
+    <div class="pie-assets" id="eod-assets-list">
+        {% for a in eod_assets %}
+        <div class="pie-asset-row" data-asset-id="{{ a.id }}" data-ticker="{{ a.ticker }}">
+            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="Szczegóły {{ a.display_ticker }}">
+                {{ a.display_ticker[0] }}
+            </a>
+
+            <div class="pie-asset-row__main">
+                <div class="pie-asset-row__title-line">
+                    <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__ticker-link">
+                        <span class="market-dot {{ 'market-dot--open' if a.market_open else 'market-dot--closed' }}"
+                              title="{{ 'Giełda otwarta' if a.market_open else 'Giełda zamknięta' }}"></span>
+                        <span class="pie-asset-row__ticker">{{ a.name or a.display_ticker }}</span>
+                        <span class="pie-asset-row__currency">{{ a.display_ticker }}{% if a.currency %} · <span class="currency-badge currency-badge--{{ a.currency|lower }}">{{ a.currency }}</span>{% endif %}</span>
+                    </a>
+                </div>
+                <div class="pie-asset-row__fields">
+                    <label>Bazowa kwota wejścia
+                        <input type="number" min="0" step="0.01" value="{{ a.entry_amount }}" data-entry-amount>
+                    </label>
+                </div>
+                <div class="auth-box__hint" data-price-hint style="margin:6px 0 0">sprawdzanie ceny…</div>
+            </div>
+
+            <div class="pie-asset-row__actions">
+                <button type="button" class="pie-asset-row__icon-btn pie-asset-row__icon-btn--danger"
+                        data-remove title="Usuń z listy">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/>
+                    </svg>
+                </button>
+            </div>
+
+            <div class="pie-asset-row__status" data-status style="grid-column: 1 / -1"></div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <h2 class="section-heading" id="section-positions">OTWARTE POZYCJE</h2>
+    <p class="auth-box__hint">
+        Take-profit pilnowany WYŁĄCZNIE w softwarze - jedyne prawdziwe
+        zlecenie na T212 to stop-loss. Wszystkie pozycje zamykane wymuszenie
+        ok. 17:20 (nie przenoszą się na kolejny dzień).
+    </p>
+    {% if not open_positions %}
+    <p class="auth-box__hint">Brak otwartych pozycji.</p>
+    {% else %}
+    <table class="history-table" id="eod-positions-table">
+        <thead>
+            <tr>
+                <th>Aktywo</th>
+                <th>Ilość</th>
+                <th>Cena wejścia</th>
+                <th>Spadek / Tier</th>
+                <th>Stop-loss</th>
+                <th>Take-profit</th>
+                <th>Otwarta od (Amsterdam)</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in open_positions %}
+            <tr data-trade-id="{{ p.id }}">
+                <td>
+                    <span class="market-dot {{ 'market-dot--open' if p.market_open else 'market-dot--closed' }}"
+                          title="{{ 'Giełda otwarta' if p.market_open else 'Giełda zamknięta' }}"></span>
+                    <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
+                        <span class="pie-asset-row__ticker">{{ p.name or p.display_ticker }}</span>
+                        <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
+                    </a>
+                </td>
+                <td>{{ p.quantity }}</td>
+                <td>{{ p.buy_price }}</td>
+                <td>{{ "%.2f"|format(p.drop_pct_at_entry|float * 100) }}% (x{{ p.size_multiplier }})</td>
+                <td>{{ p.stop_loss_price }}</td>
+                <td>{{ p.take_profit_price }}</td>
+                <td>{{ p.created_at_local }}</td>
+                <td>
+                    <span class="eod-position-status">
+                        {% if p.is_paper %}
+                        <span class="history-table__status history-table__status--info">PAPER</span>
+                        {% elif not p.buy_confirmed %}
+                        <span class="history-table__status history-table__status--warn">NIEPOTWIERDZONA</span>
+                        {% else %}
+                        <span class="history-table__status history-table__status--buy">OK</span>
+                        {% endif %}
+                    </span>
+                    <button type="button" class="section-heading__action" data-close-position title="Ręcznie zamknij pozycję Market Sell">Zamknij</button>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <details class="collapsible" id="section-risk">
+    <summary class="section-heading">USTAWIENIA RYZYKA</summary>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="eod-stop-loss">Stop-loss (ułamek od ceny wejścia, np. 0.004 = 0.4%)</label>
+        <input type="number" id="eod-stop-loss" class="auth-form__input" min="0" step="0.0001" value="{{ settings.stop_loss_pct }}">
+    </div>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="eod-take-profit">Take-profit (ułamek od ceny wejścia, np. 0.006 = 0.6%)</label>
+        <input type="number" id="eod-take-profit" class="auth-form__input" min="0" step="0.0001" value="{{ settings.take_profit_pct }}">
+    </div>
+    <p class="auth-box__hint">
+        Tiery wielkości pozycji (na sztywno, nie edytowalne tutaj): spadek
+        -2.0% do -3.49% → x0.6 kwoty bazowej, -3.5% do -5.49% → x1.0,
+        -5.5% i więcej → x1.5. Poniżej -2.0% - brak wejścia.
+    </p>
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="eod-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
+        Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)
+    </label>
+
+    <button type="button" id="btn-eod-save-settings" class="auth-form__submit auth-form__submit--sticky">
+        Zapisz ustawienia
+    </button>
+    <p class="auth-box__hint" id="eod-settings-status"></p>
+    </details>
+
+    <div class="section-heading section-heading--with-action" id="section-log">
+        <span>DZIENNIK (ostatnie 50)</span>
+        <button type="button" id="btn-eod-clear-log" class="section-heading__action">Wyczyść log</button>
+    </div>
+    <p class="auth-box__hint" id="eod-log-status"></p>
+    {% if not logs %}
+    <p class="auth-box__hint" id="eod-log-empty-hint">Brak wpisów.</p>
+    {% else %}
+    <table class="history-table" id="eod-log-table">
+        <thead>
+            <tr>
+                <th>Czas (Amsterdam)</th>
+                <th>Typ</th>
+                <th>Wiadomość</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for l in logs %}
+            <tr>
+                <td>{{ l.created_at_local }}</td>
+                <td class="history-table__status history-table__status--{{ l.action_type|lower }}">{{ l.action_type }}</td>
+                <td>{{ l.message }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <p class="auth-box__footer">
+        <a href="{{ url_for('signal.view') }}">← Sygnał</a>
+        &nbsp;|&nbsp;
+        <a href="{{ url_for('bot.view') }}">Micro-Grid Bot</a>
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/eod.js') }}"></script>
+{% endblock %}
