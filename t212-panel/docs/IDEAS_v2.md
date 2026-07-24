@@ -71,6 +71,14 @@ zakresu % kapitału z PRD (unika zależności od odpytywania wartości całego
 konta na każdy tick); stop-loss/take-profit STAŁE od wejścia (nie trailing,
 ta sama uproszczona filozofia co Sygnał).
 
+**ZMIANA (2026-07-24, jeszcze tego samego dnia, na żywo w trakcie testów):**
+Adam ODRZUCIŁ dwa punkty PRD powyżej: (1) "pozycje NIE są przenoszone na
+następny dzień" - USUNIĘTE wymuszone zamknięcie (`FORCE_CLOSE_TIME`/
+`_force_close_real`), pozycje EOD zostają otwarte i zarządzane WYŁĄCZNIE
+przez stop-loss/take-profit, dokładnie jak w Sygnale, bez sztywnej godziny
+zamknięcia; (2) okno końca sesji wydłużone z 17:25 na **17:30** ("niech
+normalnie próbuje złapać do 17:30").
+
 ### Dodatkowe wymagania techniczne
 - Rate limiting i cache dla API Trading212 i Finnhub.
 - Obsługa limitów Trading212 (szczególnie przy składaniu zleceń).

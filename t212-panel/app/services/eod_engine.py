@@ -6,7 +6,7 @@ Micro-Grid (bot_engine.py) i strategii sygnałowej (signal_engine.py). Patrz
 docs/IDEAS_v2.md ("Specjalny moduł EOD") i models.py (komentarz nad
 EODAsset) po pełne uzasadnienie niezależności.
 
-Działa WYŁĄCZNIE pod koniec sesji EUR (16:00-17:25 Amsterdamu, EOD_WINDOW
+Działa WYŁĄCZNIE pod koniec sesji EUR (16:00-17:30 Amsterdamu, EOD_WINDOW
 niżej) - cel: szybka reakcja na NAGŁE, OSTRE spadki w krótkim czasie (1-5
 minut), nie na powolne pełzanie w dół (to już robi Micro-Grid/Sygnał na
 świecach dziennych). Dane: świece 1-MINUTOWE dzisiejszej sesji
@@ -25,10 +25,11 @@ Poniżej -2.0% - brak triggera.
 Wyjście - TA SAMA mechanika co signal_engine.py (T212 nie pozwala na dwa
 resting ordery na te same udziały, docs/IDEAS_v2.md pkt 4): stop-loss to
 PRAWDZIWY resting STOP (ciasny, domyślnie 0.4%), take-profit pilnowany
-WYŁĄCZNIE w softwarze (ciasny, domyślnie 0.6%). DODATKOWO (specyfika EOD,
-PRD: "Pozycje z tego modułu NIE są przenoszone na następny dzień"):
-wymuszone zamknięcie Market Sell tuż przed końcem sesji (FORCE_CLOSE_TIME),
-niezależnie od P/L.
+WYŁĄCZNIE w softwarze (ciasny, domyślnie 0.6%). BRAK wymuszonego zamknięcia
+przed końcem sesji (PRD sugerował "nie przenosić na kolejny dzień" - Adam
+2026-07-24 świadomie to odrzucił: pozycje EOD zostają otwarte tak samo jak
+w Sygnale, zarządzane wyłącznie przez stop-loss/take-profit, bez sztywnego
+zamykania o określonej porze).
 
 Poświadczenia WSPÓLNE z Micro-Grid/Sygnał (services/bot_credentials.py) -
 ten sam demo klucz T212, jedno hasło odblokowuje wszystkie trzy silniki.
@@ -57,13 +58,9 @@ _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
 # wspiera zleceń LIMIT/STOP na koncie live).
 EOD_ENVIRONMENT = "demo"
 
-# PRD: "Działa tylko pod koniec sesji (od ok. 16:00)" - koniec okna = zamknięcie
-# Euronext/Xetra (market_hours.EU_SESSION_WINDOW górna granica, 17:25).
-EOD_WINDOW = (dt.time(16, 0), dt.time(17, 25))
-# 5 min bufora przed twardym zamknięciem sesji - pozycje EOD NIE są
-# przenoszone na kolejny dzień (PRD), więc wymuszamy Market Sell tutaj,
-# zanim giełda się zamknie i nie dałoby się już nic sprzedać.
-FORCE_CLOSE_TIME = dt.time(17, 20)
+# PRD: "Działa tylko pod koniec sesji (od ok. 16:00)" - Adam 2026-07-24:
+# niech normalnie próbuje łapać sygnały do 17:30 (nie 17:25 jak pierwotnie).
+EOD_WINDOW = (dt.time(16, 0), dt.time(17, 30))
 
 DROP_LOOKBACK_MINUTES = range(1, 6)  # 1..5 minut wstecz
 
@@ -83,13 +80,6 @@ def _in_eod_window() -> bool:
     if now_local.weekday() >= 5:
         return False
     return EOD_WINDOW[0] <= now_local.time() <= EOD_WINDOW[1]
-
-
-def _should_force_close() -> bool:
-    now_local = dt.datetime.now(_AMSTERDAM_TZ)
-    if now_local.weekday() >= 5:
-        return False
-    return now_local.time() >= FORCE_CLOSE_TIME
 
 
 def _log(user_id: int, action_type: str, message: str) -> None:
@@ -296,41 +286,12 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSett
             )
 
 
-def _force_close_real(user_id: int, client: T212Client, trade: EODTrade) -> None:
-    """Wymuszone zamknięcie (PRD: pozycje EOD nie przenoszą się na kolejny dzień) - anuluje STOP, Market Sell."""
-    if trade.stop_order_id:
-        try:
-            client.cancel_order(trade.stop_order_id)
-        except T212APIError as exc:
-            _log(user_id, "INFO", f"{trade.ticker}: anulowanie stop-loss przy wymuszonym zamknięciu EOD nie powiodło się (mógł się właśnie wykonać) - {exc}")
-            return  # kolejny tick wykryje ewentualne wykonanie STOP-a (zniknie z pending)
-
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
-    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
-
-    try:
-        sell_result = client.place_market_order(trade.ticker, -trade.quantity)
-    except T212APIError as exc:
-        _log(user_id, "ERROR", f"{trade.ticker}: wymuszone zamknięcie EOD (koniec sesji) nie powiodło się - {exc}. STOP już zdjęty, pozycja NIECHRONIONA, sprawdź ręcznie.")
-        return
-
-    _log_order(
-        user_id=user_id, ticker=trade.ticker, side="sell", quantity=trade.quantity,
-        price_snapshot=price, status="sent", t212_order_id=sell_result.order_id,
-    )
-    _finalize_closed_trade(user_id, trade, "eod-forced", fill_price=price if price is not None else trade.buy_price)
-
-
 def _manage_exits(user_id: int, client: T212Client, settings: EODSettings) -> None:
     open_trades = EODTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True,
     ).all()
     if not open_trades:
         return
-
-    force_close = _should_force_close()
 
     try:
         pending_order_ids = {str(o.get("id")) for o in client.get_pending_orders()}
@@ -345,10 +306,6 @@ def _manage_exits(user_id: int, client: T212Client, settings: EODSettings) -> No
     for trade in open_trades:
         if trade.stop_order_id and trade.stop_order_id not in pending_order_ids:
             _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=trade.stop_loss_price)
-            continue
-
-        if force_close:
-            _force_close_real(user_id, client, trade)
             continue
 
         price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
@@ -382,7 +339,6 @@ def _manage_paper_exits(user_id: int) -> None:
     if not open_trades:
         return
 
-    force_close = _should_force_close()
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
@@ -390,15 +346,11 @@ def _manage_paper_exits(user_id: int) -> None:
     for trade in open_trades:
         price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
         if price is None or price <= 0:
-            if force_close:
-                _finalize_closed_trade(user_id, trade, "eod-forced", fill_price=trade.buy_price)
             continue
         if price <= trade.stop_loss_price:
             _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=price)
         elif price >= trade.take_profit_price:
             _finalize_closed_trade(user_id, trade, "take-profit", fill_price=price)
-        elif force_close:
-            _finalize_closed_trade(user_id, trade, "eod-forced", fill_price=price)
 
 
 def reconcile(user_id: int) -> None:

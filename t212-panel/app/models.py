@@ -727,11 +727,12 @@ class SignalAuditLog(db.Model):
 # OSOBNY silnik (patrz uzasadnienie niezależności przy SignalAsset wyżej,
 # ten sam powód: "Moduł EOD to w praktyce osobny silnik, nie dodatek do
 # tick()", docs/IDEAS_v2.md, ustalenia 2026-07-21). Działa WYŁĄCZNIE pod
-# koniec sesji EUR (16:00-17:25 Amsterdam) na świecach 1-MINUTOWYCH
+# koniec sesji EUR (16:00-17:30 Amsterdam) na świecach 1-MINUTOWYCH
 # (price_feed.get_eod_intraday_1m, Yahoo nieoficjalne - patrz docs/IDEAS_v2.md
 # pkt 3, decyzja 2026-07-24) - reaguje na OSTRY spadek w 1-5 minut, nie na
-# powolne pełzanie. Pozycje z tego modułu NIE są przenoszone na kolejny dzień
-# (wymuszone zamknięcie tuż przed końcem sesji, patrz eod_engine.FORCE_CLOSE_TIME).
+# powolne pełzanie. Pozycje z tego modułu zostają otwarte tak samo jak w
+# Sygnale (BEZ wymuszonego zamknięcia na koniec dnia - Adam 2026-07-24
+# świadomie odrzucił sugestię PRD "nie przenosić na kolejny dzień").
 # =============================================================================
 
 class EODAsset(db.Model):
@@ -788,8 +789,10 @@ class EODTrade(db.Model):
     size_multiplier zapisane do audytu (żeby dało się ocenić czy tier
     sizingu działał sensownie). Mechanika wyjścia TA SAMA co SignalTrade
     (prawdziwy resting STOP dla stop-loss, take-profit pilnowany w
-    softwarze - T212 nie pozwala na dwa resting ordery na te same udziały) +
-    DODATKOWO wymuszone zamknięcie przed końcem sesji (closed_via="eod-forced").
+    softwarze - T212 nie pozwala na dwa resting ordery na te same udziały).
+    BRAK wymuszonego zamknięcia na koniec dnia (Adam 2026-07-24 świadomie
+    odrzucił tę sugestię z PRD) - pozycje zostają otwarte tak długo, aż
+    trafi je stop-loss albo take-profit, dokładnie jak w Sygnale.
     """
     __tablename__ = "eod_trades"
 
@@ -819,7 +822,7 @@ class EODTrade(db.Model):
     is_paper = db.Column(db.Boolean, nullable=False, default=False)
 
     close_price = db.Column(db.Numeric(12, 4), nullable=True)
-    closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "eod-forced" / "manual"
+    closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "manual"
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)

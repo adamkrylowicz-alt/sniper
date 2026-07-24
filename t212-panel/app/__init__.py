@@ -132,7 +132,7 @@ def _register_scheduler(app: Flask) -> None:
     )
     # Modul EOD (services/eod_engine.py) - TRZECI osobny job, PRD: "co 1
     # minute sprawdza swiece 1-minutowe" - sam tick() gate'uje sie na
-    # EOD_WINDOW (16:00-17:25 Amsterdam), wiec poza tym oknem to tani no-op.
+    # EOD_WINDOW (16:00-17:30 Amsterdam), wiec poza tym oknem to tani no-op.
     scheduler.add_job(
         func=lambda: eod_engine.tick(app),
         trigger="interval", seconds=60, id="eod_tick", replace_existing=True,
