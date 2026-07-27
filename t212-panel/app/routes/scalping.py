@@ -461,8 +461,12 @@ def trade_levels():
 
     signal_trade = SignalTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
     if signal_trade:
+        # BEZ take_profit - usuniety 2026-07-28 (Adam: "usun sztywny
+        # take-profit, zrob pelny trailing"), signal_trade.take_profit_price
+        # w bazie zostaje wylacznie jako orientacyjny zapis z chwili wejscia,
+        # nie wyzwala juz zadnej sprzedazy - pokazywanie go jako linii na
+        # wykresie tylko by mylilo (wygladaloby na aktywny poziom wyjscia).
         levels.append({"type": "stop_loss", "price": float(signal_trade.stop_loss_price), "source": "Sygnał"})
-        levels.append({"type": "take_profit", "price": float(signal_trade.take_profit_price), "source": "Sygnał"})
 
     eod_trade = EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
     if eod_trade:

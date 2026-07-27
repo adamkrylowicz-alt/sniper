@@ -14,33 +14,45 @@ który ma działać na świecach 1-min - ten moduł jeszcze nie zaimplementowany
 JEDNO wejście na sygnał, bez DCA.
 
 Zarządzanie ryzykiem: Stop Loss = ATR(14) * stop_loss_atr_mult (domyślnie
-1.8), Take Profit = ATR(14) * take_profit_atr_mult (domyślnie 3.0) - OBA
-liczone przy wejściu, take-profit zostaje STAŁY przez cały czas trwania
-pozycji (świadome uproszczenie z 24.07 - "sprawdzimy w boju" zanim dokładać
-complexity trailing do TP).
+1.8), liczony PRZY WEJŚCIU jako punkt startowy, ale od tej chwili TRAILING
+(patrz niżej) - PEŁNY, bez sztywnego sufitu.
 
-TRAILING STOP-LOSS (dodane 2026-07-28, Adam: "dodaj trailing do sygnalu, bo
-to chroni zysk a to jest swietosc dla botow tych i kazdych innych
-przyszlych" - patrz [[feedback_snajper_profit_protection_priority]] w
-pamięci Claude, ta sama zasada co Micro-Grid) - `_trail_stop_loss()` w
-`_manage_exits()` przesuwa stop-loss W GÓRĘ (nigdy w dół) o tę SAMĄ
-odległość co przy wejściu (`atr_at_entry * stop_loss_atr_mult`, licząc od
-BIEŻĄCEJ ceny zamiast ceny wejścia) - naturalnie zaczyna działać dopiero gdy
-pozycja jest na plusie (bo dopiero wtedy `cena - dystans > stop przy
-wejściu`), więc chroni WYŁĄCZNIE już zarobiony zysk, nigdy nie zaciska się
-przed wejściem w plus. Prostszy model niż ciągły trailing Micro-Grid
-(`_manage_trailing_exit` - tam dwie fazy: szeroki floor przy pierwszym
-uzbrojeniu, potem ciasny `current_price*(1-step)`) - tu jeden, spójny
-dystans przez cały czas, celowo (Sygnał ma STAŁY take-profit jako "sufit",
-więc stop-loss nie musi ciasno gonić ceny - wystarczy że idzie w górę razem
-z nią, chroniąc rosnącą część zysku).
+HISTORIA: do 24.07 SL i "Take Profit" (ATR * take_profit_atr_mult, domyślnie
+3.0) byly OBA stałe przez cały czas trwania pozycji (świadome uproszczenie,
+"sprawdzimy w boju" zanim dokładać complexity trailing). 28.07 dodany
+trailing SL (patrz niżej). TEGO SAMEGO dnia Adam zauważył realny problem ze
+sztywnym TP: "jak wyjebie świece w górę to może się zrealizować i już nie
+wróci do pozycji" - świeca, która przebije TP, sprzedaje CAŁĄ pozycję od
+razu, tracąc dalszy ruch w górę, bo strategia wymaga NOWEGO sygnału wejścia
+(RSI<próg + cena>SMA200) żeby wrócić - po takim skoku mało prawdopodobne w
+najbliższym czasie. Decyzja: "usuń sztywny take-profit, zrób pełny
+trailing" - sztywna sprzedaż na TP CAŁKOWICIE usunięta z `_manage_exits()`/
+`_manage_paper_exits()`, jedyne wyjście to teraz trailing stop-loss LUB
+ręczne zamknięcie. `take_profit_price` w `SignalTrade` ZOSTAJE (kolumna
+NOT NULL, dalej liczona przy wejściu i logowana) jako WYŁĄCZNIE orientacyjny
+punkt odniesienia z chwili wejścia - już NIE wyzwala żadnej sprzedaży, patrz
+`price_feed`/`routes/scalping.py::/warp/trade_levels`, który już go nie
+zwraca dla Sygnału (nieaktualna linia na wykresie tylko by myliła).
+
+TRAILING STOP-LOSS (dodane 2026-07-28, patrz
+[[feedback_snajper_profit_protection_priority]] w pamięci Claude - "ochrona
+zysku" to stała zasada dla WSZYSTKICH botów, ta sama co Micro-Grid) -
+`_trail_stop_loss()`, wołane z `_manage_exits()` na KAŻDYM ticku dla każdej
+otwartej pozycji (nie tylko dopóki cena < TP - TP już nic nie robi, patrz
+wyżej), przesuwa stop-loss W GÓRĘ (nigdy w dół) o tę SAMĄ odległość co przy
+wejściu (`atr_at_entry * stop_loss_atr_mult`, licząc od BIEŻĄCEJ ceny
+zamiast ceny wejścia) - naturalnie zaczyna działać dopiero gdy pozycja jest
+na plusie (bo dopiero wtedy `cena - dystans > stop przy wejściu`), więc
+chroni WYŁĄCZNIE już zarobiony zysk. Prostszy model niż ciągły trailing
+Micro-Grid (`_manage_trailing_exit` - tam dwie fazy: szeroki floor przy
+pierwszym uzbrojeniu, potem ciasny `current_price*(1-step)`) - tu jeden,
+spójny dystans przez cały czas trwania pozycji.
 
 Mechanika wyjścia - TA SAMA przyczyna co przeprojektowanie Micro-Grid
 21.07.2026 (T212 nie pozwala trzymać LIMIT SELL + STOP jednocześnie na te
-same udziały, patrz docs/IDEAS_v2.md pkt 4): stop-loss to PRAWDZIWY resting
-STOP na T212 (chroni nawet offline), take-profit pilnowany WYŁĄCZNIE w
-softwarze (_manage_exits, Market Sell gdy żywa cena go dotknie) - jedyne
-resting zlecenie na pozycję to ten jeden STOP.
+same udziały, patrz docs/IDEAS_v2.md pkt 4): stop-loss to PRAWDZIWY,
+PRZESUWANY resting STOP na T212 (chroni nawet offline) - jedyne resting
+zlecenie na pozycję, jedyny mechanizm wyjścia po usunięciu sztywnego TP.
 
 Poświadczenia: reużywa services/bot_credentials.py (WSPÓLNY magazyn
 odszyfrowanego master_key w pamięci procesu) zamiast własnego mechanizmu -
@@ -195,7 +207,7 @@ def _enter_position(
         _log(
             user_id, "BUY",
             f"[PAPER] {asset.ticker}: sygnał wejścia, {quantity} @ ~{price} - "
-            f"SL {stop_loss_price:.4f} / TP {take_profit_price:.4f} (ATR={atr:.4f}).",
+            f"SL {stop_loss_price:.4f} (trailing) / TP orientacyjny {take_profit_price:.4f} (ATR={atr:.4f}).",
         )
         return
 
@@ -228,7 +240,7 @@ def _enter_position(
     _log(
         user_id, "BUY",
         f"{asset.ticker}: sygnał wejścia (RSI<{settings.rsi_threshold}, cena>MA{MA_PERIOD}), "
-        f"{quantity} @ ~{price} - SL {stop_loss_price:.4f} / TP {take_profit_price:.4f} (ATR={atr:.4f}). "
+        f"{quantity} @ ~{price} - SL {stop_loss_price:.4f} (trailing) / TP orientacyjny {take_profit_price:.4f} (ATR={atr:.4f}). "
         "Czeka na potwierdzenie kupna, dopiero potem uzbroi stop-loss.",
     )
 
@@ -353,9 +365,10 @@ def _trail_stop_loss(
     naturalnie aktywuje się dopiero gdy pozycja jest na plusie względem
     wejścia, więc chroni WYŁĄCZNIE już zarobiony zysk.
 
-    Wołane z `_manage_exits()` TYLKO gdy `price < take_profit_price` (jeśli
-    take-profit już osiągnięty, pozycja i tak zaraz się zamyka - nie ma sensu
-    przesuwać stopu tuż przed sprzedażą).
+    Wołane z `_manage_exits()` na KAŻDYM ticku dla każdej otwartej pozycji -
+    sztywny take-profit usunięty 2026-07-28 (patrz docstring modułu), więc
+    nie ma już "sufitu", po którym pozycja sama się zamyka - trailing SL to
+    jedyny mechanizm wyjścia poza ręcznym zamknięciem.
     """
     if trade.atr_at_entry is None or trade.atr_at_entry <= 0:
         return  # brak ATR z wejscia - nie ma jak policzyc dystansu, zostaw sztywny stop
@@ -433,33 +446,7 @@ def _manage_exits(user_id: int, client: T212Client, settings: SignalSettings) ->
         if price is None or price <= 0:
             continue
 
-        if price < trade.take_profit_price:
-            _trail_stop_loss(user_id, client, trade, settings, price)
-            continue
-
-        # Take-profit pilnowany w softwarze (patrz docstring modulu) - najpierw
-        # zdejmujemy STOP (jedyne resting zlecenie), dopiero potem Market Sell.
-        if trade.stop_order_id:
-            try:
-                client.cancel_order(trade.stop_order_id)
-            except T212APIError as exc:
-                # Mogl sie wlasnie wykonac rownolegle (wyscig z T212) - kolejny
-                # tick wykryje to wyzej (zniknie z pending_order_ids). Nie
-                # sprzedajemy TERAZ, zeby nie zdublowac sprzedazy.
-                _log(user_id, "INFO", f"{trade.ticker}: anulowanie stop-loss przed take-profit nie powiodło się (mógł się właśnie wykonać) - {exc}")
-                continue
-
-        try:
-            sell_result = client.place_market_order(trade.ticker, -trade.quantity)
-        except T212APIError as exc:
-            _log(user_id, "ERROR", f"{trade.ticker}: take-profit osiągnięty, ale sprzedaż Market nie powiodła się - {exc}. STOP już zdjęty, pozycja NIECHRONIONA, sprawdź ręcznie.")
-            continue
-
-        _log_order(
-            user_id=user_id, ticker=trade.ticker, side="sell", quantity=trade.quantity,
-            price_snapshot=price, status="sent", t212_order_id=sell_result.order_id,
-        )
-        _finalize_closed_trade(user_id, trade, "take-profit", fill_price=price)
+        _trail_stop_loss(user_id, client, trade, settings, price)
 
 
 def _trail_stop_loss_paper(trade: SignalTrade, settings: SignalSettings, price: Decimal) -> None:
@@ -474,7 +461,7 @@ def _trail_stop_loss_paper(trade: SignalTrade, settings: SignalSettings, price: 
 
 
 def _manage_paper_exits(user_id: int, settings: SignalSettings) -> None:
-    """Pozycje papierowe nie maja zadnego zlecenia na T212 - stop-loss/take-profit (w tym trailing) sprawdzane WYLACZNIE tutaj, w softwarze."""
+    """Pozycje papierowe nie maja zadnego zlecenia na T212 - stop-loss (w tym trailing) sprawdzany WYLACZNIE tutaj, w softwarze."""
     open_trades = SignalTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=True).all()
     if not open_trades:
         return
@@ -491,8 +478,6 @@ def _manage_paper_exits(user_id: int, settings: SignalSettings) -> None:
             continue
         if price <= trade.stop_loss_price:
             _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=price)
-        elif price >= trade.take_profit_price:
-            _finalize_closed_trade(user_id, trade, "take-profit", fill_price=price)
         else:
             _trail_stop_loss_paper(trade, settings, price)
 
