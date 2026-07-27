@@ -1515,6 +1515,14 @@ def reconcile(user_id: int) -> None:
         _log(user_id, "INFO", "Reconciliation: brak otwartych pozycji (realnych) do sprawdzenia.")
         return
 
+    # _manage_trailing_exit (ochrona zysku) CELOWO PRZED get_pending_orders()
+    # ponizej - ten sam powod co w tick() (patrz komentarz tam, Adam
+    # 2026-07-27) - nie korzysta z jego wyniku (brak `pending` w sygnaturze),
+    # wiec nie powinna czekac ani obrywac wczesnym returnem, gdyby TO
+    # konkretne zapytanie akurat zawiodlo.
+    if settings is not None:
+        _manage_trailing_exit(user_id, client, settings)
+
     try:
         pending = client.get_pending_orders()
     except T212APIError as exc:
@@ -1564,7 +1572,6 @@ def reconcile(user_id: int) -> None:
     if settings is not None:
         _retry_pending_buys(user_id, client, settings, pending=pending)
         _retry_pending_sells(user_id, client, settings, pending=pending)
-        _manage_trailing_exit(user_id, client, settings)
         _trigger_dca_buys(user_id, client, settings)
 
 
@@ -1610,6 +1617,23 @@ def tick(app) -> None:
 
             client = _get_client_for_user(user_id, settings)
             if client is not None:
+                # _manage_trailing_exit (ochrona JUŻ zarobionego zysku) CELOWO
+                # ODDZIELONA od backoffu ponizej (Adam, 2026-07-27: "musisz
+                # jakos zmienic ta logike jakie 30min pauzy?? to niedopuszczalne"
+                # - zlapane na zywo na CRM_US_EQ, stop utknal bo caly tick byl
+                # wstrzymany do 30 min po nieudanym get_pending_orders(), mimo
+                # ze trailing stop W OGOLE nie korzysta z jego wyniku, patrz
+                # sygnatura _manage_trailing_exit(user_id, client, settings) -
+                # brak `pending`). Ten sam mechanizm (cancel STOP + place STOP)
+                # co reszta, wiec i tak nie hamruje limitu wiecej niz musi -
+                # kazda POJEDYNCZA pozycja ma juz WLASNY backoff per-trade
+                # (next_sell_retry_at, do 30 min) na wypadek gdyby jej wlasne
+                # proby konsekwentnie failowaly - to zostaje bez zmian, tu
+                # usuwamy TYLKO zbedne, calokontowe sprzezenie z backoffem
+                # get_pending_orders(), ktory sluzy zupelnie innym funkcjom
+                # (potwierdzanie kupna/sprzedazy nizej).
+                _manage_trailing_exit(user_id, client, settings)
+
                 now = dt.datetime.utcnow()
                 backoff = _tick_error_backoff.get(user_id)
                 if backoff is not None and now < backoff[1]:
@@ -1646,7 +1670,6 @@ def tick(app) -> None:
                         _retry_pending_buys(user_id, client, settings, pending=pending)
                         _retry_pending_sells(user_id, client, settings, pending=pending)
                         _auto_adopt_foreign_positions(user_id, client, settings)
-                        _manage_trailing_exit(user_id, client, settings)
                         _trigger_dca_buys(user_id, client, settings)
 
             _process_entries(user_id, settings)
