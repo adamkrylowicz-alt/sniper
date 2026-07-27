@@ -32,6 +32,7 @@
             <thead>
                 <tr>
                     <th class="history-table__th--sortable" data-sort-key="name">Aktywo <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="currency">Waluta <span class="sort-arrow">⇅</span></th>
                     <th class="history-table__th--sortable" data-sort-key="quantity">Ilość <span class="sort-arrow">⇅</span></th>
                     <th class="history-table__th--sortable" data-sort-key="avg_price">Średnia cena <span class="sort-arrow">⇅</span></th>
                     <th class="history-table__th--sortable" data-sort-key="current_price">Cena teraz <span class="sort-arrow">⇅</span></th>
@@ -62,6 +63,7 @@
                             </span>
                         </a>
                     </td>
+                    <td>{% if p.currency %}<span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</td>
                     <td>{{ p.quantity }}</td>
                     <td>{{ "%.2f"|format(p.avg_price) }}</td>
                     <td>{{ "%.2f"|format(p.current_price) }}</td>

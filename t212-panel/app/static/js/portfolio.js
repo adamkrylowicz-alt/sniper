@@ -19,9 +19,23 @@ const REFRESH_DELAY_MS = 1500;
 // z T212) - currentPositions/currentTotals to dane z OSTATNIEGO udanego
 // odswiezenia, zeby klik sortujacy mial z czego sortowac bez ponownego
 // zapytania do T212, i zeby wybrany sort PRZETRWAL kolejne auto-odswiezenia.
+// Zapisywany tez do localStorage (SORT_STORAGE_KEY), zeby przetrwal PELNE
+// przeladowanie strony (F5) - bez tego po odswiezeniu wracalo zawsze do
+// domyslnej kolejnosci z backendu (wartosc malejaco), mimo ze user wybral
+// inny sort przed chwila (zgloszone przez Adama, 27.07.2026).
+const SORT_STORAGE_KEY = "snajper-portfolio-sort";
 let currentPositions = null;
 let currentTotals = { value: 0, ppl: 0, pplPct: 0 };
 const sortState = { key: null, dir: 1 };
+try {
+    const saved = JSON.parse(localStorage.getItem(SORT_STORAGE_KEY));
+    if (saved && saved.key) {
+        sortState.key = saved.key;
+        sortState.dir = saved.dir === -1 ? -1 : 1;
+    }
+} catch (err) {
+    // localStorage niedostepny/uszkodzony wpis - zostaje domyslny brak sortu
+}
 
 function escapeHtml(text) {
     const div = document.createElement("div");
@@ -68,6 +82,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
                         </span>
                     </a>
                 </td>
+                <td>${p.currency ? `<span class="currency-badge currency-badge--${escapeHtml(p.currency.toLowerCase())}">${escapeHtml(p.currency)}</span>` : ""}</td>
                 <td>${p.quantity}</td>
                 <td>${p.avg_price.toFixed(2)}</td>
                 <td>${p.current_price.toFixed(2)}</td>
@@ -104,6 +119,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
             <thead>
                 <tr>
                     ${sortHeaderCell("Aktywo", "name")}
+                    ${sortHeaderCell("Waluta", "currency")}
                     ${sortHeaderCell("Ilość", "quantity")}
                     ${sortHeaderCell("Średnia cena", "avg_price")}
                     ${sortHeaderCell("Cena teraz", "current_price")}
@@ -133,6 +149,11 @@ function renderSorted() {
                 const bv = (b.name || b.display_ticker).toLowerCase();
                 return av < bv ? -sortState.dir : av > bv ? sortState.dir : 0;
             }
+            if (key === "currency") {
+                const av = (a.currency || "").toLowerCase();
+                const bv = (b.currency || "").toLowerCase();
+                return av < bv ? -sortState.dir : av > bv ? sortState.dir : 0;
+            }
             return (a[key] - b[key]) * sortState.dir;
         });
     }
@@ -151,6 +172,11 @@ function sortPositions(key) {
     } else {
         sortState.key = key;
         sortState.dir = 1;
+    }
+    try {
+        localStorage.setItem(SORT_STORAGE_KEY, JSON.stringify({ key: sortState.key, dir: sortState.dir }));
+    } catch (err) {
+        // localStorage niedostepny (np. tryb prywatny) - sort dziala, po prostu nie przetrwa F5
     }
     renderSorted();
 }
