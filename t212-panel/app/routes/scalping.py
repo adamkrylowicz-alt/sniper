@@ -28,7 +28,7 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 
 from ..extensions import db
 from ..models import ActiveTrade, BotAsset, Instrument, OrderLog
-from ..services import logo_cache
+from ..services import logo_cache, price_feed
 from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
@@ -386,11 +386,32 @@ def candles():
     na stronie instrumentu (patrz instrument.js). Ograniczone do rozsadnego
     zakresu, zeby ktos przez pomylke/manipulacje URL-em nie zazadal np.
     100 lat danych.
+
+    ?interval=1m opcjonalne (dodane 2026-07-27, Adam: "swieczki 1min na
+    wykresach, tam gdzie sie da poki co czyli usa z alpaca") - zakladka
+    "1min" na stronie instrumentu, TYLKO dla tickerow *_US_EQ (Alpaca,
+    patrz price_feed.get_intraday_1m_chart - inne rynki na razie nie maja
+    wiarygodnego zrodla realnych 1-min swiec). `days` jest wtedy ignorowane
+    (zawsze dzisiejsza sesja).
     """
-    from ..extensions import finnhub
     ticker = request.args.get("ticker", "").strip()
     if not ticker:
         return jsonify(ok=False, error="Brak tickera."), 400
+
+    interval = request.args.get("interval", default="", type=str)
+    if interval == "1m":
+        if not ticker.endswith("_US_EQ"):
+            return jsonify(ok=False, error="Świece 1-min są na razie dostępne tylko dla tickerów USA."), 400
+        candles = price_feed.get_intraday_1m_chart(
+            ticker,
+            current_app.config.get("ALPACA_API_KEY"),
+            current_app.config.get("ALPACA_API_SECRET"),
+        )
+        if not candles:
+            return jsonify(ok=False, error=f"Brak danych 1-min dla {ticker} (poza sesją albo Alpaca niedostępna)."), 404
+        return jsonify(ok=True, ticker=ticker, candles=candles)
+
+    from ..extensions import finnhub
     if not finnhub:
         return jsonify(ok=False, error="Finnhub nie skonfigurowany."), 503
 

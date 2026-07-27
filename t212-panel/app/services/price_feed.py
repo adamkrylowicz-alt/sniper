@@ -63,6 +63,13 @@ REQUEST_TIMEOUT = 10  # sekund
 CACHE_TTL_SECONDS = 30 * 60  # dane do MINI-wykresu, nie do decyzji tradingowych
 _cache_ohlc: dict[str, tuple[float, list[dict] | None]] = {}  # {"AAPL_US_EQ:30": (monotonic_ts, candles)}
 
+# Cache dla wykresu 1-min na stronie instrumentu (get_intraday_1m_chart) -
+# CELOWO OSOBNY od get_eod_intraday_1m (decyzje bota EOD, zero cache'u) - to
+# widok dla czlowieka, nie decyzja tradingowa co do sekundy, wiec krotki
+# cache jest OK i oszczedza budzet Alpaca gdy ktos odswieza/przelacza karty.
+CACHE_1M_TTL_SECONDS = 60
+_cache_1m: dict[str, tuple[float, list[dict] | None]] = {}  # {"AAPL_US_EQ": (monotonic_ts, candles)}
+
 _KNOWN_SUFFIXES = ("_US_EQ", "_EQ")
 _US_SUFFIX = "_US_EQ"
 
@@ -286,6 +293,42 @@ def get_mini_charts_ohlc(
 ) -> dict[str, list[dict] | None]:
     """Wygodny batch - jedno wywołanie JS->Flask na cały widok Pie zamiast N osobnych requestów."""
     return {t: get_mini_chart_ohlc(api_key, t, days, alpaca_api_key, alpaca_api_secret) for t in tickers}
+
+
+def get_intraday_1m_chart(
+    ticker: str, alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
+) -> list[dict] | None:
+    """
+    Świece 1-minutowe DZISIEJSZEJ sesji do wykresu na stronie szczegółów
+    instrumentu (routes/scalping.py::candles, instrument.js - zakładka
+    "1min" obok 1T/1M/3M/1R/MAX). Dodane 2026-07-27 na życzenie Adama:
+    "popracuj nad świeczkami 1min na wykresach, tam gdzie się da poki co
+    czyli usa z alpaca".
+
+    TYLKO dla tickerów `*_US_EQ` (Alpaca) - zwraca None dla wszystkiego
+    innego. Inne rynki (EUR itd.) na razie NIE mają wiarygodnego, taniego
+    źródła realnych 1-min świec (patrz docstring get_eod_intraday_1m -
+    sprawdzone 5 płatnych alternatyw, żadna nie dawała taniego 1-min dla
+    Europy) - świadomie pominięte, docelowo IBKR gdy dostępne.
+
+    CELOWO OSOBNA funkcja od get_eod_intraday_1m (ten sam surowy fetch
+    _fetch_alpaca_bars_1m, ale get_eod_intraday_1m ma ZERO cache'u, bo to
+    dane do decyzji tradingowej bota EOD sprzed sekund) - tutaj to widok
+    dla człowieka, więc krótki cache (CACHE_1M_TTL_SECONDS) jest pożądany,
+    nie problemem - oszczędza budżet Alpaca gdy ktoś odświeża/przełącza
+    zakładki na stronie instrumentu.
+    """
+    if not (ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret):
+        return None
+
+    now = time.monotonic()
+    cached = _cache_1m.get(ticker)
+    if cached and (now - cached[0]) < CACHE_1M_TTL_SECONDS:
+        return cached[1]
+
+    candles = _fetch_alpaca_bars_1m(alpaca_api_key, alpaca_api_secret, ticker)
+    _cache_1m[ticker] = (now, candles)
+    return candles
 
 
 # -- Cena "na żywo" do decyzji bota (Etap 2, services/bot_engine.py) --------

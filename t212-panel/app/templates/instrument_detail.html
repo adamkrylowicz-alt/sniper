@@ -30,6 +30,9 @@
     </div>
 
     <div class="tabs" id="instrument-range-tabs" role="tablist">
+        {% if ticker.endswith('_US_EQ') %}
+        <button type="button" class="tab" data-interval="1m" title="Świece 1-minutowe dzisiejszej sesji (Alpaca)">1min</button>
+        {% endif %}
         <button type="button" class="tab" data-days="7">1T</button>
         <button type="button" class="tab tab--active" data-days="30">1M</button>
         <button type="button" class="tab" data-days="90">3M</button>

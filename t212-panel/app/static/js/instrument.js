@@ -9,6 +9,7 @@ pie.js (prog potwierdzenia 70% Hard Cap przed duzym zleceniem).
 
 const ticker = INSTRUMENT_TICKER;
 let currentDays = 30;
+const DEFAULT_CHART_EMPTY_TEXT = document.getElementById("instrument-chart-empty").textContent.trim();
 
 // --- Swiece OHLC (SVG) - ten sam algorytm co focus.js/pie.js, wiekszy viewBox ---
 
@@ -38,16 +39,23 @@ function drawCandles(svgEl, candles) {
     svgEl.innerHTML = parts;
 }
 
-async function loadCandles(days) {
+async function loadCandles(days, interval) {
     const svgEl = document.getElementById("instrument-chart");
     const emptyEl = document.getElementById("instrument-chart-empty");
     svgEl.innerHTML = "";
     emptyEl.style.display = "none";
 
     try {
-        const resp = await fetch(`/warp/candles?ticker=${encodeURIComponent(ticker)}&days=${days}`);
+        const params = new URLSearchParams({ ticker });
+        if (interval) {
+            params.set("interval", interval);
+        } else {
+            params.set("days", days);
+        }
+        const resp = await fetch(`/warp/candles?${params.toString()}`);
         const data = await resp.json();
         if (!data.ok || !data.candles || data.candles.length < 2) {
+            emptyEl.textContent = (!data.ok && data.error) ? data.error : DEFAULT_CHART_EMPTY_TEXT;
             emptyEl.style.display = "";
             return;
         }
@@ -64,8 +72,14 @@ document.getElementById("instrument-range-tabs").addEventListener("click", (e) =
 
     document.querySelectorAll("#instrument-range-tabs .tab").forEach((t) => t.classList.remove("tab--active"));
     btn.classList.add("tab--active");
-    currentDays = Number(btn.dataset.days);
-    loadCandles(currentDays);
+
+    // Zakladka "1min" (data-interval) - osobna od data-days (patrz
+    // routes/scalping.py::candles ?interval=1m, tylko tickery *_US_EQ).
+    const interval = btn.dataset.interval || "";
+    if (!interval) {
+        currentDays = Number(btn.dataset.days);
+    }
+    loadCandles(currentDays, interval);
 });
 
 // --- Cena live ---
