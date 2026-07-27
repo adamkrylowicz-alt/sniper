@@ -49,6 +49,54 @@ TICKER_MAP: dict[str, str] = {
 }
 
 
+def _fetch_yahoo_quote(symbol: str) -> dict | None:
+    """
+    Fallback dla get_quote() gdy Finnhub nie ma pokrycia - dodane 2026-07-28,
+    znalezione na żywo na Allianz (ALVd_EQ): `finnhub.get_quote()` zwracał
+    None (Finnhub w praktyce martwy dla większości EU, ten sam problem co
+    gdzie indziej w appce), więc `/warp/quote` (nagłówek ceny na stronie
+    instrumentu + nowa updateLivePriceLine()) w ogóle nie dostawał danych dla
+    tickerów EUR - dokładnie tego, dla którego ta funkcja miała pomóc.
+
+    Yahoo Finance Chart API `meta` (ten sam endpoint co _fetch_yahoo_candles/
+    _fetch_yahoo_ohlc, ale sekcja `meta` zamiast `indicators` - ma gotowe
+    `regularMarketPrice`/`previousClose`/`regularMarketDayHigh`/`Low`, bez
+    liczenia niczego z surowych świec), bez klucza. Zwraca strukturę zgodną
+    z Finnhub /quote (c/d/dp/h/l/o/pc) - `o` (open) niedostępne w `meta`,
+    zostaje None (żaden dotychczasowy konsument get_quote() go nie używa).
+    """
+    try:
+        resp = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+            params={"range": "1d", "interval": "1m"},
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        if resp.status_code != 200:
+            return None
+        meta = resp.json()["chart"]["result"][0]["meta"]
+        current = meta.get("regularMarketPrice")
+        prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
+        if current is None or prev_close is None:
+            return None
+        high = meta.get("regularMarketDayHigh")
+        low = meta.get("regularMarketDayLow")
+        change = float(current) - float(prev_close)
+        change_pct = (change / float(prev_close) * 100) if prev_close else 0.0
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        return None
+
+    return {
+        "c": round(float(current), 4),
+        "d": round(change, 4),
+        "dp": round(change_pct, 4),
+        "h": round(float(high), 4) if high is not None else None,
+        "l": round(float(low), 4) if low is not None else None,
+        "o": None,
+        "pc": round(float(prev_close), 4),
+    }
+
+
 def _fetch_yahoo_candles(symbol: str, days: int) -> list[float] | None:
     """
     Fallback dla get_sparkline() gdy Finnhub /stock/candle nie jest dostepny
@@ -212,7 +260,15 @@ class FinnhubClient:
         if data and data.get("c", 0) != 0:  # c=0 oznacza brak danych
             self._quote_cache[symbol] = (data, time.time())
             return data
-        return None
+
+        # Fallback Yahoo (dodane 2026-07-28, patrz _fetch_yahoo_quote) -
+        # Finnhub w praktyce martwy dla wiekszosci tickerow EU, bez tego
+        # /warp/quote (naglowek ceny + updateLivePriceLine() na stronie
+        # instrumentu) w ogole nie dostawal danych dla takich tickerow.
+        data = _fetch_yahoo_quote(symbol)
+        if data:
+            self._quote_cache[symbol] = (data, time.time())
+        return data
 
     def get_sparkline(self, t212_ticker: str, days: int = 7) -> list[float] | None:
         """
