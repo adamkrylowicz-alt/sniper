@@ -514,7 +514,7 @@ def activate():
             ),
         ), 400
 
-    bot_credentials.activate(user_id, master_key)
+    bot_credentials.activate(user_id, master_key, current_app.instance_path)
 
     settings = _get_or_create_settings(user_id)
     settings.is_bot_active = True
@@ -550,7 +550,7 @@ def deactivate():
     signal_settings = SignalSettings.query.filter_by(user_id=user_id).first()
     eod_settings = EODSettings.query.filter_by(user_id=user_id).first()
     if not (signal_settings and signal_settings.is_active) and not (eod_settings and eod_settings.is_active):
-        bot_credentials.deactivate(user_id)
+        bot_credentials.deactivate(user_id, current_app.instance_path)
 
     return jsonify(ok=True)
 

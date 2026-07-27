@@ -117,7 +117,28 @@ def _register_scheduler(app: Flask) -> None:
     if Config.DEBUG and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
 
-    from .services import bot_engine, eod_engine, signal_engine
+    from .services import bot_credentials, bot_engine, eod_engine, signal_engine
+
+    # Autostart TYMCZASOWY "DO ODWOŁANIA" (Adam, 2026-07-27) - patrz pelny
+    # docstring w services/bot_credentials.py. Odtwarza poswiadczenia
+    # zapisane przy ostatniej recznej aktywacji (dowolnego z trzech botow),
+    # bez ponownego pytania o haslo, i od razu wola reconcile() KAZDEGO z
+    # trzech silnikow dla kazdego odtworzonego usera - dokladnie ten sam
+    # efekt co reczna aktywacja w UI (kazdy reconcile() sam sprawdza swoja
+    # WLASNA flage is_bot_active/is_active w bazie i nic nie robi dla
+    # silnika ktory faktycznie nie byl wlaczony, wiec bezpieczne wolac
+    # wszystkie trzy niezaleznie od tego, ktore konkretnie user mial aktywne).
+    restored_user_ids = bot_credentials.load_autostart(app.instance_path)
+    if restored_user_ids:
+        import logging
+        logging.getLogger(__name__).info(
+            f"Autostart bota: odtworzono poswiadczenia (bez hasla) dla user_id={restored_user_ids}"
+        )
+        with app.app_context():
+            for uid in restored_user_ids:
+                bot_engine.reconcile(uid)
+                signal_engine.reconcile(uid)
+                eod_engine.reconcile(uid)
 
     scheduler.add_job(
         func=lambda: bot_engine.tick(app),
