@@ -148,6 +148,58 @@ async function loadCandles(days, interval) {
     }
 }
 
+// Zapamietanie wybranej zakladki wykresu w localStorage (dodane 2026-07-28,
+// Adam: "przy wykresach dodaj ta sama funkcje co przy botach przy
+// odswiezaniu pozycji ma byc w tym samym stanie" - ten sam wzorzec co
+// portfolio.js::SORT_STORAGE_KEY i common.js::initReorderablePanels,
+// GLOBALNE (nie per-ticker) - jeden wspolny "ostatnio wybrany zakres",
+// stosowany przy wejsciu na KAZDY instrument, nie tylko ten sam co przedtem.
+const CHART_RANGE_STORAGE_KEY = "snajper-instrument-chart-range";
+
+function saveChartRange(days, interval) {
+    try {
+        localStorage.setItem(CHART_RANGE_STORAGE_KEY, JSON.stringify({ days, interval }));
+    } catch (err) { /* localStorage niedostepny (np. tryb prywatny) - cichy no-op */ }
+}
+
+function loadSavedChartRange() {
+    try {
+        const raw = localStorage.getItem(CHART_RANGE_STORAGE_KEY);
+        return raw ? JSON.parse(raw) : null;
+    } catch (err) {
+        return null;
+    }
+}
+
+// Wolane RAZ przy wejsciu na strone zamiast zawsze-domyslnego "1M" (30 dni) -
+// odtwarza ostatnio wybrana zakladke z localStorage. Jesli zapisana zakladka
+// to np. "1min", a AKTUALNY ticker nie jest USA (wiec ta zakladka w ogole
+// nie istnieje na tej stronie - patrz {% if ticker.endswith('_US_EQ') %} w
+// szablonie) - cichy fallback na domyslnie aktywna zakladke w HTML (1M),
+// zamiast bledu/pustego wykresu.
+function applyInitialChartRange() {
+    const tabsContainer = document.getElementById("instrument-range-tabs");
+    const saved = loadSavedChartRange();
+    let targetBtn = null;
+    if (saved) {
+        targetBtn = saved.interval
+            ? tabsContainer.querySelector(`.tab[data-interval="${saved.interval}"]`)
+            : tabsContainer.querySelector(`.tab[data-days="${saved.days}"]`);
+    }
+    if (!targetBtn) {
+        targetBtn = tabsContainer.querySelector(".tab--active") || tabsContainer.querySelector(".tab");
+    }
+
+    tabsContainer.querySelectorAll(".tab").forEach((t) => t.classList.remove("tab--active"));
+    targetBtn.classList.add("tab--active");
+
+    const interval = targetBtn.dataset.interval || "";
+    if (!interval) {
+        currentDays = Number(targetBtn.dataset.days);
+    }
+    loadCandles(currentDays, interval);
+}
+
 document.getElementById("instrument-range-tabs").addEventListener("click", (e) => {
     const btn = e.target.closest(".tab");
     if (!btn) return;
@@ -161,6 +213,7 @@ document.getElementById("instrument-range-tabs").addEventListener("click", (e) =
     if (!interval) {
         currentDays = Number(btn.dataset.days);
     }
+    saveChartRange(currentDays, interval);
     loadCandles(currentDays, interval);
 });
 
@@ -482,7 +535,7 @@ document.getElementById("position-qty").addEventListener("click", () => {
 // --- Init ---
 
 setupPresets();
-loadCandles(currentDays);
+applyInitialChartRange();
 refreshQuote();
 loadPosition();
 loadTradeLevels();
