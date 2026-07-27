@@ -173,6 +173,7 @@ SELLING_EQUITY_NOT_OWNED_ERROR_TYPE = "/api-errors/selling-equity-not-owned"
 # _log_order stamtad).
 from .market_hours import (  # noqa: E402
     _AMSTERDAM_TZ, EU_SESSION_WINDOW, US_SESSION_WINDOW, is_market_open as _market_open,
+    is_position_management_hours as _position_hours,
 )
 
 # Konto Adama jest w EUR - kupno/sprzedaż instrumentu w USD wymaga DWÓCH
@@ -588,7 +589,7 @@ def _retry_pending_sells(
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()
     )
-    candidates = [t for t in candidates if _market_open(t.currency)]
+    candidates = [t for t in candidates if _position_hours(t.currency)]
     if not candidates:
         return
 
@@ -641,7 +642,7 @@ def _retry_pending_buys(
         .filter(db.or_(ActiveTrade.next_buy_retry_at.is_(None), ActiveTrade.next_buy_retry_at <= now))
         .all()
     )
-    candidates = [t for t in candidates if _market_open(t.currency)]
+    candidates = [t for t in candidates if _position_hours(t.currency)]
     if not candidates:
         return
 
@@ -885,7 +886,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()
     )
-    candidates = [t for t in candidates if _market_open(t.currency)]
+    candidates = [t for t in candidates if _position_hours(t.currency)]
     if not candidates:
         return
 
@@ -1084,7 +1085,7 @@ def _trigger_dca_buys(user_id: int, client: T212Client, settings: RiskSettings) 
         .filter(ActiveTrade.dca_level < settings.max_dca_levels - 1)
         .all()
     )
-    candidates = [t for t in candidates if _market_open(t.currency)]
+    candidates = [t for t in candidates if _position_hours(t.currency)]
     if not candidates:
         return
 

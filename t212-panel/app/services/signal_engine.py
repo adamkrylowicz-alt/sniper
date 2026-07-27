@@ -337,7 +337,7 @@ def _manage_exits(user_id: int, client: T212Client, settings: SignalSettings) ->
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
     for trade in open_trades:
-        if not market_hours.is_market_open(trade.currency):
+        if not market_hours.is_position_management_hours(trade.currency):
             continue
 
         # Stop-loss sam sie wykonal na T212 (zniknal z pending) - zamykamy lokalnie.
@@ -388,7 +388,7 @@ def _manage_paper_exits(user_id: int) -> None:
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
     for trade in open_trades:
-        if not market_hours.is_market_open(trade.currency):
+        if not market_hours.is_position_management_hours(trade.currency):
             continue
         price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
         if price is None or price <= 0:
