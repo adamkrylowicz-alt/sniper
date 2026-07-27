@@ -1950,7 +1950,7 @@ patrz templates/instrument_detail.html i static/js/instrument.js. Reuzywa
 .tabs/.tab (zakladki kategorii), .focus-tile__btn/.tile__preset (Kup/Sprzedaj,
 ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 */
-.instrument-detail { max-width: 720px; }
+.instrument-detail { max-width: 900px; }
 
 .instrument-detail__header {
     display: flex;
@@ -2001,9 +2001,9 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 
 .instrument-detail__chart-wrap {
     width: 100%;
-    aspect-ratio: 600 / 220;
-    min-height: 160px;
-    max-height: 420px;
+    aspect-ratio: 600 / 300;
+    min-height: 220px;
+    max-height: 520px;
     border-bottom: 1px solid var(--hairline);
     margin-bottom: 16px;
     display: flex;
