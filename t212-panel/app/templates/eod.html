@@ -16,9 +16,9 @@
     </p>
 
     <nav class="tabs section-nav" aria-label="Sekcje strony">
-        <a class="tab" href="#section-activation">Aktywacja</a>
         <a class="tab" href="#section-assets">Aktywa</a>
         <a class="tab" href="#section-positions">Otwarte pozycje</a>
+        <a class="tab" href="#section-activation">Aktywacja</a>
         <a class="tab" href="#section-risk">Ustawienia ryzyka</a>
         <a class="tab" href="#section-log">Dziennik</a>
     </nav>
@@ -34,16 +34,6 @@
         appki czyści je celowo) — kliknij "Uruchom" ponownie, żeby faktycznie ruszył.
     </div>
     {% endif %}
-
-    <div class="pie-detail__add-asset" id="section-activation">
-        <label class="auth-form__label" for="eod-password">Hasło (do aktywacji)</label>
-        <input type="password" id="eod-password" class="auth-form__input" autocomplete="current-password">
-        <div style="display:flex; gap:8px; margin-top:8px">
-            <button type="button" id="btn-eod-activate" class="account-bar__btn account-bar__btn--start">Uruchom</button>
-            <button type="button" id="btn-eod-deactivate" class="account-bar__btn account-bar__btn--stop">Wyłącz</button>
-        </div>
-        <p class="auth-box__hint" id="eod-activate-status"></p>
-    </div>
 
     <h2 class="section-heading" id="section-assets">LISTA "HIGH CONVICTION"</h2>
     <p class="auth-box__hint">
@@ -123,6 +113,7 @@
         <thead>
             <tr>
                 <th class="history-table__th--sortable" data-sort-key="name">Aktywo <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="currency">Waluta <span class="sort-arrow">⇅</span></th>
                 <th class="history-table__th--sortable" data-sort-key="quantity">Ilość <span class="sort-arrow">⇅</span></th>
                 <th class="history-table__th--sortable" data-sort-key="buy_price">Cena wejścia <span class="sort-arrow">⇅</span></th>
                 <th class="history-table__th--sortable" data-sort-key="drop_pct">Spadek / Tier <span class="sort-arrow">⇅</span></th>
@@ -143,6 +134,7 @@
                         <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
                     </a>
                 </td>
+                <td data-sort-value="{{ p.currency }}">{% if p.currency %}<span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</td>
                 <td data-sort-value="{{ p.quantity }}">{{ p.quantity }}</td>
                 <td data-sort-value="{{ p.buy_price }}">{{ p.buy_price }}</td>
                 <td data-sort-value="{{ p.drop_pct_at_entry }}">{{ "%.2f"|format(p.drop_pct_at_entry|float * 100) }}% (x{{ p.size_multiplier }})</td>
@@ -166,6 +158,16 @@
         </tbody>
     </table>
     {% endif %}
+
+    <div class="pie-detail__add-asset" id="section-activation">
+        <label class="auth-form__label" for="eod-password">Hasło (do aktywacji)</label>
+        <input type="password" id="eod-password" class="auth-form__input" autocomplete="current-password">
+        <div style="display:flex; gap:8px; margin-top:8px">
+            <button type="button" id="btn-eod-activate" class="account-bar__btn account-bar__btn--start">Uruchom</button>
+            <button type="button" id="btn-eod-deactivate" class="account-bar__btn account-bar__btn--stop">Wyłącz</button>
+        </div>
+        <p class="auth-box__hint" id="eod-activate-status"></p>
+    </div>
 
     <details class="collapsible" id="section-risk">
     <summary class="section-heading">USTAWIENIA RYZYKA</summary>

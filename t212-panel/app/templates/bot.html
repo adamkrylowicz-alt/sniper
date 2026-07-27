@@ -13,9 +13,9 @@
     </p>
 
     <nav class="tabs section-nav" aria-label="Sekcje strony">
-        <a class="tab" href="#section-activation">Aktywacja</a>
         <a class="tab" href="#section-assets">Aktywa</a>
         <a class="tab" href="#section-positions">Otwarte pozycje</a>
+        <a class="tab" href="#section-activation">Aktywacja</a>
         <a class="tab" href="#section-risk">Ustawienia ryzyka</a>
         <a class="tab" href="#section-log">Dziennik</a>
     </nav>
@@ -32,16 +32,6 @@
         "Uruchom bota" ponownie, żeby faktycznie ruszył.
     </div>
     {% endif %}
-
-    <div class="pie-detail__add-asset" id="section-activation">
-        <label class="auth-form__label" for="bot-password">Hasło (do aktywacji bota)</label>
-        <input type="password" id="bot-password" class="auth-form__input" autocomplete="current-password">
-        <div style="display:flex; gap:8px; margin-top:8px">
-            <button type="button" id="btn-bot-activate" class="account-bar__btn account-bar__btn--start">Uruchom bota</button>
-            <button type="button" id="btn-bot-deactivate" class="account-bar__btn account-bar__btn--stop">Wyłącz bota</button>
-        </div>
-        <p class="auth-box__hint" id="bot-activate-status"></p>
-    </div>
 
     <h2 class="section-heading" id="section-assets">AKTYWA BOTA</h2>
     <p class="auth-box__hint">
@@ -129,6 +119,7 @@
         <thead>
             <tr>
                 <th class="history-table__th--sortable" data-sort-key="name">Aktywo <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="currency">Waluta <span class="sort-arrow">⇅</span></th>
                 <th class="history-table__th--sortable" data-sort-key="quantity">Ilość <span class="sort-arrow">⇅</span></th>
                 <th class="history-table__th--sortable" data-sort-key="avg_price">Śr. cena wejścia <span class="sort-arrow">⇅</span></th>
                 <th class="history-table__th--sortable" data-sort-key="stop_price">Trailing STOP <span class="sort-arrow">⇅</span></th>
@@ -147,6 +138,7 @@
                         <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
                     </a>
                 </td>
+                <td data-sort-value="{{ p.currency }}">{% if p.currency %}<span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</td>
                 <td data-sort-value="{{ p.quantity }}">{{ p.quantity }}{% if p.dca_level %} <span class="auth-box__hint">(DCA {{ p.dca_level }})</span>{% endif %}</td>
                 <td data-sort-value="{{ p.average_price }}">{{ p.average_price }}</td>
                 <td data-sort-value="{{ p.stop_target_price or '' }}">
@@ -175,6 +167,16 @@
         </tbody>
     </table>
     {% endif %}
+
+    <div class="pie-detail__add-asset" id="section-activation">
+        <label class="auth-form__label" for="bot-password">Hasło (do aktywacji bota)</label>
+        <input type="password" id="bot-password" class="auth-form__input" autocomplete="current-password">
+        <div style="display:flex; gap:8px; margin-top:8px">
+            <button type="button" id="btn-bot-activate" class="account-bar__btn account-bar__btn--start">Uruchom bota</button>
+            <button type="button" id="btn-bot-deactivate" class="account-bar__btn account-bar__btn--stop">Wyłącz bota</button>
+        </div>
+        <p class="auth-box__hint" id="bot-activate-status"></p>
+    </div>
 
     <details class="collapsible" id="section-risk">
     <summary class="section-heading">USTAWIENIA RYZYKA</summary>
