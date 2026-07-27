@@ -973,11 +973,24 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             # uzbrojeniu w ogole sie nie wlaczal. Naprawione: floor liczony
             # WYLACZNIE tutaj, raz, przy przejsciu z nieuzbrojonej na
             # uzbrojona - kolejne tiki juz go nie przeliczaja (patrz else).
+            #
+            # floor_anchor = max(ref_price, current_price), NIE goly ref_price
+            # (bug znaleziony 2026-07-27 na CRM_US_EQ - stop uzbrojony na 144
+            # przy cenie 174, prawie caly papierowy zysk bez ochrony). To
+            # uzbrojenie NIE zawsze dzieje sie "tuz po zakupie" - DCA fill
+            # (_confirm_dca_fills) i nieudane cancel/replace (bledy T212)
+            # CELOWO/przypadkowo zeruja stop_order_id, wiec do faktycznego
+            # ponownego uzbrojenia moze dojsc dlugo po tym jak cena juz
+            # odjechala daleko od ref_price. Floor liczony od goleg ref_price
+            # w takiej sytuacji zostawia ogromna, niezamierzona dziure miedzy
+            # stopem a cena. Anchor na max() nie zmienia zachowania w typowym
+            # przypadku (uzbrojenie zaraz po zakupie, current_price≈ref_price).
+            floor_anchor = max(ref_price, current_price)
             atr_distance = _get_atr_stop_distance(trade.ticker)
             if atr_distance is not None:
-                candidate_stop = (ref_price - atr_distance).quantize(Decimal("0.0001"))
+                candidate_stop = (floor_anchor - atr_distance).quantize(Decimal("0.0001"))
             else:
-                candidate_stop = (ref_price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
+                candidate_stop = (floor_anchor * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
         else:
             # JUZ uzbrojony - czysty ciagly trailing wzgledem WLASNEGO
             # poprzedniego poziomu (nigdy w dol), bez ponownego przeliczania
