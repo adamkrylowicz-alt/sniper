@@ -14,11 +14,26 @@ który ma działać na świecach 1-min - ten moduł jeszcze nie zaimplementowany
 JEDNO wejście na sygnał, bez DCA.
 
 Zarządzanie ryzykiem: Stop Loss = ATR(14) * stop_loss_atr_mult (domyślnie
-1.8), Take Profit = ATR(14) * take_profit_atr_mult (domyślnie 3.0) - oba
-liczone RAZ przy wejściu (nie trailing, w odróżnieniu od Micro-Grid) i
-zostają stałe przez cały czas trwania pozycji - świadome uproszczenie na
-start, "sprawdzimy w boju" (Adam, 2026-07-24) zanim dokładać complexity
-trailing.
+1.8), Take Profit = ATR(14) * take_profit_atr_mult (domyślnie 3.0) - OBA
+liczone przy wejściu, take-profit zostaje STAŁY przez cały czas trwania
+pozycji (świadome uproszczenie z 24.07 - "sprawdzimy w boju" zanim dokładać
+complexity trailing do TP).
+
+TRAILING STOP-LOSS (dodane 2026-07-28, Adam: "dodaj trailing do sygnalu, bo
+to chroni zysk a to jest swietosc dla botow tych i kazdych innych
+przyszlych" - patrz [[feedback_snajper_profit_protection_priority]] w
+pamięci Claude, ta sama zasada co Micro-Grid) - `_trail_stop_loss()` w
+`_manage_exits()` przesuwa stop-loss W GÓRĘ (nigdy w dół) o tę SAMĄ
+odległość co przy wejściu (`atr_at_entry * stop_loss_atr_mult`, licząc od
+BIEŻĄCEJ ceny zamiast ceny wejścia) - naturalnie zaczyna działać dopiero gdy
+pozycja jest na plusie (bo dopiero wtedy `cena - dystans > stop przy
+wejściu`), więc chroni WYŁĄCZNIE już zarobiony zysk, nigdy nie zaciska się
+przed wejściem w plus. Prostszy model niż ciągły trailing Micro-Grid
+(`_manage_trailing_exit` - tam dwie fazy: szeroki floor przy pierwszym
+uzbrojeniu, potem ciasny `current_price*(1-step)`) - tu jeden, spójny
+dystans przez cały czas, celowo (Sygnał ma STAŁY take-profit jako "sufit",
+więc stop-loss nie musi ciasno gonić ceny - wystarczy że idzie w górę razem
+z nią, chroniąc rosnącą część zysku).
 
 Mechanika wyjścia - TA SAMA przyczyna co przeprojektowanie Micro-Grid
 21.07.2026 (T212 nie pozwala trzymać LIMIT SELL + STOP jednocześnie na te
@@ -319,6 +334,66 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalS
             )
 
 
+# Ulamek jednego ATR - jak duza musi byc poprawa zanim oplaca sie placic
+# Cancel-Replace z ciasnego rate limitu demo T212 (ten sam powod co
+# MIN_TRAIL_REQUOTE_FRACTION w bot_engine.py, tylko liczony wzgledem ATR
+# zamiast wzgledem take_profit_step_pct - Sygnal nie ma odpowiednika tego
+# ostatniego).
+MIN_TRAIL_REQUOTE_ATR_FRACTION = Decimal("0.1")
+
+
+def _trail_stop_loss(
+    user_id: int, client: T212Client, trade: SignalTrade, settings: SignalSettings, price: Decimal,
+) -> None:
+    """
+    Przesuwa stop-loss W GÓRĘ (nigdy w dół) gdy bieżąca cena pozwala na
+    ciaśniejszy poziom niż obecny - dodane 2026-07-28, patrz uzasadnienie w
+    docstringu modułu ("TRAILING STOP-LOSS"). Ten sam dystans co przy
+    wejściu (`atr_at_entry * stop_loss_atr_mult`), liczony od BIEŻĄCEJ ceny -
+    naturalnie aktywuje się dopiero gdy pozycja jest na plusie względem
+    wejścia, więc chroni WYŁĄCZNIE już zarobiony zysk.
+
+    Wołane z `_manage_exits()` TYLKO gdy `price < take_profit_price` (jeśli
+    take-profit już osiągnięty, pozycja i tak zaraz się zamyka - nie ma sensu
+    przesuwać stopu tuż przed sprzedażą).
+    """
+    if trade.atr_at_entry is None or trade.atr_at_entry <= 0:
+        return  # brak ATR z wejscia - nie ma jak policzyc dystansu, zostaw sztywny stop
+
+    candidate_stop = (price - trade.atr_at_entry * settings.stop_loss_atr_mult).quantize(Decimal("0.0001"))
+    if candidate_stop <= trade.stop_loss_price:
+        return  # nic do poprawy - stop juz jest na tym poziomie albo wyzej (nigdy nie cofamy)
+
+    min_requote_threshold = trade.stop_loss_price + (trade.atr_at_entry * MIN_TRAIL_REQUOTE_ATR_FRACTION)
+    if candidate_stop < min_requote_threshold:
+        return  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
+
+    if trade.stop_order_id:
+        try:
+            client.cancel_order(trade.stop_order_id)
+        except T212APIError as exc:
+            # Mogl sie wlasnie wykonac rownolegle (wyscig z T212) - kolejny
+            # tick wykryje to jako zamkniecie (zniknie z pending). Nie
+            # probujemy wystawic nowego stopu na pozycje ktora juz mogla
+            # przestac istniec.
+            _log(user_id, "INFO", f"{trade.ticker}: przesunięcie trailing stop-loss - anulowanie starego ({trade.stop_order_id}) nie powiodło się (mógł się już wykonać) - {exc}")
+            return
+
+    try:
+        stop_result = client.place_stop_order(trade.ticker, -trade.quantity, candidate_stop)
+    except T212APIError as exc:
+        trade.stop_order_id = None
+        db.session.commit()
+        _log(user_id, "ERROR", f"{trade.ticker}: uzbrojenie przesuniętego stop-loss (target {candidate_stop}) nie powiodło się - {exc}. Pozycja NIECHRONIONA do następnego ticku.")
+        return
+
+    old_stop = trade.stop_loss_price
+    trade.stop_loss_price = candidate_stop
+    trade.stop_order_id = stop_result.order_id
+    db.session.commit()
+    _log(user_id, "INFO", f"{trade.ticker}: trailing stop-loss przesunięty z {old_stop:.4f} na {candidate_stop:.4f} (cena teraz {price:.4f}).")
+
+
 def _manage_exits(user_id: int, client: T212Client, settings: SignalSettings) -> None:
     open_trades = SignalTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True,
@@ -326,11 +401,20 @@ def _manage_exits(user_id: int, client: T212Client, settings: SignalSettings) ->
     if not open_trades:
         return
 
+    # Niepowodzenie TEGO zapytania kiedys (przed 2026-07-28) przerywalo CALA
+    # funkcje wczesnym returnem - blokujac TEZ trailing stop-loss/take-profit,
+    # mimo ze tylko wykrywanie "czy stop juz sam sie wykonal" (nizej) go
+    # naprawde potrzebuje. Ochrona zysku ma pierwszenstwo (patrz
+    # [[feedback_snajper_profit_protection_priority]]) - fetch_ok=False
+    # wylacza WYLACZNIE ta jedna detekcje, reszta petli (TP, trailing) leci
+    # dalej normalnie.
     try:
         pending_order_ids = {str(o.get("id")) for o in client.get_pending_orders()}
+        pending_fetch_ok = True
     except T212APIError as exc:
         _log(user_id, "ERROR", f"Nie udało się pobrać zleceń oczekujących (wyjścia) - {exc}")
-        return
+        pending_order_ids = set()
+        pending_fetch_ok = False
 
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
@@ -341,7 +425,7 @@ def _manage_exits(user_id: int, client: T212Client, settings: SignalSettings) ->
             continue
 
         # Stop-loss sam sie wykonal na T212 (zniknal z pending) - zamykamy lokalnie.
-        if trade.stop_order_id and trade.stop_order_id not in pending_order_ids:
+        if pending_fetch_ok and trade.stop_order_id and trade.stop_order_id not in pending_order_ids:
             _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=trade.stop_loss_price)
             continue
 
@@ -350,6 +434,7 @@ def _manage_exits(user_id: int, client: T212Client, settings: SignalSettings) ->
             continue
 
         if price < trade.take_profit_price:
+            _trail_stop_loss(user_id, client, trade, settings, price)
             continue
 
         # Take-profit pilnowany w softwarze (patrz docstring modulu) - najpierw
@@ -377,8 +462,19 @@ def _manage_exits(user_id: int, client: T212Client, settings: SignalSettings) ->
         _finalize_closed_trade(user_id, trade, "take-profit", fill_price=price)
 
 
-def _manage_paper_exits(user_id: int) -> None:
-    """Pozycje papierowe nie maja zadnego zlecenia na T212 - stop-loss/take-profit sprawdzane WYLACZNIE tutaj, w softwarze."""
+def _trail_stop_loss_paper(trade: SignalTrade, settings: SignalSettings, price: Decimal) -> None:
+    """Jak _trail_stop_loss(), ale bez T212 (pozycja papierowa - czysty zapis do bazy, zero zlecen/rate limitu)."""
+    if trade.atr_at_entry is None or trade.atr_at_entry <= 0:
+        return
+    candidate_stop = (price - trade.atr_at_entry * settings.stop_loss_atr_mult).quantize(Decimal("0.0001"))
+    if candidate_stop <= trade.stop_loss_price:
+        return
+    trade.stop_loss_price = candidate_stop
+    db.session.commit()
+
+
+def _manage_paper_exits(user_id: int, settings: SignalSettings) -> None:
+    """Pozycje papierowe nie maja zadnego zlecenia na T212 - stop-loss/take-profit (w tym trailing) sprawdzane WYLACZNIE tutaj, w softwarze."""
     open_trades = SignalTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=True).all()
     if not open_trades:
         return
@@ -397,6 +493,8 @@ def _manage_paper_exits(user_id: int) -> None:
             _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=price)
         elif price >= trade.take_profit_price:
             _finalize_closed_trade(user_id, trade, "take-profit", fill_price=price)
+        else:
+            _trail_stop_loss_paper(trade, settings, price)
 
 
 def reconcile(user_id: int) -> None:
@@ -413,7 +511,7 @@ def reconcile(user_id: int) -> None:
     if settings is None:
         return
 
-    _manage_paper_exits(user_id)
+    _manage_paper_exits(user_id, settings)
     if not settings.is_paper_trading:
         client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=SIGNAL_ENVIRONMENT)
         _confirm_pending_entries(user_id, client, settings)
@@ -428,7 +526,7 @@ def tick(app) -> None:
             if not settings or not settings.is_active:
                 continue
 
-            _manage_paper_exits(user_id)
+            _manage_paper_exits(user_id, settings)
 
             if settings.is_paper_trading:
                 # Wejscia papierowe nie dotykaja T212 wcale (patrz _enter_position -
