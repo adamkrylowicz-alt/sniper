@@ -142,7 +142,7 @@ import pytz
 from flask import current_app
 
 from ..extensions import db
-from ..models import ActiveTrade, BotAsset, BotAuditLog, RiskSettings, User
+from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from . import bot_credentials, bot_entry_filters, mailer, price_feed
@@ -735,6 +735,87 @@ def _retry_pending_buys(
             f"{trade.ticker}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
             f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}.",
             trade.position_group_id,
+        )
+
+
+def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: RiskSettings) -> None:
+    """
+    Switch "zarządzaj wszystkim" (RiskSettings.manage_all_positions, pomysł
+    #1 z docs/IDEAS_v2.md, zaimplementowany 27.07.2026 na prośbę Adama - "idę
+    spać, a ty handluj"). Gdy włączony: każdy ticker posiadany na koncie T212
+    (quantity > 0) BEZ otwartej ActiveTrade zostaje automatycznie "adoptowany"
+    - dokładnie ten sam mechanizm co ręczne POST /bot/asset/adopt
+    (routes/bot.py::adopt_position), tylko bez interakcji usera.
+
+    Świadomie WYŁĄCZONE DCA dla tych pozycji (grid_anchor_price=0 - ten sam
+    "legacy"/wyłączony-DCA mechanizm co stare pozycje sprzed migracji, patrz
+    komentarz w _trigger_dca_buys) - bot nie zna kontekstu/celu ręcznego
+    zakupu, więc "zarządzanie" ogranicza się do samego wyjścia (trailing
+    stop), zgodnie z zastrzeżeniem zapisanym w IDEAS_v2.md przy tym pomyśle.
+    Oznaczone auto_adopted=True, żeby wyłączenie switcha mogło je odróżnić od
+    pozycji adoptowanych ręcznie (routes/bot.py::_release_auto_adopted_positions) -
+    te ZAWSZE zostają pod botem do ręcznego "Zwolnij", niezależnie od switcha.
+
+    BotAsset auto-tworzony jeśli ticker jeszcze nie jest na liście bota,
+    entry_amount = aktualna wartość pozycji (quantity*avg_price) - wartość
+    czysto formalna (kolumna NOT NULL), nigdy realnie nie użyta bo DCA
+    wyłączone przez grid_anchor_price=0.
+    """
+    if not settings.manage_all_positions:
+        return
+
+    try:
+        portfolio = client.get_portfolio()
+    except T212APIError as exc:
+        _log(user_id, "ERROR", f"Zarządzaj wszystkim: błąd pobierania portfolio - {exc}")
+        return
+
+    open_tickers = {
+        t.ticker for t in ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").all()
+    }
+
+    for p in portfolio:
+        ticker = p.get("ticker")
+        if not ticker or ticker in open_tickers:
+            continue
+        try:
+            quantity = Decimal(str(p.get("quantity", 0)))
+            avg_price = Decimal(str(p.get("averagePrice", 0)))
+        except InvalidOperation:
+            continue
+        if quantity <= 0 or avg_price <= 0:
+            continue
+
+        instrument = Instrument.query.get(ticker)
+        currency = instrument.currency_code if instrument else "USD"
+
+        asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker).first()
+        if asset is None:
+            asset = BotAsset(
+                user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
+                currency=currency, entry_amount=(quantity * avg_price).quantize(Decimal("0.01")),
+            )
+            db.session.add(asset)
+            db.session.flush()  # potrzebne asset.id do FK ActiveTrade.bot_asset_id ponizej
+
+        position_group_id = str(uuid.uuid4())
+        trade = ActiveTrade(
+            user_id=user_id, bot_asset_id=asset.id, position_group_id=position_group_id,
+            ticker=ticker, currency=currency,
+            buy_order_id=f"AUTOADOPTED-{uuid.uuid4()}",
+            buy_price=avg_price, quantity=quantity, allocated_value=quantity * avg_price,
+            average_price=avg_price, dca_level=0, grid_anchor_price=Decimal("0"),
+            baseline_owned_quantity=Decimal("0"),
+            status="OPEN", is_paper=False, buy_confirmed=True, auto_adopted=True,
+        )
+        db.session.add(trade)
+        db.session.commit()
+
+        _log(
+            user_id, "INFO",
+            f"{ticker}: pozycja automatycznie przejęta przez tryb \"zarządzaj wszystkim\" "
+            f"({quantity} @ ~{avg_price}) - od teraz pilnowana trailing exitem, bez DCA.",
+            position_group_id,
         )
 
 
@@ -1372,6 +1453,16 @@ def reconcile(user_id: int) -> None:
 
     settings = RiskSettings.query.filter_by(user_id=user_id).first()
 
+    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
+
+    # PRZED sprawdzeniem "czy jest cokolwiek do zrobienia" - switch "zarzadzaj
+    # wszystkim" (patrz _auto_adopt_foreign_positions) moze wlasnie TERAZ
+    # stworzyc pierwsze ActiveTrade z zera (np. swiezo wlaczony switch na
+    # koncie gdzie bot dotad nie mial ZADNEJ wlasnej pozycji) - wczesny
+    # return ponizej wyleciałby przed ta szansa, gdyby zostal przed tym wywolaniem.
+    if settings is not None:
+        _auto_adopt_foreign_positions(user_id, client, settings)
+
     # is_paper=False - pozycje papierowe nigdy nie trafily do T212, wiec nie
     # ma czego z nim uzgadniac (patrz models.py::ActiveTrade.is_paper).
     open_trades = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False).all()
@@ -1379,7 +1470,6 @@ def reconcile(user_id: int) -> None:
         _log(user_id, "INFO", "Reconciliation: brak otwartych pozycji (realnych) do sprawdzenia.")
         return
 
-    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
     try:
         pending = client.get_pending_orders()
     except T212APIError as exc:
@@ -1501,6 +1591,7 @@ def tick(app) -> None:
                         _confirm_dca_fills(user_id, client, settings, pending=pending)
                         _retry_pending_buys(user_id, client, settings, pending=pending)
                         _retry_pending_sells(user_id, client, settings, pending=pending)
+                        _auto_adopt_foreign_positions(user_id, client, settings)
                         _manage_trailing_exit(user_id, client, settings)
                         _trigger_dca_buys(user_id, client, settings)
 

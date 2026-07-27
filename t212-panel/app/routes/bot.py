@@ -384,6 +384,12 @@ def update_settings():
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Nieprawidłowe dane w ustawieniach ryzyka."), 400
 
+    manage_all_positions = bool(payload.get("manage_all_positions", settings.manage_all_positions))
+    # Wylaczenie switcha - zanim je zapiszemy, zapamietaj ze bylo wlaczone,
+    # zeby po commicie zwolnic pozycje ktore trafily pod bota WYLACZNIE dzieki
+    # niemu (patrz _release_auto_adopted_positions nizej).
+    switch_turned_off = settings.manage_all_positions and not manage_all_positions
+
     settings.dca_scenario = dca_scenario
     settings.max_dca_levels = max_dca_levels
     settings.dca_trigger_pct = dca_trigger_pct
@@ -392,9 +398,83 @@ def update_settings():
     settings.stop_loss_pct = stop_loss_pct
     settings.max_daily_loss = max_daily_loss
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
+    settings.manage_all_positions = manage_all_positions
     db.session.commit()
 
-    return jsonify(ok=True)
+    released_count = _release_auto_adopted_positions(current_user_id()) if switch_turned_off else 0
+
+    return jsonify(ok=True, released_count=released_count)
+
+
+def _release_auto_adopted_positions(user_id: int) -> int:
+    """
+    Wolane przy WYLACZENIU switcha "zarzadzaj wszystkim" (RiskSettings.
+    manage_all_positions) - automatycznie zwalnia WYLACZNIE pozycje ktore
+    trafily pod bota DZIEKI wlaczonemu switchowi (ActiveTrade.auto_adopted=
+    True, patrz bot_engine.py::_auto_adopt_foreign_positions), NIGDY recznie
+    adoptowanych przyciskiem "Przekaz botowi" (te zawsze zostaja pod botem
+    dopoki user sam nie kliknie Zwolnij - ustalone z Adamem 27.07.2026). Ten
+    sam mechanizm anulowania zywych zlecen co release_position() ponizej,
+    tylko w petli po wielu pozycjach naraz.
+
+    Poswiadczenia (get_decrypted_credentials) pobierane LENIWIE, dopiero przy
+    pierwszej NIE-papierowej pozycji ktora faktycznie tego potrzebuje (ten
+    sam warunek co release_position() - `if not trade.is_paper`) - inaczej
+    (np. gdyby deszyfrowanie padlo - udokumentowany przypadek w tym repo po
+    resecie master_key, patrz historia bottest@snajper.local w CLAUDE.md)
+    caly release padlby wyjatkiem, nie zwalniajac NAWET pozycji papierowych,
+    ktore w ogole nie potrzebuja kontaktu z T212.
+    """
+    trades = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", auto_adopted=True).all()
+    if not trades:
+        return 0
+
+    client = None
+    client_fetch_attempted = False
+
+    for trade in trades:
+        if not trade.is_paper:
+            if not client_fetch_attempted:
+                client_fetch_attempted = True
+                try:
+                    creds = get_decrypted_credentials(user_id, current_master_key(), "demo")
+                    if creds is not None:
+                        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo")
+                except Exception as exc:  # deszyfrowanie moze rzucic cokolwiek (InvalidToken/ValueError itp.)
+                    bot_engine._log(
+                        user_id, "WARN",
+                        f"Zwalnianie pozycji \"zarządzaj wszystkim\": nie udało się pobrać poświadczeń T212 "
+                        f"({exc}) - zlecenia bota NIE zostaną anulowane, tylko lokalne zwolnienie.",
+                    )
+            if client is not None:
+                for order_id in (trade.stop_order_id, trade.sell_order_id, trade.dca_pending_buy_order_id):
+                    if not order_id:
+                        continue
+                    try:
+                        client.cancel_order(order_id)
+                    except T212APIError as exc:
+                        bot_engine._log(
+                            user_id, "INFO",
+                            f"{trade.ticker}: anulowanie zlecenia bota ({order_id}) przy zwalnianiu "
+                            f"(wyłączenie \"zarządzaj wszystkim\") nie powiodło się - {exc}",
+                            trade.position_group_id,
+                        )
+        trade.stop_order_id = None
+        trade.sell_order_id = None
+        trade.dca_pending_buy_order_id = None
+        trade.dca_pending_quantity = None
+        trade.dca_pending_price = None
+        trade.dca_pending_baseline_quantity = None
+        trade.status = "RELEASED"
+
+    db.session.commit()
+
+    bot_engine._log(
+        user_id, "INFO",
+        f"Tryb \"zarządzaj wszystkim\" wyłączony - {len(trades)} automatycznie przejętych "
+        "pozycji zwolnionych (udziały zostają na koncie, bot już ich nie pilnuje).",
+    )
+    return len(trades)
 
 
 @bot_bp.route("/activate", methods=["POST"])

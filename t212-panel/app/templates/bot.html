@@ -252,6 +252,20 @@
         loguje co by zrobił, bez żadnego requestu do T212.
     </p>
 
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="bot-manage-all" {{ "checked" if settings.manage_all_positions else "" }}>
+        Zarządzaj wszystkim ("idę spać, a ty handluj")
+    </label>
+    <p class="auth-box__hint">
+        Gdy włączone, bot automatycznie przejmuje trailing exit (STOP) dla
+        KAŻDEJ pozycji na koncie T212, nawet kupionej ręcznie poza appką -
+        bez DCA (nie zna kontekstu ręcznego zakupu, więc pilnuje tylko
+        wyjścia). Wyłączenie automatycznie oddaje TYLKO pozycje przejęte
+        DZIĘKI temu przełącznikowi (udziały zostają na koncie) - pozycje
+        przekazane ręcznie przyciskiem "Przekaż botowi" zostają pod botem
+        bez zmian.
+    </p>
+
     <button type="button" id="btn-bot-save-settings" class="auth-form__submit auth-form__submit--sticky">
         Zapisz ustawienia
     </button>

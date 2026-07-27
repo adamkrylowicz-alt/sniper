@@ -95,6 +95,7 @@ document.addEventListener("DOMContentLoaded", () => {
             stop_loss_pct: document.getElementById("bot-stop-loss").value,
             max_daily_loss: document.getElementById("bot-max-daily-loss").value,
             is_paper_trading: document.getElementById("bot-paper-trading").checked,
+            manage_all_positions: document.getElementById("bot-manage-all").checked,
         };
 
         try {
@@ -106,7 +107,9 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await resp.json();
             if (data.ok) {
                 playSuccess();
-                settingsStatus.textContent = "Zapisano.";
+                settingsStatus.textContent = data.released_count
+                    ? `Zapisano. Zwolniono ${data.released_count} pozycji przejętych przez "zarządzaj wszystkim".`
+                    : "Zapisano.";
             } else {
                 playError();
                 settingsStatus.textContent = data.error || "Błąd zapisu.";

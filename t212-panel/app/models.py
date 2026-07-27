@@ -407,6 +407,16 @@ class RiskSettings(db.Model):
     is_paper_trading = db.Column(db.Boolean, nullable=False, default=True)
     is_bot_active = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Switch "zarzadzaj wszystkim" (pomysl #1, docs/IDEAS_v2.md, zaimplementowany
+    # 27.07.2026) - gdy wlaczony, kazdy ticker posiadany na koncie T212 bez
+    # otwartej ActiveTrade zostaje automatycznie "adoptowany" (patrz
+    # bot_engine.py::_auto_adopt_foreign_positions) pod trailing exit, BEZ DCA
+    # (grid_anchor_price=0 - bot nie zna kontekstu recznego zakupu). Wylaczenie
+    # switcha automatycznie zwalnia WYLACZNIE pozycje przejete tak automatycznie
+    # (ActiveTrade.auto_adopted=True) - patrz routes/bot.py::_release_auto_adopted_positions.
+    # Reczna adopcja przyciskiem "Przekaz botowi" NIE jest tym dotknieta.
+    manage_all_positions = db.Column(db.Boolean, nullable=False, default=False)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<RiskSettings user_id={self.user_id} active={self.is_bot_active}>"
 
@@ -562,6 +572,15 @@ class ActiveTrade(db.Model):
     # Loop MUSI pomijac pozycje papierowe (nie ma czego uzgadniac z T212,
     # zadne zlecenie tam nigdy nie trafilo).
     is_paper = db.Column(db.Boolean, nullable=False, default=False)
+
+    # True WYLACZNIE dla pozycji przejetych AUTOMATYCZNIE przez switch
+    # RiskSettings.manage_all_positions (patrz bot_engine.py::
+    # _auto_adopt_foreign_positions, 27.07.2026) - NIGDY dla recznej adopcji
+    # przyciskiem "Przekaz botowi" (routes/bot.py::adopt_position). Odroznia
+    # ktore pozycje ma automatycznie zwolnic wylaczenie switcha (patrz
+    # routes/bot.py::_release_auto_adopted_positions) - reczna adopcja ZAWSZE
+    # zostaje pod botem do recznego "Zwolnij", niezaleznie od stanu switcha.
+    auto_adopted = db.Column(db.Boolean, nullable=False, default=False)
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)
