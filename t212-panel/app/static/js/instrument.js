@@ -21,9 +21,34 @@ const DEFAULT_CHART_EMPTY_TEXT = document.getElementById("instrument-chart-empty
 
 let priceChart = null;
 let candleSeries = null;
+let avgPriceLine = null;
+let heldAveragePrice = null;
 
 function themeColor(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
+// Linia sredniej ceny zakupu (dodane 2026-07-28, Adam: "pokazuj linie po
+// jakiej zakupione mam aktywa, srednia cena oczywiscie") - averagePrice z
+// /warp/account (patrz loadPosition() nizej), TA SAMA wartosc co w "Twoja
+// inwestycja". Wolane i po zaladowaniu pozycji, i po kazdym przeladowaniu
+// swiec (przelacznik zakladek tworzy nowe dane, ale candleSeries to ten sam
+// obiekt - trzeba usunac stara linie i dodac nowa, inaczej by sie zdublowala).
+function updateAvgPriceLine() {
+    if (!candleSeries) return;
+    if (avgPriceLine) {
+        candleSeries.removePriceLine(avgPriceLine);
+        avgPriceLine = null;
+    }
+    if (!heldAveragePrice) return;
+    avgPriceLine = candleSeries.createPriceLine({
+        price: heldAveragePrice,
+        color: themeColor("--accent-amber"),
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: "Twoja średnia",
+    });
 }
 
 function ensureChart() {
@@ -84,6 +109,7 @@ async function loadCandles(days, interval) {
 
         candleSeries.setData(points);
         priceChart.timeScale().fitContent();
+        updateAvgPriceLine();
     } catch (err) {
         console.error("Błąd wykresu:", err);
         emptyEl.style.display = "";
@@ -242,6 +268,9 @@ async function loadPosition() {
             document.getElementById("position-avg").textContent = avgPrice.toFixed(2);
 
             document.getElementById("instrument-position").style.display = "";
+
+            heldAveragePrice = avgPrice > 0 ? avgPrice : null;
+            updateAvgPriceLine();
         }
 
         updateMaxHints();
