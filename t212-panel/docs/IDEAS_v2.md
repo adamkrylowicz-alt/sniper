@@ -105,6 +105,23 @@ Johnson & Johnson, Walmart, Walt Disney, Netflix, Bank of America - razem z
 `get_eod_intraday_1m` dla AAPL i FB (poprawnie zwrócił cenę Meta ~$609, nie
 starą/martwą cenę FB).
 
+**TAKE-PROFIT = POWRÓT DO POZIOMU SPRZED SPADKU (2026-07-28), zamiast sztywnego
+0.4-0.9%:** Adam wyjaśnił faktyczną intencję strategii: "to ma działać na
+zasadzie jebło w dół np 3-5% w ciągu 1-2min kupuje i liczę na szybkie odbicie
+w okolice wcześniejszego poziomu np 3-4min wcześniej... nawet nie musi być
+idealnie w punkt ale w okolice" - sztywny % z PRD/v1 (wpis 66-72 wyżej) był
+oderwany od WIELKOŚCI spadku (5% spadek i tak celował tylko w +0.6%).
+Naprawione: take-profit = `reference_price` (cena sprzed tylu minut ile dał
+najgorszy spadek, już liczona wewnątrz detekcji spadku) zamiast
+`price*(1+take_profit_pct)`. Stop-loss zostaje STAŁY (bez trailing) -
+świadomie, Adam odrzucił trailing dla EOD po pytaniu wprost: "to ma działać
+na zasadzie... nic ponadto" (w odróżnieniu od Sygnału, gdzie trailing SL
+został dodany tego samego dnia - inna filozofia, EOD to krótki scalp na
+odbicie, nie jazda z trendem). Przetestowane na sucho przed wdrożeniem
+(symulacja minuta-po-minutę na realnych świecach 1-min z dzisiejszej sesji,
+15 tickerów USA, zero zapisów/zleceń) - złapany jeden realny trigger (JNJ,
+-3.25%, nowy TP +3.36% vs stary +0.6%). Pełny opis w CLAUDE.md z tej daty.
+
 ### Dodatkowe wymagania techniczne
 - Rate limiting i cache dla API Trading212 i Finnhub.
 - Obsługa limitów Trading212 (szczególnie przy składaniu zleceń).
