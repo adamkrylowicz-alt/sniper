@@ -904,6 +904,25 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
     except T212APIError:
         owned_map = None
 
+    # PRIORYTET wg pilności (dodane 2026-07-27, na życzenie Adama - "musisz
+    # wymyślec jak zrobić żeby taka pozycja miała priorytet, to chroni
+    # zyski") - znalezione na żywo na CRM_US_EQ: przy ciasnym rate limicie
+    # demo T212 kolejność iteracji po `candidates` (bez sortowania = kolejność
+    # z bazy) decydowała kto dostanie szansę na cancel/place tego ticku, więc
+    # pozycja z NAJWIĘKSZĄ dziurą między obecnym stopem a tym co powinna mieć
+    # (np. świeżo zresetowana po nieudanym cancel/replace) czekała tyle samo
+    # co pozycja z drobną, kosmetyczną poprawką o ułamek procenta. Fix: DWIE
+    # fazy zamiast jednej. Faza 1 (ta pętla) liczy candidate_stop dla KAŻDEJ
+    # pozycji (koszt: tylko price_feed, ODDZIELNY budżet od zleceń T212, więc
+    # liczenie z wyprzedzeniem dla wszystkich nic nie kosztuje) i zbiera je do
+    # `pending`, ZAMIAST od razu wołać cancel/place. Faza 2 (niżej) sortuje
+    # `pending` po wielkości luki (candidate_stop - obecny stop_target_price,
+    # im większa tym pilniejsza - świeżo zresetowana szeroka ochrona zawsze
+    # wygra z drobną kosmetyczną korektą) i DOPIERO WTEDY woła prawdziwe
+    # zlecenia T212 w tej kolejności - pilne pozycje dostają pierwszy strzał
+    # do ciasnego budżetu, zamiast czekać na przypadkową kolejność z bazy.
+    pending: list[tuple[ActiveTrade, Decimal, int, Decimal]] = []  # (trade, candidate_stop, milestone_steps, current_price)
+
     for trade in candidates:
         if owned_map is not None and owned_map.get(trade.ticker, Decimal("0")) <= 0:
             trade.status = "CLOSED"
@@ -1003,6 +1022,18 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             if candidate_stop < min_requote_threshold:
                 continue  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
 
+        pending.append((trade, candidate_stop, milestone_steps, current_price))
+
+    # Faza 2 - patrz komentarz "PRIORYTET wg pilnosci" wyzej. Gap = o ile
+    # candidate_stop przebija obecny stop_target_price (0 gdy pozycja jeszcze
+    # nigdy nie miala zadnego stopu - to TEZ pilne, brak ochrony w ogole).
+    # Najpilniejsze (najwieksza luka) ida na sam poczatek kolejki zlecen T212.
+    pending.sort(
+        key=lambda item: item[1] - (item[0].stop_target_price or Decimal("0")),
+        reverse=True,
+    )
+
+    for trade, candidate_stop, milestone_steps, current_price in pending:
         if trade.stop_order_id:
             try:
                 client.cancel_order(trade.stop_order_id)
