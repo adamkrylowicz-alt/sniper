@@ -109,14 +109,16 @@ def _fetch_yahoo_ohlc(symbol: str, days: int) -> list[dict] | None:
         )
         if resp.status_code != 200:
             return None
-        quote = resp.json()["chart"]["result"][0]["indicators"]["quote"][0]
+        result = resp.json()["chart"]["result"][0]
+        timestamps = result["timestamp"]
+        quote = result["indicators"]["quote"][0]
         opens, highs, lows, closes = quote["open"], quote["high"], quote["low"], quote["close"]
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
         return None
 
     candles = [
-        {"o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
-        for o, h, l, c in zip(opens, highs, lows, closes)
+        {"t": int(t), "o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
+        for t, o, h, l, c in zip(timestamps, opens, highs, lows, closes)
         if None not in (o, h, l, c)
     ]
     if len(candles) < 2:
@@ -282,8 +284,8 @@ class FinnhubClient:
 
         if data and data.get("s") == "ok" and data.get("c"):
             candles = [
-                {"o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
-                for o, h, l, c in zip(data["o"], data["h"], data["l"], data["c"])
+                {"t": int(t), "o": round(float(o), 4), "h": round(float(h), 4), "l": round(float(l), 4), "c": round(float(c), 4)}
+                for t, o, h, l, c in zip(data["t"], data["o"], data["h"], data["l"], data["c"])
             ]
             self._ohlc_cache[cache_key] = (candles, time.time())
             return candles

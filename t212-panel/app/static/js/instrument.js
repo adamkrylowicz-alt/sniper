@@ -11,38 +11,45 @@ const ticker = INSTRUMENT_TICKER;
 let currentDays = 30;
 const DEFAULT_CHART_EMPTY_TEXT = document.getElementById("instrument-chart-empty").textContent.trim();
 
-// --- Swiece OHLC (SVG) - ten sam algorytm co focus.js/pie.js, wiekszy viewBox ---
+// --- Wykres swiecowy (TradingView Lightweight Charts, vendorowana lokalnie
+// w static/js/vendor/ - self-hosted jak reszta appki, bez CDN) - zastapilo
+// reczny SVG renderer 2026-07-27 na prosbe Adama: swiece 1-min (nawet 700+
+// na raz) w starym renderze (stale 600px szerokosci, kazda swieca <1px) byly
+// widoczne jako "prawie plaska kreska". Biblioteka daje darmowy zoom (kolko
+// myszy) i pan (przeciaganie) w poziomie, os Y sama dopasowuje sie do
+// aktualnie widocznego zakresu czasu, wiec przybilzenie realnie cos pokazuje.
 
-function drawCandles(svgEl, candles) {
-    const W = 600, H = 220, PAD = 8;
-    const min = Math.min(...candles.map((c) => c.l));
-    const max = Math.max(...candles.map((c) => c.h));
-    const range = (max - min) || 1;
-    const y = (v) => H - PAD - ((v - min) / range) * (H - PAD * 2);
+let priceChart = null;
+let candleSeries = null;
 
-    const n = candles.length;
-    const slot = (W - PAD * 2) / n;
-    const bodyWidth = Math.max(1, slot * 0.6);
+function themeColor(varName) {
+    return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
 
-    const parts = candles.map((c, i) => {
-        const x = PAD + slot * i + slot / 2;
-        const cls = c.c >= c.o ? "focus-candle-up" : "focus-candle-down";
-        const yOpen = y(c.o), yClose = y(c.c);
-        const bodyTop = Math.min(yOpen, yClose);
-        const bodyH = Math.max(1, Math.abs(yClose - yOpen));
-        return (
-            `<line class="${cls}" x1="${x.toFixed(1)}" y1="${y(c.h).toFixed(1)}" x2="${x.toFixed(1)}" y2="${y(c.l).toFixed(1)}" stroke-width="1"/>` +
-            `<rect class="${cls}" x="${(x - bodyWidth / 2).toFixed(1)}" y="${bodyTop.toFixed(1)}" width="${bodyWidth.toFixed(1)}" height="${bodyH.toFixed(1)}"/>`
-        );
-    }).join("");
-
-    svgEl.innerHTML = parts;
+function ensureChart() {
+    if (priceChart) return;
+    const container = document.getElementById("instrument-chart");
+    priceChart = LightweightCharts.createChart(container, {
+        layout: { background: { color: "transparent" }, textColor: themeColor("--text-muted") },
+        grid: {
+            vertLines: { color: themeColor("--hairline") },
+            horzLines: { color: themeColor("--hairline") },
+        },
+        rightPriceScale: { borderColor: themeColor("--hairline") },
+        timeScale: { borderColor: themeColor("--hairline"), timeVisible: true, secondsVisible: false },
+        autoSize: true,
+    });
+    candleSeries = priceChart.addSeries(LightweightCharts.CandlestickSeries, {
+        upColor: themeColor("--buy-green"),
+        downColor: themeColor("--sell-red"),
+        borderVisible: false,
+        wickUpColor: themeColor("--buy-green"),
+        wickDownColor: themeColor("--sell-red"),
+    });
 }
 
 async function loadCandles(days, interval) {
-    const svgEl = document.getElementById("instrument-chart");
     const emptyEl = document.getElementById("instrument-chart-empty");
-    svgEl.innerHTML = "";
     emptyEl.style.display = "none";
 
     try {
@@ -59,7 +66,24 @@ async function loadCandles(days, interval) {
             emptyEl.style.display = "";
             return;
         }
-        drawCandles(svgEl, data.candles);
+
+        ensureChart();
+        // Sort+dedupe po czasie - biblioteka wymaga scisle rosnacej
+        // kolejnosci, a Yahoo/Finnhub sporadycznie potrafia dac
+        // duplikat/glitch na brzegu zakresu (stary renderer SVG,
+        // pozycyjny/bez czasu, na to nie zwracal uwagi).
+        const seen = new Set();
+        const points = data.candles
+            .filter((c) => {
+                if (c.t == null || seen.has(c.t)) return false;
+                seen.add(c.t);
+                return true;
+            })
+            .sort((a, b) => a.t - b.t)
+            .map((c) => ({ time: c.t, open: c.o, high: c.h, low: c.l, close: c.c }));
+
+        candleSeries.setData(points);
+        priceChart.timeScale().fitContent();
     } catch (err) {
         console.error("Błąd wykresu:", err);
         emptyEl.style.display = "";

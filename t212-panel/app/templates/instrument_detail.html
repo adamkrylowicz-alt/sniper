@@ -41,7 +41,7 @@
     </div>
 
     <div class="instrument-detail__chart-wrap">
-        <svg class="instrument-detail__chart" id="instrument-chart" viewBox="0 0 600 220" preserveAspectRatio="none"></svg>
+        <div class="instrument-detail__chart" id="instrument-chart"></div>
         <p class="auth-box__hint instrument-detail__chart-empty" id="instrument-chart-empty" style="display:none">
             Brak danych świecowych dla tego zakresu.
         </p>
@@ -143,6 +143,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/vendor/lightweight-charts.standalone.production.js') }}"></script>
 <script>
     const INSTRUMENT_TICKER = "{{ ticker }}";
 </script>
