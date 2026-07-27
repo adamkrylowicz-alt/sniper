@@ -371,6 +371,106 @@ function renderCategoryTabs(container, counts, activeCategory, onSelect) {
     });
 }
 
+/*
+=== Sortowanie klikami w nagłówki - tabele STATYCZNE (bot/signal/eod pozycje) ===
+Odpowiednik sortState/localStorage z portfolio.js (Aktywa, 27.07.2026), ale
+uproszczony pod tabele, które NIE są okresowo podmieniane przez JS (bot.js/
+signal.js/eod.js renderują "Otwarte pozycje" WYŁĄCZNIE przez Jinja przy
+załadowaniu strony) - więc zamiast trzymać osobny model danych jak
+currentPositions w portfolio.js, sortowanie działa wprost na wierszach DOM,
+przestawiając <tr> w <tbody> przez porównanie data-sort-value na <td>
+(ustawianym w szablonie - NIE parsujemy widocznego tekstu komórki, bo część
+zawiera dodatkowy HTML: badge waluty, "(DCA 2)" itp.). Wybór sortu
+zapisywany per-tabela w localStorage pod przekazanym storageKey, więc
+przetrwa F5 i aplikuje się NATYCHMIAST przy starcie skryptu (ten sam fix co
+w portfolio.js - zero opóźnienia/"skoku", bo tu i tak nie ma sieciowego
+odświeżenia do poczekania).
+*/
+function initSortableTable(table, storageKey) {
+    if (!table) return;
+    const headerRow = table.querySelector("thead tr");
+    const tbody = table.querySelector("tbody");
+    if (!headerRow || !tbody) return;
+
+    const headers = Array.from(headerRow.querySelectorAll("[data-sort-key]"));
+    if (!headers.length) return;
+
+    const sortState = { key: null, dir: 1 };
+    try {
+        const saved = JSON.parse(localStorage.getItem(storageKey));
+        if (saved && saved.key) {
+            sortState.key = saved.key;
+            sortState.dir = saved.dir === -1 ? -1 : 1;
+        }
+    } catch (err) {
+        // localStorage niedostępny/uszkodzony wpis - zostaje domyślny brak sortu
+    }
+
+    function columnIndex(key) {
+        return Array.from(headerRow.children).findIndex((th) => th.dataset.sortKey === key);
+    }
+
+    function updateArrows() {
+        headers.forEach((th) => {
+            const arrow = th.querySelector(".sort-arrow");
+            const active = th.dataset.sortKey === sortState.key;
+            th.classList.toggle("history-table__th--sortable--active", active);
+            if (arrow) arrow.textContent = active ? (sortState.dir === 1 ? "▲" : "▼") : "⇅";
+        });
+    }
+
+    function applySort() {
+        updateArrows();
+        if (!sortState.key) return;
+        const idx = columnIndex(sortState.key);
+        if (idx === -1) return;
+        const rows = Array.from(tbody.querySelectorAll("tr"));
+        rows.sort((a, b) => {
+            const av = a.children[idx]?.dataset.sortValue ?? "";
+            const bv = b.children[idx]?.dataset.sortValue ?? "";
+            const an = parseFloat(av);
+            const bn = parseFloat(bv);
+            if (av !== "" && bv !== "" && !Number.isNaN(an) && !Number.isNaN(bn)) {
+                return (an - bn) * sortState.dir;
+            }
+            const al = av.toLowerCase();
+            const bl = bv.toLowerCase();
+            return al < bl ? -sortState.dir : al > bl ? sortState.dir : 0;
+        });
+        rows.forEach((row) => tbody.appendChild(row));
+    }
+
+    headers.forEach((th) => {
+        th.addEventListener("click", () => {
+            const key = th.dataset.sortKey;
+            if (sortState.key === key) {
+                sortState.dir *= -1;
+            } else {
+                sortState.key = key;
+                sortState.dir = 1;
+            }
+            try {
+                localStorage.setItem(storageKey, JSON.stringify({ key: sortState.key, dir: sortState.dir }));
+            } catch (err) {
+                // localStorage niedostępny (np. tryb prywatny) - sort działa, po prostu nie przetrwa F5
+            }
+            applySort();
+        });
+    });
+
+    applySort();
+}
+
+// Trzy tabele "Otwarte pozycje" (bot/sygnał/eod) - initSortableTable sam
+// nic nie robi gdy dana tabela nie istnieje w DOM (strona bez otwartych
+// pozycji renderuje zamiast niej sam tekst), więc bezpieczne wołać wszystkie
+// trzy tutaj zamiast osobno w bot.js/signal.js/eod.js.
+document.addEventListener("DOMContentLoaded", () => {
+    initSortableTable(document.getElementById("bot-positions-table"), "snajper-bot-positions-sort");
+    initSortableTable(document.getElementById("signal-positions-table"), "snajper-signal-positions-sort");
+    initSortableTable(document.getElementById("eod-positions-table"), "snajper-eod-positions-sort");
+});
+
 async function fetchCategoryCounts() {
     try {
         const resp = await fetch("/settings/watchlist/category-counts");

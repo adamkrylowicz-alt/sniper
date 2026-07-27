@@ -123,19 +123,19 @@
     <table class="history-table" id="signal-positions-table">
         <thead>
             <tr>
-                <th>Aktywo</th>
-                <th>Ilość</th>
-                <th>Cena wejścia</th>
-                <th>Stop-loss</th>
-                <th>Take-profit</th>
-                <th>Otwarta od (Amsterdam)</th>
+                <th class="history-table__th--sortable" data-sort-key="name">Aktywo <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="quantity">Ilość <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="buy_price">Cena wejścia <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="stop_loss">Stop-loss <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="take_profit">Take-profit <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="created_at">Otwarta od (Amsterdam) <span class="sort-arrow">⇅</span></th>
                 <th>Status</th>
             </tr>
         </thead>
         <tbody>
             {% for p in open_positions %}
             <tr data-trade-id="{{ p.id }}">
-                <td>
+                <td data-sort-value="{{ p.name or p.display_ticker }}">
                     <span class="market-dot {{ 'market-dot--open' if p.market_open else 'market-dot--closed' }}"
                           title="{{ 'Giełda otwarta' if p.market_open else 'Giełda zamknięta' }}"></span>
                     <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
@@ -143,11 +143,11 @@
                         <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
                     </a>
                 </td>
-                <td>{{ p.quantity }}</td>
-                <td>{{ p.buy_price }}</td>
-                <td>{{ p.stop_loss_price }}</td>
-                <td>{{ p.take_profit_price }}</td>
-                <td>{{ p.created_at_local }}</td>
+                <td data-sort-value="{{ p.quantity }}">{{ p.quantity }}</td>
+                <td data-sort-value="{{ p.buy_price }}">{{ p.buy_price }}</td>
+                <td data-sort-value="{{ p.stop_loss_price }}">{{ p.stop_loss_price }}</td>
+                <td data-sort-value="{{ p.take_profit_price }}">{{ p.take_profit_price }}</td>
+                <td data-sort-value="{{ p.created_at_local }}">{{ p.created_at_local }}</td>
                 <td>
                     <span class="signal-position-status">
                         {% if p.is_paper %}

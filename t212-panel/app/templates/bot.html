@@ -128,18 +128,18 @@
     <table class="history-table" id="bot-positions-table">
         <thead>
             <tr>
-                <th>Aktywo</th>
-                <th>Ilość</th>
-                <th>Śr. cena wejścia</th>
-                <th>Trailing STOP</th>
-                <th>Otwarta od (Amsterdam)</th>
+                <th class="history-table__th--sortable" data-sort-key="name">Aktywo <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="quantity">Ilość <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="avg_price">Śr. cena wejścia <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="stop_price">Trailing STOP <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="created_at">Otwarta od (Amsterdam) <span class="sort-arrow">⇅</span></th>
                 <th>Status</th>
             </tr>
         </thead>
         <tbody>
             {% for p in open_positions %}
             <tr data-trade-id="{{ p.id }}">
-                <td>
+                <td data-sort-value="{{ p.name or p.display_ticker }}">
                     <span class="market-dot {{ 'market-dot--open' if p.market_open else 'market-dot--closed' }}"
                           title="{{ 'Giełda otwarta - bot aktywnie zarządza pozycją' if p.market_open else 'Giełda zamknięta - bot wznowi zarządzanie po otwarciu sesji' }}"></span>
                     <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
@@ -147,16 +147,16 @@
                         <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
                     </a>
                 </td>
-                <td>{{ p.quantity }}{% if p.dca_level %} <span class="auth-box__hint">(DCA {{ p.dca_level }})</span>{% endif %}</td>
-                <td>{{ p.average_price }}</td>
-                <td>
+                <td data-sort-value="{{ p.quantity }}">{{ p.quantity }}{% if p.dca_level %} <span class="auth-box__hint">(DCA {{ p.dca_level }})</span>{% endif %}</td>
+                <td data-sort-value="{{ p.average_price }}">{{ p.average_price }}</td>
+                <td data-sort-value="{{ p.stop_target_price or '' }}">
                     {% if p.stop_target_price %}
                         {{ p.stop_target_price }} <span class="auth-box__hint">(próg {{ p.trail_milestone_steps }})</span>
                     {% else %}
                         <span class="auth-box__hint">jeszcze nieuzbrojony</span>
                     {% endif %}
                 </td>
-                <td>{{ p.created_at_local }}</td>
+                <td data-sort-value="{{ p.created_at_local }}">{{ p.created_at_local }}</td>
                 <td>
                     <span class="bot-position-status">
                         {% if p.is_paper %}
