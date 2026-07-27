@@ -188,10 +188,12 @@ def asset_prices():
     """Cena na żywo + przybliżona liczba akcji dla WSZYSTKICH aktywów strategii naraz - ten sam wzorzec co routes/bot.py::bot_asset_prices."""
     user_id = current_user_id()
     api_key = current_app.config.get("FINNHUB_API_KEY")
+    alpaca_key = current_app.config.get("ALPACA_API_KEY")
+    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
     result = {}
     for asset in SignalAsset.query.filter_by(user_id=user_id).all():
-        price = price_feed.get_live_price(api_key, asset.ticker)
+        price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret)
         if price is None or price <= 0:
             result[asset.ticker] = {"price": None, "implied_quantity": None}
             continue

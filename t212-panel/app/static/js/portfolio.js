@@ -20,7 +20,7 @@ const REFRESH_DELAY_MS = 1500;
 // odswiezenia, zeby klik sortujacy mial z czego sortowac bez ponownego
 // zapytania do T212, i zeby wybrany sort PRZETRWAL kolejne auto-odswiezenia.
 let currentPositions = null;
-let currentTotals = { value: 0, ppl: 0 };
+let currentTotals = { value: 0, ppl: 0, pplPct: 0 };
 const sortState = { key: null, dir: 1 };
 
 function escapeHtml(text) {
@@ -39,7 +39,7 @@ function sortHeaderCell(label, key) {
     return `<th class="history-table__th--sortable${active ? " history-table__th--sortable--active" : ""}" data-sort-key="${key}">${label} <span class="sort-arrow">${arrow}</span></th>`;
 }
 
-function renderPortfolio(positions, totalValue, totalPpl) {
+function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
     const container = document.getElementById("portfolio-content");
     if (!container) return;
 
@@ -96,6 +96,7 @@ function renderPortfolio(positions, totalValue, totalPpl) {
                 <span class="instrument-detail__position-label">Zysk / strata</span>
                 <span class="instrument-detail__position-value ${pplClass(totalPpl)}">
                     ${totalPpl >= 0 ? "+" : ""}${totalPpl.toFixed(2)}
+                    (${totalPplPct >= 0 ? "+" : ""}${totalPplPct.toFixed(1)}%)
                 </span>
             </div>
         </div>
@@ -135,7 +136,7 @@ function renderSorted() {
             return (a[key] - b[key]) * sortState.dir;
         });
     }
-    renderPortfolio(positions, currentTotals.value, currentTotals.ppl);
+    renderPortfolio(positions, currentTotals.value, currentTotals.ppl, currentTotals.pplPct);
 }
 
 /*
@@ -257,7 +258,7 @@ async function refreshPortfolio() {
         }
 
         currentPositions = data.positions;
-        currentTotals = { value: data.total_value, ppl: data.total_ppl };
+        currentTotals = { value: data.total_value, ppl: data.total_ppl, pplPct: data.total_ppl_pct };
 
         renderSorted();  // zachowuje wybrany sort (jesli user juz kliknal jakis naglowek) zamiast wracac do domyslnej kolejnosci z backendu
         playUpdate();

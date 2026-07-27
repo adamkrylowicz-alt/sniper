@@ -23,6 +23,7 @@
                 <span class="instrument-detail__position-label">Zysk / strata</span>
                 <span class="instrument-detail__position-value {{ 'focus-tile__pnl--profit' if total_ppl >= 0 else 'focus-tile__pnl--loss' }}">
                     {{ "+" if total_ppl >= 0 else "" }}{{ "%.2f"|format(total_ppl) }}
+                    ({{ "+" if total_ppl_pct >= 0 else "" }}{{ "%.1f"|format(total_ppl_pct) }}%)
                 </span>
             </div>
         </div>

@@ -29,18 +29,23 @@ dla tickerów spoza US rozwiązuje właściwy symbol Yahoo przez yahoo_resolver.
 
 ALPACA (dodane 2026-07-22, na życzenie Adama - "na rynki usa mam nowego
 dostawce danych alpaca"): dla tickerów `*_US_EQ` GŁÓWNE źródło ceny "na żywo"
-(get_live_price) to teraz Alpaca Market Data API (REST, klucz+secret w
+(get_live_price) to Alpaca Market Data API (REST, klucz+secret w
 ALPACA_API_KEY/ALPACA_API_SECRET), Finnhub->Yahoo zostaje jako fallback gdy
-Alpaca zawiedzie (brak klucza, błąd sieci, symbol spoza pokrycia). Dla
-tickerów spoza USD (EUR itd.) Alpaca w ogóle nie jest próbowane - zero zmiany
-zachowania, wciąż Finnhub->Yahoo jak dotychczas. Endpoint Market Data API jest
-WSPÓLNY dla kluczy paper i live trading (inaczej niż endpoint do składania
-zleceń) - klucz zaczynający się na "PK" (paper) działa tu identycznie jak
-klucz live.
+Alpaca zawiedzie (brak klucza, błąd sieci, symbol spoza pokrycia). Rozszerzone
+2026-07-27 (Adam: "masz api alpaki dlaczego go nie używasz?") o świece -
+get_mini_chart_ohlc (dzienne, RSI/SMA/ATR) i get_eod_intraday_1m (1-min, EOD)
+też próbują Alpaca NAJPIERW dla `*_US_EQ`, zamiast wyłącznie na Finnhub
+(zablokowany /stock/candle na darmowym planie, patrz TICKER_MAP) / Yahoo
+(nieoficjalne, bez SLA). Dla tickerów spoza USD (EUR itd.) Alpaca w ogóle nie
+jest próbowane - zero zmiany zachowania, wciąż Finnhub->Yahoo jak dotychczas.
+Endpoint Market Data API jest WSPÓLNY dla kluczy paper i live trading
+(inaczej niż endpoint do składania zleceń) - klucz zaczynający się na "PK"
+(paper) działa tu identycznie jak klucz live.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import time
 from decimal import Decimal
@@ -186,15 +191,23 @@ def _fetch_yahoo_candles_ohlc(ticker: str, days: int) -> list[dict] | None:
     return candles[-days:]
 
 
-def get_eod_intraday_1m(ticker: str) -> list[dict] | None:
+def get_eod_intraday_1m(
+    ticker: str, alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
+) -> list[dict] | None:
     """
-    Świece 1-minutowe DZISIEJSZEJ sesji (Yahoo Chart API, `range=1d&interval=1m`)
-    - do modułu EOD (services/eod_engine.py, detekcja ostrych spadków w 1-5
-    minut pod koniec sesji). NIEOFICJALNE API, bez SLA - świadoma decyzja
-    Adama (2026-07-24, patrz docs/IDEAS_v2.md pkt 3): sprawdzone 5 płatnych
-    alternatyw (Twelve Data, Alpha Vantage, Polygon, EOD Historical Data, IEX
-    Cloud) i żadna nie dawała taniego, prawdziwego 1-min dla Europy - Yahoo
-    na razie, docelowo IBKR API gdy dostępne.
+    Świece 1-minutowe DZISIEJSZEJ sesji - do modułu EOD (services/eod_engine.py,
+    detekcja ostrych spadków w 1-5 minut pod koniec sesji).
+
+    Dla tickerów `*_US_EQ`: Alpaca Market Data API jako GŁÓWNE źródło (dodane
+    2026-07-27, na życzenie Adama - "masz api alpaki dlaczego go nie
+    używasz?"; wcześniej tylko get_live_price go używał, ten moduł jechał
+    wyłącznie na Yahoo mimo że Alpaca daje realne, dokumentowane 1-min bary
+    dla US), Yahoo jako fallback. Dla reszty (EUR itd.) bez zmian - Yahoo
+    Chart API (`range=1d&interval=1m`), NIEOFICJALNE, bez SLA - świadoma
+    decyzja Adama (2026-07-24, patrz docs/IDEAS_v2.md pkt 3): sprawdzone 5
+    płatnych alternatyw (Twelve Data, Alpha Vantage, Polygon, EOD Historical
+    Data, IEX Cloud) i żadna nie dawała taniego, prawdziwego 1-min dla
+    Europy - docelowo IBKR API gdy dostępne.
 
     ZERO cache'u (w odróżnieniu od get_mini_chart_ohlc) - to dane do decyzji
     tradingowej sprzed sekund, nie do mini-wykresu, ten sam powód co
@@ -202,6 +215,11 @@ def get_eod_intraday_1m(ticker: str) -> list[dict] | None:
     najstarsza -> najnowsza, albo None (brak danych/błąd/poza sesją -
     Yahoo dla `range=1d` poza godzinami handlu zwraca pustą/krótką listę).
     """
+    if ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret:
+        candles = _fetch_alpaca_bars_1m(alpaca_api_key, alpaca_api_secret, ticker)
+        if candles:
+            return candles
+
     yahoo_symbol = t212_to_finnhub(ticker)
     if yahoo_symbol is None:
         return None
@@ -229,23 +247,33 @@ def get_eod_intraday_1m(ticker: str) -> list[dict] | None:
     return candles if len(candles) >= 2 else None
 
 
-def get_mini_chart_ohlc(api_key: str | None, ticker: str, days: int = 30) -> list[dict] | None:
+def get_mini_chart_ohlc(
+    api_key: str | None, ticker: str, days: int = 30,
+    alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
+) -> list[dict] | None:
     """
     Zwraca listę OHLC (open/high/low/close, najstarsza -> najnowsza) dla
     ostatnich `days` dni, albo None gdy brak danych/klucza/połączenia - do
-    rysowania świec w Smart Virtual Pie (routes/pie.py::charts).
-    """
-    if not api_key:
-        logger.warning("FINNHUB_API_KEY nie ustawiony w .env - mini-wykresy wyłączone.")
-        return None
+    rysowania świec w Smart Virtual Pie (routes/pie.py::charts) oraz do
+    RSI/SMA/ATR w signal_engine.py i bot_engine.py.
 
+    Kolejność źródeł dla tickerów `*_US_EQ`: Alpaca (dodane 2026-07-27, ten
+    sam klucz co get_live_price - Finnhub /stock/candle jest zablokowany na
+    darmowym planie, patrz TICKER_MAP/finnhub_client.py) -> Finnhub -> Yahoo.
+    Dla reszty tickerów bez zmian: Finnhub -> Yahoo.
+    """
     key = f"{ticker}:{days}"
     now = time.monotonic()
     cached = _cache_ohlc.get(key)
     if cached and (now - cached[0]) < CACHE_TTL_SECONDS:
         return cached[1]
 
-    candles = _fetch_candles_ohlc(api_key, ticker, days)
+    candles = None
+    if ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret:
+        candles = _fetch_alpaca_bars_daily(alpaca_api_key, alpaca_api_secret, ticker, days)
+
+    if not candles and api_key:
+        candles = _fetch_candles_ohlc(api_key, ticker, days)
     if not candles:
         candles = _fetch_yahoo_candles_ohlc(ticker, days)
     _cache_ohlc[key] = (now, candles)
@@ -253,10 +281,11 @@ def get_mini_chart_ohlc(api_key: str | None, ticker: str, days: int = 30) -> lis
 
 
 def get_mini_charts_ohlc(
-    api_key: str | None, tickers: list[str], days: int = 30
+    api_key: str | None, tickers: list[str], days: int = 30,
+    alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
 ) -> dict[str, list[dict] | None]:
     """Wygodny batch - jedno wywołanie JS->Flask na cały widok Pie zamiast N osobnych requestów."""
-    return {t: get_mini_chart_ohlc(api_key, t, days) for t in tickers}
+    return {t: get_mini_chart_ohlc(api_key, t, days, alpaca_api_key, alpaca_api_secret) for t in tickers}
 
 
 # -- Cena "na żywo" do decyzji bota (Etap 2, services/bot_engine.py) --------
@@ -360,6 +389,77 @@ def _fetch_alpaca_quote(api_key: str, api_secret: str, ticker: str) -> Decimal |
     if not price:
         return None
     return Decimal(str(price))
+
+
+def _fetch_alpaca_bars(
+    api_key: str, api_secret: str, ticker: str, timeframe: str, start: str,
+) -> list[dict] | None:
+    """
+    Świece z Alpaca Market Data API /v2/stocks/{symbol}/bars - WSPÓLNA
+    implementacja dla dziennych (get_mini_chart_ohlc) i 1-minutowych
+    (get_eod_intraday_1m), tylko dla tickerów `*_US_EQ` (Alpaca nie ma
+    pokrycia poza US). Bez parametru `feed` - domyślny feed konta (IEX na
+    darmowym planie) jest wystarczający, ten sam kompromis co Yahoo
+    (opóźnione dane, patrz docstring get_eod_intraday_1m).
+    """
+    symbol = _to_finnhub_symbol(ticker)
+    try:
+        resp = requests.get(
+            f"{ALPACA_DATA_BASE_URL}/stocks/{symbol}/bars",
+            params={"timeframe": timeframe, "start": start, "limit": 10000, "adjustment": "raw"},
+            headers={"APCA-API-KEY-ID": api_key, "APCA-API-SECRET-KEY": api_secret},
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        logger.warning("Alpaca bars (%s): błąd sieci dla %s: %s", timeframe, ticker, exc)
+        return None
+
+    if resp.status_code != 200:
+        logger.warning("Alpaca bars (%s): HTTP %s dla %s", timeframe, resp.status_code, ticker)
+        return None
+
+    try:
+        bars = resp.json().get("bars") or []
+    except ValueError:
+        return None
+
+    candles = []
+    for b in bars:
+        try:
+            o, h, l, c = float(b["o"]), float(b["h"]), float(b["l"]), float(b["c"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        candle = {"o": round(o, 4), "h": round(h, 4), "l": round(l, 4), "c": round(c, 4)}
+        if timeframe == "1Min":
+            try:
+                ts = dt.datetime.strptime(b["t"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+            except (KeyError, ValueError):
+                continue
+            candle["t"] = int(ts.timestamp())
+        candles.append(candle)
+    return candles if len(candles) >= 2 else None
+
+
+def _fetch_alpaca_bars_daily(api_key: str, api_secret: str, ticker: str, days: int) -> list[dict] | None:
+    """
+    `days` to liczba SESJI GIEŁDOWYCH żądanych przez wywołującego (patrz
+    get_mini_chart_ohlc), nie dni kalendarzowych - stąd mnożnik *1.6 (+20 dni
+    marginesu na święta), żeby okno kalendarzowe do Alpaca dawało co najmniej
+    `days` świec handlowych. Ten sam problem i to samo podejście co Yahoo
+    (_yahoo_range_for_days: dla 250 sesji żąda "1y" = 365 dni kalendarzowych,
+    czyli mnożnik ~1.46) - pierwsza wersja tej funkcji (dni+10) dawała
+    Alpace tylko ~176 świec dla żądanych 250 (SMA(200) nigdy by nie policzyło),
+    znalezione testem przed wdrożeniem 2026-07-27.
+    """
+    calendar_days = int(days * 1.6) + 20
+    start = (dt.datetime.utcnow() - dt.timedelta(days=calendar_days)).strftime("%Y-%m-%dT00:00:00Z")
+    candles = _fetch_alpaca_bars(api_key, api_secret, ticker, "1Day", start)
+    return candles[-days:] if candles else None
+
+
+def _fetch_alpaca_bars_1m(api_key: str, api_secret: str, ticker: str) -> list[dict] | None:
+    start = dt.datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+    return _fetch_alpaca_bars(api_key, api_secret, ticker, "1Min", start)
 
 
 def get_live_price(

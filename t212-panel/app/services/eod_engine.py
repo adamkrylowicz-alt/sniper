@@ -243,7 +243,7 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
         if not market_hours.is_market_open(asset.currency):
             continue
 
-        candles = price_feed.get_eod_intraday_1m(asset.ticker)
+        candles = price_feed.get_eod_intraday_1m(asset.ticker, alpaca_key, alpaca_secret)
         drop = _worst_recent_drop_pct(candles)
         multiplier = _size_multiplier_for_drop(drop)
         if multiplier is None:

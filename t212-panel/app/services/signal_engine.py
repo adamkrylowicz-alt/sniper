@@ -72,12 +72,20 @@ SIGNAL_LOOKBACK_DAYS = 250
 # nie tylko rano.
 ENTRY_WINDOW = (dt.time(10, 0), dt.time(15, 45))
 
+# Rozszerzenie dla USD (Adam, 2026-07-24: dodane największe spółki USA do
+# Sygnału) - sesja US w czasie Amsterdamu to 15:35-21:55 (patrz
+# market_hours.US_SESSION_WINDOW), a stałe ENTRY_WINDOW 10:00-15:45 łapałoby
+# praktycznie tylko pierwsze ~10 minut otwarcia USA. Dla USD osobne, szersze
+# okno pokrywające prawie całą sesję NASDAQ/NYSE.
+US_ENTRY_WINDOW = (dt.time(15, 35), dt.time(21, 45))
 
-def _in_entry_window() -> bool:
+
+def _in_entry_window(currency: str) -> bool:
     now_local = dt.datetime.now(_AMSTERDAM_TZ)
     if now_local.weekday() >= 5:
         return False
-    return ENTRY_WINDOW[0] <= now_local.time() <= ENTRY_WINDOW[1]
+    window = US_ENTRY_WINDOW if currency == "USD" else ENTRY_WINDOW
+    return window[0] <= now_local.time() <= window[1]
 
 
 def _log(user_id: int, action_type: str, message: str) -> None:
@@ -229,8 +237,13 @@ def _process_entries(user_id: int, client: T212Client | None, settings: SignalSe
             continue
         if not market_hours.is_market_open(asset.currency):
             continue
+        if not _in_entry_window(asset.currency):
+            continue
 
-        candles = price_feed.get_mini_chart_ohlc(api_key, asset.ticker, days=SIGNAL_LOOKBACK_DAYS)
+        candles = price_feed.get_mini_chart_ohlc(
+            api_key, asset.ticker, days=SIGNAL_LOOKBACK_DAYS,
+            alpaca_api_key=alpaca_key, alpaca_api_secret=alpaca_secret,
+        )
         if not candles or len(candles) < MA_PERIOD:
             continue
 
@@ -420,9 +433,9 @@ def tick(app) -> None:
             if settings.is_paper_trading:
                 # Wejscia papierowe nie dotykaja T212 wcale (patrz _enter_position -
                 # sprawdza is_paper_trading PRZED jakimkolwiek uzyciem client), stad
-                # bezpieczne None zamiast prawdziwego T212Client.
-                if _in_entry_window():
-                    _process_entries(user_id, None, settings)
+                # bezpieczne None zamiast prawdziwego T212Client. Okno wejscia
+                # sprawdzane per-aktywo/waluta wewnatrz _process_entries.
+                _process_entries(user_id, None, settings)
                 continue
 
             master_key = bot_credentials.get_master_key(user_id)
@@ -436,5 +449,4 @@ def tick(app) -> None:
 
             _confirm_pending_entries(user_id, client, settings)
             _manage_exits(user_id, client, settings)
-            if _in_entry_window():
-                _process_entries(user_id, client, settings)
+            _process_entries(user_id, client, settings)

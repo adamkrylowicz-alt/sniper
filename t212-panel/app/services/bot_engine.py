@@ -261,6 +261,8 @@ def _get_atr_stop_distance(ticker: str) -> Decimal | None:
     """Dystans W WALUCIE INSTRUMENTU (nie %) = ATR(14) * ATR_STOP_MULTIPLIER, albo None gdy brak danych."""
     candles = price_feed.get_mini_chart_ohlc(
         current_app.config.get("FINNHUB_API_KEY"), ticker, days=ATR_LOOKBACK_DAYS,
+        alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
+        alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
     )
     atr = _compute_atr(candles)
     if atr is None:
@@ -1574,6 +1576,8 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
             current_app.config.get("FINNHUB_API_KEY"),
             ticker,
             days=bot_entry_filters.TREND_LOOKBACK_DAYS,
+            alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
+            alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
         ),
     )
 
@@ -1606,6 +1610,8 @@ def _entry_trend_ok(ticker: str) -> bool:
     """
     candles = price_feed.get_mini_chart_ohlc(
         current_app.config.get("FINNHUB_API_KEY"), ticker, days=ENTRY_TREND_LOOKBACK_DAYS,
+        alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
+        alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
     )
     if not candles or len(candles) < 2:
         return True

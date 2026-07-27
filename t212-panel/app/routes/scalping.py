@@ -625,11 +625,12 @@ def portfolio_view():
         return render_template(
             "portfolio.html", positions=_annotate_bot_state(user_id, cached["positions"]),
             total_value=cached["total_value"], total_ppl=cached["total_ppl"],
+            total_ppl_pct=cached["total_ppl_pct"],
             error=None, has_cache=True,
         )
     return render_template(
         "portfolio.html", positions=[], total_value=None, total_ppl=None,
-        error=None, has_cache=False,
+        total_ppl_pct=None, error=None, has_cache=False,
     )
 
 
@@ -653,6 +654,7 @@ def _fetch_portfolio_live(user_id: int) -> dict:
     positions = []
     total_value = Decimal("0")
     total_ppl = Decimal("0")
+    total_cost_basis = Decimal("0")
     for p in raw_positions:
         ticker = p.get("ticker")
         if not ticker:
@@ -689,10 +691,15 @@ def _fetch_portfolio_live(user_id: int) -> dict:
         })
         total_value += value
         total_ppl += ppl
+        total_cost_basis += cost_basis
 
     positions.sort(key=lambda x: x["value"], reverse=True)
 
-    result = {"positions": positions, "total_value": total_value, "total_ppl": total_ppl}
+    total_ppl_pct = (total_ppl / total_cost_basis * 100) if total_cost_basis else Decimal("0")
+    result = {
+        "positions": positions, "total_value": total_value, "total_ppl": total_ppl,
+        "total_ppl_pct": total_ppl_pct,
+    }
     _portfolio_cache[user_id] = result
     return result
 
@@ -746,6 +753,7 @@ def portfolio_refresh():
         ],
         total_value=float(result["total_value"]),
         total_ppl=float(result["total_ppl"]),
+        total_ppl_pct=float(result["total_ppl_pct"]),
     )
 
 

@@ -277,7 +277,11 @@ def charts(pie_id):
     pie = _get_owned_pie(pie_id)
     tickers = [a.ticker for a in pie.assets]
     api_key = current_app.config.get("FINNHUB_API_KEY")
-    data = price_feed.get_mini_charts_ohlc(api_key, tickers)
+    data = price_feed.get_mini_charts_ohlc(
+        api_key, tickers,
+        alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
+        alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
+    )
     return jsonify(ok=True, charts=data, has_api_key=bool(api_key))
 
 
