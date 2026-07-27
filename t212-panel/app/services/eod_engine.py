@@ -118,12 +118,22 @@ def _log(user_id: int, action_type: str, message: str) -> None:
     db.session.commit()
 
 
-def _worst_recent_drop_pct(candles: list[dict] | None) -> Decimal | None:
+def _worst_recent_drop(candles: list[dict] | None) -> tuple[Decimal, Decimal] | None:
     """
     Najbardziej ujemna zmiana % między ceną sprzed N minut (N=1..5) a
     ostatnią świecą - "ostry ruch" niezależnie od DOKŁADNEGO okna czasowego
     w którym się wydarzył (PRD: "reaguje na ostry spadek w krótkim czasie
     (1-5 minut)"). None gdy za mało świec (dopiero co otworzyła się sesja).
+
+    Zwraca (drop_pct, reference_price) - reference_price to CENA SPRZED TYLU
+    MINUT ILE DAŁ NAJGORSZY SPADEK, czyli poziom "sprzed spadku" (dodane
+    2026-07-28, wcześniej funkcja zwracała tylko drop_pct pod nazwą
+    _worst_recent_drop_pct - zmieniona nazwa, bo teraz zwraca więcej niż
+    sam procent). Adam: "jebło w dół np 3-5% w ciągu 1-2min, kupuje i liczę
+    na szybkie odbicie w okolice wcześniejszego poziomu np 3-4min wcześniej"
+    - ten reference_price staje się celem take-profit w _enter_position,
+    zamiast dawnego sztywnego price*(1+take_profit_pct) oderwanego od
+    wielkości spadku.
     """
     if not candles or len(candles) < 2:
         return None
@@ -137,8 +147,8 @@ def _worst_recent_drop_pct(candles: list[dict] | None) -> Decimal | None:
         if reference <= 0:
             continue
         pct = (latest_close - reference) / reference
-        if worst is None or pct < worst:
-            worst = pct
+        if worst is None or pct < worst[0]:
+            worst = (pct, reference)
     return worst
 
 
@@ -169,7 +179,7 @@ def _finalize_closed_trade(user_id: int, trade: EODTrade, via: str, fill_price: 
 
 def _enter_position(
     user_id: int, client: T212Client | None, asset: EODAsset, settings: EODSettings,
-    price: Decimal, drop_pct: Decimal, multiplier: Decimal,
+    price: Decimal, drop_pct: Decimal, multiplier: Decimal, reference_price: Decimal,
 ) -> None:
     amount = asset.entry_amount * multiplier
     quantity = (amount / price).quantize(Decimal("0.0001"))
@@ -178,7 +188,17 @@ def _enter_position(
         return
 
     stop_loss_price = price * (1 - settings.stop_loss_pct)
-    take_profit_price = price * (1 + settings.take_profit_pct)
+    # Take-profit = powrot w okolice ceny SPRZED SPADKU (reference_price z
+    # _worst_recent_drop), NIE sztywny price*(1+take_profit_pct) jak do
+    # 2026-07-28 - Adam: "liczę na szybkie odbicie w okolice wcześniejszego
+    # poziomu... nawet nie musi być idealnie w punkt ale w okolice" - cel
+    # skaluje się teraz z WIELKOŚCIĄ spadku (spadek 5% -> cel ~5% odbicia),
+    # zamiast oderwanego od niego sztywnego 0.6%. Zabezpieczenie na wypadek
+    # gdyby (rzadko, np. cena juz zdazyla odbic miedzy odczytem swiec a
+    # live price) reference_price wypadl <= entry price - wtedy sztywny %
+    # jako bezpieczny fallback, zeby TP nigdy nie byl ponizej/na wejsciu
+    # (natychmiastowa "realizacja zysku" tuz po zakupie).
+    take_profit_price = reference_price if reference_price > price else price * (1 + settings.take_profit_pct)
 
     if settings.is_paper_trading:
         trade = EODTrade(
@@ -251,7 +271,10 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
             continue
 
         candles = price_feed.get_eod_intraday_1m(asset.ticker, alpaca_key, alpaca_secret)
-        drop = _worst_recent_drop_pct(candles)
+        drop_result = _worst_recent_drop(candles)
+        if drop_result is None:
+            continue
+        drop, reference_price = drop_result
         multiplier = _size_multiplier_for_drop(drop)
         if multiplier is None:
             continue
@@ -260,7 +283,7 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
         if price is None or price <= 0:
             continue
 
-        _enter_position(user_id, client, asset, settings, price, drop, multiplier)
+        _enter_position(user_id, client, asset, settings, price, drop, multiplier, reference_price)
 
 
 def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSettings) -> None:
