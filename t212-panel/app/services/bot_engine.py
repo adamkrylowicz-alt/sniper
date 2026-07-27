@@ -1615,6 +1615,19 @@ def tick(app) -> None:
                     )
                     continue
 
+            # Adam, 2026-07-27: "ty masz chronic zyski a nie sie skupiac na
+            # kupnie akcji, kupno nie ma priorytetu" - _process_entries()
+            # (nowe wejscia) byla wolana BEZWARUNKOWO na koncu tej funkcji,
+            # NIEZALEZNIE od backoffu ponizej - jedyna czesc tick() ktora w
+            # ogole nie ustepowala miejsca ochronie istniejacych pozycji,
+            # mimo ze rzeczywiste zlecenia kupna (poza paper trading) licza
+            # sie do TEGO SAMEGO, ciasnego budzetu T212 co cancel/place
+            # trailing STOP-a. Flaga nizej: gdy konto jest w backoffie po
+            # serii bledow, nowe wejscia (real, nie paper - paper nie dotyka
+            # T212 wcale, patrz _enter_position) czekaja, zeby caly dostepny
+            # budzet szedl na ochrone zysku, nie na otwieranie kolejnych pozycji.
+            skip_new_entries = False
+
             client = _get_client_for_user(user_id, settings)
             if client is not None:
                 # _manage_trailing_exit (ochrona JUŻ zarobionego zysku) CELOWO
@@ -1641,7 +1654,9 @@ def tick(app) -> None:
                     # T212-zależny odcinek tego ticku bez logowania (inaczej
                     # dokładnie ten sam spam co próbowaliśmy tu zlikwidować),
                     # żeby nie dokładać kolejnego zapytania do ciasnego limitu.
-                    pass
+                    # Nowe wejscia (ponizej) tez czekaja - patrz "kupno nie ma
+                    # priorytetu" wyzej.
+                    skip_new_entries = True
                 else:
                     # Jedno wspólne pobranie pending orders dla obu retry - unika
                     # dublowania zapytania w ciasnym rate limicie demo. Kolejność:
@@ -1671,6 +1686,9 @@ def tick(app) -> None:
                         _retry_pending_sells(user_id, client, settings, pending=pending)
                         _auto_adopt_foreign_positions(user_id, client, settings)
                         _trigger_dca_buys(user_id, client, settings)
+
+            if skip_new_entries:
+                continue
 
             _process_entries(user_id, settings)
 
