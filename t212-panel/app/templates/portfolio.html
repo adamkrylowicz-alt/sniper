@@ -91,6 +91,9 @@
         </table>
         {% endif %}
     </div>
+    {% if initial_data %}
+    <script id="portfolio-initial-data" type="application/json">{{ initial_data | tojson }}</script>
+    {% endif %}
 
     <p class="auth-box__footer">
         <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>

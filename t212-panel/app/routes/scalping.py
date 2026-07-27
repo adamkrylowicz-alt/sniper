@@ -602,6 +602,43 @@ def _annotate_bot_state(user_id: int, positions: list[dict]) -> list[dict]:
     return positions
 
 
+def _serialize_portfolio(positions: list[dict], total_value, total_ppl, total_ppl_pct) -> dict:
+    """
+    Forma JSON-owalna (Decimal -> float) dzielona przez initial_data (portfolio.html,
+    embedowane do natychmiastowego re-renderu z zapamietanym sortem - patrz
+    portfolio.js::SORT_STORAGE_KEY) i portfolio_refresh() - zeby oba mialy
+    IDENTYCZNY ksztalt danych, ktory renderPortfolio() w JS umie skonsumowac.
+    """
+    return {
+        "positions": [
+            {
+                "ticker": p["ticker"],
+                "display_ticker": p["display_ticker"],
+                "name": p["name"],
+                "currency": p["currency"],
+                "market_open": p["market_open"],
+                "quantity": float(p["quantity"]),
+                "avg_price": float(p["avg_price"]),
+                "current_price": float(p["current_price"]),
+                "value": float(p["value"]),
+                "ppl": float(p["ppl"]),
+                "ppl_pct": float(p["ppl_pct"]),
+                "hue": p["hue"],
+                "initial": p["initial"],
+                "logo_filename": p["logo_filename"],
+                "bot_managed": p["bot_managed"],
+                "bot_trade_id": p["bot_trade_id"],
+                "on_bot_list": p["on_bot_list"],
+                "bot_entry_amount": p["bot_entry_amount"],
+            }
+            for p in positions
+        ],
+        "total_value": float(total_value),
+        "total_ppl": float(total_ppl),
+        "total_ppl_pct": float(total_ppl_pct),
+    }
+
+
 @scalping_bp.route("/portfolio", methods=["GET"])
 @login_required
 def portfolio_view():
@@ -618,19 +655,29 @@ def portfolio_view():
     zaladowaniu strony, w waski rate limit demo). Pierwsza wizyta (brak
     cache) pokazuje czytelny stan "ladowanie" zamiast probowac na sztywno
     i czesto trafiac w blad.
+
+    initial_data (JSON embedowany w portfolio.html) pozwala portfolio.js
+    naniesc zapamietany sort NATYCHMIAST (bez czekania na siec) - bez tego
+    tabela chwile stala w kolejnosci backendu (wartosc malejaco), zanim po
+    ~1.5s odswiezenie na zywo przestawialo ja na sort usera, co Adam zglosil
+    27.07.2026 jako widoczny "skok"/rozjazd tabeli tuz po zaladowaniu.
     """
     user_id = current_user_id()
     cached = _portfolio_cache.get(user_id)
     if cached:
+        positions = _annotate_bot_state(user_id, cached["positions"])
+        initial_data = _serialize_portfolio(
+            positions, cached["total_value"], cached["total_ppl"], cached["total_ppl_pct"]
+        )
         return render_template(
-            "portfolio.html", positions=_annotate_bot_state(user_id, cached["positions"]),
+            "portfolio.html", positions=positions,
             total_value=cached["total_value"], total_ppl=cached["total_ppl"],
             total_ppl_pct=cached["total_ppl_pct"],
-            error=None, has_cache=True,
+            error=None, has_cache=True, initial_data=initial_data,
         )
     return render_template(
         "portfolio.html", positions=[], total_value=None, total_ppl=None,
-        total_ppl_pct=None, error=None, has_cache=False,
+        total_ppl_pct=None, error=None, has_cache=False, initial_data=None,
     )
 
 
@@ -728,32 +775,7 @@ def portfolio_refresh():
 
     return jsonify(
         ok=True,
-        positions=[
-            {
-                "ticker": p["ticker"],
-                "display_ticker": p["display_ticker"],
-                "name": p["name"],
-                "currency": p["currency"],
-                "market_open": p["market_open"],
-                "quantity": float(p["quantity"]),
-                "avg_price": float(p["avg_price"]),
-                "current_price": float(p["current_price"]),
-                "value": float(p["value"]),
-                "ppl": float(p["ppl"]),
-                "ppl_pct": float(p["ppl_pct"]),
-                "hue": p["hue"],
-                "initial": p["initial"],
-                "logo_filename": p["logo_filename"],
-                "bot_managed": p["bot_managed"],
-                "bot_trade_id": p["bot_trade_id"],
-                "on_bot_list": p["on_bot_list"],
-                "bot_entry_amount": p["bot_entry_amount"],
-            }
-            for p in result["positions"]
-        ],
-        total_value=float(result["total_value"]),
-        total_ppl=float(result["total_ppl"]),
-        total_ppl_pct=float(result["total_ppl_pct"]),
+        **_serialize_portfolio(result["positions"], result["total_value"], result["total_ppl"], result["total_ppl_pct"]),
     )
 
 

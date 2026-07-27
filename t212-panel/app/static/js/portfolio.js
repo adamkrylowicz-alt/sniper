@@ -293,4 +293,26 @@ async function refreshPortfolio() {
     }
 }
 
+/*
+Dane z cache (embedowane przez portfolio_view() w portfolio.html, patrz
+scalping.py::_serialize_portfolio) - naniesione na tabele NATYCHMIAST (bez
+czekania na REFRESH_DELAY_MS), zeby zapamietany sort (SORT_STORAGE_KEY)
+zadzialal od razu i tabela nie "skakala" z kolejnosci backendu na sort usera
+dopiero po sieciowym odswiezeniu (zgloszone przez Adama, 27.07.2026 - widoczny
+rozjazd tuz po zaladowaniu strony). Jesli sortState.key jest puste, sort i tak
+nie zmienia kolejnosci (identyczna z ta co juz wyrenderowal Jinja), wiec
+re-render jest wtedy nieszkodliwym no-opem wizualnie.
+*/
+const initialDataEl = document.getElementById("portfolio-initial-data");
+if (initialDataEl) {
+    try {
+        const initial = JSON.parse(initialDataEl.textContent);
+        currentPositions = initial.positions;
+        currentTotals = { value: initial.total_value, ppl: initial.total_ppl, pplPct: initial.total_ppl_pct };
+        renderSorted();
+    } catch (err) {
+        console.error("Błąd odczytu wstępnych danych portfela:", err);
+    }
+}
+
 setTimeout(refreshPortfolio, REFRESH_DELAY_MS);
