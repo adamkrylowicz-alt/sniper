@@ -839,7 +839,10 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
        (2 * take_profit_step_pct powyżej ref_price) - BEZ ZMIAN, żeby zwykły
        szum tuż po zakupie nie wyciął pozycji.
     2. PIERWSZE uzbrojenie (przejście z brak-STOP-a na jest-STOP) siada na
-       protective_floor - szeroka ochrona kapitału, patrz 2a - i TYLKO wtedy.
+       max(protective_floor, ciasny_target_teraz) - patrz 2a i 2c. Floor to
+       DOLNA granica (nigdy nie schodzimy poniżej niej), nie sztywny target -
+       ZMIANA 2026-07-27 (patrz 2c), wcześniej (do 27.07) siadało ZAWSZE
+       wyłącznie na floorze.
     2a. protective_floor OPARTY O ATR ZAMIAST SZTYWNEGO % (dodane 2026-07-22,
         DRUGA zmiana tego samego dnia, na życzenie Adama - "boostowanie
         logiki stoploss") - gdy da się policzyć ATR(14) instrumentu (świece
@@ -861,6 +864,24 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         (1-step) ≈ ref_price*(1+step) > ref_price > floor) - czyli floor
         (2% albo ATR) był martwym kodem, szeroki bufor "chroniący kapitał"
         tuż po uzbrojeniu w ogóle się nie włączał, STOP od razu był ciasny.
+    2c. **ZMIANA 2026-07-27** (Adam, ochrona zysku > wszystko inne, patrz
+        [[feedback_snajper_profit_protection_priority]] w pamięci Claude):
+        punkt 2b opisuje TYLKO "już uzbrojony" - dla PIERWSZEGO uzbrojenia do
+        27.07 kod celowo brał WYŁĄCZNIE floor (2a), NIGDY max() z ciasnym
+        targetem - dokładnie ten sam dowód matematyczny co w buggu z 22.07
+        (2b wyżej) oznacza, że max() przy SAMYM uzbrojeniu też niemal zawsze
+        wybierze ciasny target zamiast floora. To był ŚWIADOMY kompromis
+        "dać pozycji oddech tuż po zakupie" - ZŁAPANY NA ŻYWO jako realny
+        problem 27.07: CRM_US_EQ uzbroiło się na floorze (159, daleko od
+        ceny 173) i UTKNĘŁO tam na kilkanaście minut, bo dociągnięcie do
+        ciasnego poziomu wymagało DRUGIEGO, osobnego zlecenia na kolejnym
+        ticku - przy ciasnym rate limicie demo to podwójna szansa na 429
+        zanim ochrona faktycznie dotrze tam gdzie powinna. Naprawione: PIERWSZE
+        uzbrojenie liczy teraz `max(floor_candidate, current_price*(1-step))`
+        - jeden strzał do najlepszego bezpiecznego poziomu zamiast dwóch.
+        floor_candidate zostaje jako DOLNA granica (chroni przed nagłym
+        cofnięciem tuż nad progiem 2, gdzie ciasny target mógłby wypaść
+        niżej niż rozsądna ochrona kapitału).
     3. Żeby nie zarzynać ciasnego rate limitu demo Cancel-Replace'em przy
        KAŻDYM drobnym ruchu ceny w górę, STOP przesuwa się dopiero gdy nowy
        target jest o co najmniej MIN_TRAIL_REQUOTE_FRACTION * step wyższy niż
@@ -1008,9 +1029,31 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             floor_anchor = max(ref_price, current_price)
             atr_distance = _get_atr_stop_distance(trade.ticker)
             if atr_distance is not None:
-                candidate_stop = (floor_anchor - atr_distance).quantize(Decimal("0.0001"))
+                floor_candidate = (floor_anchor - atr_distance).quantize(Decimal("0.0001"))
             else:
-                candidate_stop = (floor_anchor * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
+                floor_candidate = (floor_anchor * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
+
+            # JEDNYM STRZAŁEM do najlepszego poziomu (dodane 2026-07-27, Adam:
+            # "gdzie jest problem ze sie zacial na 159 zamiast chronic zysk i
+            # wystawic order na 173" - priorytet ochrony zysku > wszystko inne,
+            # patrz [[feedback_snajper_profit_protection_priority]]) - zamiast
+            # samego floor_candidate, bierzemy max(floor, ciasny_target_teraz).
+            # Bez tego: uzbrojenie ZAWSZE siadalo na szerokim floorze, a
+            # dociagniecie do ciasnego poziomu wymagalo DRUGIEGO, osobnego
+            # zlecenia (cancel+place) na KOLEJNYM ticku - przy ciasnym rate
+            # limicie demo to podwojenie szansy na utkniecie w 429 zanim
+            # ochrona faktycznie dojdzie tam gdzie powinna. Matematyczny dowod
+            # w komentarzu wyzej (2026-07-22) pokazuje ze dla SWIEZEGO wejscia
+            # (dokladnie na progu 2) ciasny_target ZAWSZE > floor - czyli max()
+            # i tak wybierze ciasny target w typowym przypadku (to swiadoma
+            # zmiana: "szeroki floor od razu po zakupie" byl kompromisem z
+            # 22.07, dzis Adam jednoznacznie postawil ochrone zysku ponad tym
+            # kompromisem). floor_candidate zostaje jako DOLNA granica na
+            # wypadek nietypowych/ujemnych przypadkow (np. bardzo swiezy wpis
+            # tuz nad progiem 2, gdzie ciasny_target moglby wypasc nizej niz
+            # rozsadna ochrona kapitalu przy naglym cofnieciu).
+            tight_target_now = (current_price * (1 - step)).quantize(Decimal("0.0001"))
+            candidate_stop = max(floor_candidate, tight_target_now)
         else:
             # JUZ uzbrojony - czysty ciagly trailing wzgledem WLASNEGO
             # poprzedniego poziomu (nigdy w dol), bez ponownego przeliczania
