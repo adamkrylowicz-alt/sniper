@@ -1481,6 +1481,16 @@ def reconcile(user_id: int) -> None:
     if closed_count == 0:
         _log(user_id, "INFO", f"Reconciliation: {len(open_trades)} pozycji sprawdzonych, wszystkie nadal aktualne.")
 
+    # Doliczenie świeżo wypełnionych nóg DCA MUSI polecieć PRZED weryfikacją
+    # nadwyżek poniżej - inaczej trade.quantity dla pozycji, której dokupka
+    # WŁAŚNIE się wykonała na T212 (ale jeszcze nie doliczona lokalnie), jest
+    # zaniżone względem stanu na koncie i weryfikacja krzyczy fałszywą
+    # "NADWYŻKĘ" (bug znaleziony 2026-07-27 na ASML - dokupka DCA 0.0605 szt.
+    # wykonana, ale reconcile() sprawdzał nadwyżkę zanim _confirm_dca_fills()
+    # zdążył ją doliczyć do trade.quantity).
+    if settings is not None:
+        _confirm_dca_fills(user_id, client, settings, pending=pending)
+
     # Weryfikacja nadwyżek (dodane 2026-07-22 razem z fixem w _confirm_buy_fill/
     # _confirm_dca_fills) - dla KAŻDEJ otwartej pozycji, nie tylko tych jeszcze
     # niepotwierdzonych, porównuje rzeczywiste posiadanie na T212 z tym co baza
@@ -1507,7 +1517,6 @@ def reconcile(user_id: int) -> None:
                 )
 
     if settings is not None:
-        _confirm_dca_fills(user_id, client, settings, pending=pending)
         _retry_pending_buys(user_id, client, settings, pending=pending)
         _retry_pending_sells(user_id, client, settings, pending=pending)
         _manage_trailing_exit(user_id, client, settings)
