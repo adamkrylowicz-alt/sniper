@@ -248,3 +248,20 @@ zaprojektowany ani nie zaimplementowany:
 
 Żadne z powyższych NIE zmienia domyślnego zachowania (bot dalej ignoruje
 nieznane mu pozycje) - to opt-in, per pozycja albo per switch czasowy.
+
+## ZROBIONE (2026-07-27): sortowanie w tabelach + panele przestawialne strzałkami
+
+- **Aktywa** (`/warp/portfolio`): kolumna "Waluta" + sortowanie klikane w
+  nagłówki tabeli, zapamiętywane w `localStorage` (przetrwa F5) i aplikowane
+  natychmiast z cache (bez skoku/rozjazdu po załadowaniu) - patrz
+  `portfolio.js::SORT_STORAGE_KEY`.
+- **Bot/Sygnał/EOD** (`/bot/`, `/signal/`, `/eod/`): to samo sortowanie
+  (w tym kolumna Waluta) dodane do tabel "Otwarte pozycje" -
+  `common.js::initSortableTable`.
+- **Bot/Sygnał/EOD - kolejność sekcji**: próba narzucenia jednej ustalonej
+  z góry kolejności (Aktywa+Otwarte pozycje na górze) nie trafiła w
+  oczekiwania Adama - zamiast tego każda z 5 sekcji (Aktywa/Otwarte
+  pozycje/Aktywacja/Ustawienia ryzyka/Dziennik) to teraz osobny panel z
+  przyciskami ▲/▼, kolejność ustawia sam user, zapamiętywana per strona w
+  `localStorage` - patrz `common.js::initReorderablePanels`. Pełny opis
+  mechaniki w CLAUDE.md, wpisy z 27.07.2026.
