@@ -68,7 +68,7 @@ _cache_ohlc: dict[str, tuple[float, list[dict] | None]] = {}  # {"AAPL_US_EQ:30"
 # widok dla czlowieka, nie decyzja tradingowa co do sekundy, wiec krotki
 # cache jest OK i oszczedza budzet Alpaca gdy ktos odswieza/przelacza karty.
 CACHE_1M_TTL_SECONDS = 60
-_cache_1m: dict[str, tuple[float, list[dict] | None]] = {}  # {"AAPL_US_EQ": (monotonic_ts, candles)}
+_cache_1m: dict[str, tuple[float, list[dict] | None]] = {}  # {"AAPL_US_EQ:5m": (monotonic_ts, candles)}
 
 _KNOWN_SUFFIXES = ("_US_EQ", "_EQ")
 _US_SUFFIX = "_US_EQ"
@@ -295,39 +295,63 @@ def get_mini_charts_ohlc(
     return {t: get_mini_chart_ohlc(api_key, t, days, alpaca_api_key, alpaca_api_secret) for t in tickers}
 
 
-def get_intraday_1m_chart(
-    ticker: str, alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
+# Zakladki ponizej "1min" na stronie instrumentu (dodane 2026-07-27, Adam:
+# "dodaj tez inne timestampy oprocz tych co juz sa") - kazdy wpis to
+# (timeframe Alpaca, ile dni wstecz pobrac). Krotsze interwaly = krotszy
+# lookback (nie ma sensu 700 swiec 1-min z tygodnia, wykres byłby nieczytelny
+# w drugą stronę), dluzsze interwaly = dluzszy lookback (garstka świec 1h z
+# jednego dnia to za mało, żeby cokolwiek pokazać).
+_INTRADAY_INTERVALS: dict[str, tuple[str, int]] = {
+    "1m": ("1Min", 1),
+    "5m": ("5Min", 5),
+    "15m": ("15Min", 14),
+    "1h": ("1Hour", 60),
+}
+
+
+def get_intraday_chart(
+    ticker: str, interval: str, alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
 ) -> list[dict] | None:
     """
-    Świece 1-minutowe DZISIEJSZEJ sesji do wykresu na stronie szczegółów
-    instrumentu (routes/scalping.py::candles, instrument.js - zakładka
-    "1min" obok 1T/1M/3M/1R/MAX). Dodane 2026-07-27 na życzenie Adama:
-    "popracuj nad świeczkami 1min na wykresach, tam gdzie się da poki co
-    czyli usa z alpaca".
+    Świece śróddzienne (1min/5min/15min/1h) do wykresu na stronie szczegółów
+    instrumentu (routes/scalping.py::candles, instrument.js - zakładki obok
+    1T/1M/3M/1R/MAX). Dodane 2026-07-27 na życzenie Adama: "popracuj nad
+    świeczkami 1min na wykresach, tam gdzie się da poki co czyli usa z
+    alpaca", potem rozszerzone o kolejne interwały: "dodaj tez inne
+    timestampy oprocz tych co juz sa".
 
-    TYLKO dla tickerów `*_US_EQ` (Alpaca) - zwraca None dla wszystkiego
-    innego. Inne rynki (EUR itd.) na razie NIE mają wiarygodnego, taniego
-    źródła realnych 1-min świec (patrz docstring get_eod_intraday_1m -
-    sprawdzone 5 płatnych alternatyw, żadna nie dawała taniego 1-min dla
-    Europy) - świadomie pominięte, docelowo IBKR gdy dostępne.
+    TYLKO dla tickerów `*_US_EQ` (Alpaca) i TYLKO dla `interval` z
+    `_INTRADAY_INTERVALS` - zwraca None dla wszystkiego innego. Inne rynki
+    (EUR itd.) na razie NIE mają wiarygodnego, taniego źródła realnych
+    śróddziennych świec (patrz docstring get_eod_intraday_1m - sprawdzone 5
+    płatnych alternatyw, żadna nie dawała taniego 1-min dla Europy) -
+    świadomie pominięte, docelowo IBKR gdy dostępne.
 
     CELOWO OSOBNA funkcja od get_eod_intraday_1m (ten sam surowy fetch
-    _fetch_alpaca_bars_1m, ale get_eod_intraday_1m ma ZERO cache'u, bo to
-    dane do decyzji tradingowej bota EOD sprzed sekund) - tutaj to widok
-    dla człowieka, więc krótki cache (CACHE_1M_TTL_SECONDS) jest pożądany,
-    nie problemem - oszczędza budżet Alpaca gdy ktoś odświeża/przełącza
-    zakładki na stronie instrumentu.
+    _fetch_alpaca_bars, ale get_eod_intraday_1m ma ZERO cache'u, bo to dane
+    do decyzji tradingowej bota EOD sprzed sekund) - tutaj to widok dla
+    człowieka, więc krótki cache (CACHE_1M_TTL_SECONDS - nazwa historyczna,
+    dotyczy teraz wszystkich interwałów śróddziennych, nie tylko 1m) jest
+    pożądany, nie problemem - oszczędza budżet Alpaca gdy ktoś odświeża/
+    przełącza zakładki na stronie instrumentu.
     """
-    if not (ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret):
+    config = _INTRADAY_INTERVALS.get(interval)
+    if config is None or not (ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret):
         return None
+    timeframe, lookback_days = config
 
+    cache_key = f"{ticker}:{interval}"
     now = time.monotonic()
-    cached = _cache_1m.get(ticker)
+    cached = _cache_1m.get(cache_key)
     if cached and (now - cached[0]) < CACHE_1M_TTL_SECONDS:
         return cached[1]
 
-    candles = _fetch_alpaca_bars_1m(alpaca_api_key, alpaca_api_secret, ticker)
-    _cache_1m[ticker] = (now, candles)
+    if lookback_days <= 1:
+        start = dt.datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+    else:
+        start = (dt.datetime.utcnow() - dt.timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00Z")
+    candles = _fetch_alpaca_bars(alpaca_api_key, alpaca_api_secret, ticker, timeframe, start)
+    _cache_1m[cache_key] = (now, candles)
     return candles
 
 
@@ -473,12 +497,15 @@ def _fetch_alpaca_bars(
         except (KeyError, TypeError, ValueError):
             continue
         candle = {"o": round(o, 4), "h": round(h, 4), "l": round(l, 4), "c": round(c, 4)}
-        if timeframe == "1Min":
-            try:
-                ts = dt.datetime.strptime(b["t"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
-            except (KeyError, ValueError):
-                continue
-            candle["t"] = int(ts.timestamp())
+        # "t" dodawane dla KAZDEGO interwalu (nie tylko "1Min" jak wczesniej) -
+        # od 2026-07-27 wykres uzywa TradingView Lightweight Charts, ktora
+        # wymaga prawdziwego czasu na osi X niezaleznie od interwalu (patrz
+        # get_intraday_chart nizej - dziala teraz dla 1m/5m/15m/1h).
+        try:
+            ts = dt.datetime.strptime(b["t"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=dt.timezone.utc)
+        except (KeyError, ValueError):
+            continue
+        candle["t"] = int(ts.timestamp())
         candles.append(candle)
     return candles if len(candles) >= 2 else None
 

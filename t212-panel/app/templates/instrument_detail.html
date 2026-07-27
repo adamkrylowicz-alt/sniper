@@ -32,6 +32,9 @@
     <div class="tabs" id="instrument-range-tabs" role="tablist">
         {% if ticker.endswith('_US_EQ') %}
         <button type="button" class="tab" data-interval="1m" title="Świece 1-minutowe dzisiejszej sesji (Alpaca)">1min</button>
+        <button type="button" class="tab" data-interval="5m" title="Świece 5-minutowe, ostatnie 5 dni (Alpaca)">5min</button>
+        <button type="button" class="tab" data-interval="15m" title="Świece 15-minutowe, ostatnie 2 tygodnie (Alpaca)">15min</button>
+        <button type="button" class="tab" data-interval="1h" title="Świece godzinowe, ostatnie ~2 miesiące (Alpaca)">1h</button>
         {% endif %}
         <button type="button" class="tab" data-days="7">1T</button>
         <button type="button" class="tab tab--active" data-days="30">1M</button>

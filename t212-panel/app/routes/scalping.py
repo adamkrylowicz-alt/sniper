@@ -387,28 +387,30 @@ def candles():
     zakresu, zeby ktos przez pomylke/manipulacje URL-em nie zazadal np.
     100 lat danych.
 
-    ?interval=1m opcjonalne (dodane 2026-07-27, Adam: "swieczki 1min na
-    wykresach, tam gdzie sie da poki co czyli usa z alpaca") - zakladka
-    "1min" na stronie instrumentu, TYLKO dla tickerow *_US_EQ (Alpaca,
-    patrz price_feed.get_intraday_1m_chart - inne rynki na razie nie maja
-    wiarygodnego zrodla realnych 1-min swiec). `days` jest wtedy ignorowane
-    (zawsze dzisiejsza sesja).
+    ?interval= opcjonalne, jedno z 1m/5m/15m/1h (dodane 2026-07-27, Adam:
+    "świeczki 1min na wykresach, tam gdzie się da poki co czyli usa z
+    alpaca", potem rozszerzone o kolejne interwały: "dodaj tez inne
+    timestampy oprocz tych co juz sa") - zakładki śróddzienne na stronie
+    instrumentu, TYLKO dla tickerów *_US_EQ (Alpaca, patrz
+    price_feed.get_intraday_chart - inne rynki na razie nie mają
+    wiarygodnego źródła realnych świec śróddziennych). `days` jest wtedy
+    ignorowane (lookback zależny od interwału, patrz _INTRADAY_INTERVALS).
     """
     ticker = request.args.get("ticker", "").strip()
     if not ticker:
         return jsonify(ok=False, error="Brak tickera."), 400
 
     interval = request.args.get("interval", default="", type=str)
-    if interval == "1m":
+    if interval:
         if not ticker.endswith("_US_EQ"):
-            return jsonify(ok=False, error="Świece 1-min są na razie dostępne tylko dla tickerów USA."), 400
-        candles = price_feed.get_intraday_1m_chart(
-            ticker,
+            return jsonify(ok=False, error="Świece śróddzienne są na razie dostępne tylko dla tickerów USA."), 400
+        candles = price_feed.get_intraday_chart(
+            ticker, interval,
             current_app.config.get("ALPACA_API_KEY"),
             current_app.config.get("ALPACA_API_SECRET"),
         )
         if not candles:
-            return jsonify(ok=False, error=f"Brak danych 1-min dla {ticker} (poza sesją albo Alpaca niedostępna)."), 404
+            return jsonify(ok=False, error=f"Brak danych ({interval}) dla {ticker} (poza sesją albo Alpaca niedostępna)."), 404
         return jsonify(ok=True, ticker=ticker, candles=candles)
 
     from ..extensions import finnhub
