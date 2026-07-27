@@ -23,6 +23,7 @@ let priceChart = null;
 let candleSeries = null;
 let avgPriceLine = null;
 let heldAveragePrice = null;
+let heldPpl = null;
 
 function themeColor(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -31,9 +32,14 @@ function themeColor(varName) {
 // Linia sredniej ceny zakupu (dodane 2026-07-28, Adam: "pokazuj linie po
 // jakiej zakupione mam aktywa, srednia cena oczywiscie") - averagePrice z
 // /warp/account (patrz loadPosition() nizej), TA SAMA wartosc co w "Twoja
-// inwestycja". Wolane i po zaladowaniu pozycji, i po kazdym przeladowaniu
-// swiec (przelacznik zakladek tworzy nowe dane, ale candleSeries to ten sam
-// obiekt - trzeba usunac stara linie i dodac nowa, inaczej by sie zdublowala).
+// inwestycja". Kolor zielony/czerwony wg znaku ppl (2026-07-28, Adam: "jak
+// jest w zysku niech bedzie zielona kreska, troche grubsza niz ta teraz, a
+// jak strata to czerwona") - ten sam znak co juz uzywany w kolorowaniu
+// "Twoja inwestycja" (focus-tile__pnl--profit/loss), zeby nie bylo
+// niespojnosci miedzy linia a liczba obok niej. Wolane i po zaladowaniu
+// pozycji, i po kazdym przeladowaniu swiec (przelacznik zakladek tworzy nowe
+// dane, ale candleSeries to ten sam obiekt - trzeba usunac stara linie i
+// dodac nowa, inaczej by sie zdublowala).
 function updateAvgPriceLine() {
     if (!candleSeries) return;
     if (avgPriceLine) {
@@ -41,10 +47,11 @@ function updateAvgPriceLine() {
         avgPriceLine = null;
     }
     if (!heldAveragePrice) return;
+    const color = heldPpl >= 0 ? themeColor("--buy-green") : themeColor("--sell-red");
     avgPriceLine = candleSeries.createPriceLine({
         price: heldAveragePrice,
-        color: themeColor("--accent-amber"),
-        lineWidth: 1,
+        color,
+        lineWidth: 2,
         lineStyle: LightweightCharts.LineStyle.Dashed,
         axisLabelVisible: true,
         title: "Twoja średnia",
@@ -270,6 +277,7 @@ async function loadPosition() {
             document.getElementById("instrument-position").style.display = "";
 
             heldAveragePrice = avgPrice > 0 ? avgPrice : null;
+            heldPpl = ppl;
             updateAvgPriceLine();
         }
 
