@@ -27,7 +27,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from ..extensions import db
-from ..models import ActiveTrade, BotAsset, Instrument, OrderLog
+from ..models import ActiveTrade, BotAsset, EODTrade, Instrument, OrderLog, SignalTrade
 from ..services import logo_cache, price_feed
 from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
@@ -425,6 +425,51 @@ def candles():
         return jsonify(ok=False, error=f"Brak danych świecowych dla {ticker}."), 404
 
     return jsonify(ok=True, ticker=ticker, candles=data)
+
+
+@scalping_bp.route("/trade_levels", methods=["GET"])
+@login_required
+def trade_levels():
+    """
+    Poziomy stop-loss/take-profit dla otwartej pozycji BOTA (dowolnego z
+    trzech silnikow) na danym tickerze - do linii na wykresie strony
+    instrumentu (instrument.js). Adam, 2026-07-28: "pokazuj tez linie stop
+    loss oraz tp o ile sa".
+
+    Micro-Grid (ActiveTrade) ma TYLKO stop_target_price - trailing, RUCHOMY
+    stop, celowo BEZ stalego take-profit (patrz bot_engine.py::
+    _manage_trailing_exit - to caly sens strategii, goni cene w gore zamiast
+    wyjsc na sztywnym progu). Sygnal (SignalTrade) i EOD (EODTrade) maja OBA,
+    STALE: stop_loss_price/take_profit_price (patrz modele w models.py).
+
+    Zwraca liste - moze byc pusta (brak otwartej pozycji bota na tym
+    tickerze, np. akcja trzymana wylacznie recznie poza botem), a teoretycznie
+    moze miec wiecej niz jeden wpis jesli ten sam ticker jest OTWARTY w wiecej
+    niz jednym silniku naraz (rzadkie, kazdy silnik dziala niezaleznie,
+    wlasna lista aktywow).
+    """
+    ticker = request.args.get("ticker", "").strip()
+    if not ticker:
+        return jsonify(ok=False, error="Brak tickera."), 400
+
+    user_id = current_user_id()
+    levels = []
+
+    bot_trade = ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
+    if bot_trade and bot_trade.stop_target_price is not None:
+        levels.append({"type": "stop_loss", "price": float(bot_trade.stop_target_price), "source": "Micro-Grid"})
+
+    signal_trade = SignalTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
+    if signal_trade:
+        levels.append({"type": "stop_loss", "price": float(signal_trade.stop_loss_price), "source": "Sygnał"})
+        levels.append({"type": "take_profit", "price": float(signal_trade.take_profit_price), "source": "Sygnał"})
+
+    eod_trade = EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
+    if eod_trade:
+        levels.append({"type": "stop_loss", "price": float(eod_trade.stop_loss_price), "source": "EOD"})
+        levels.append({"type": "take_profit", "price": float(eod_trade.take_profit_price), "source": "EOD"})
+
+    return jsonify(ok=True, ticker=ticker, levels=levels)
 
 
 @scalping_bp.route("/focus", methods=["GET"])

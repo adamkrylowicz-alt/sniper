@@ -21,41 +21,66 @@ const DEFAULT_CHART_EMPTY_TEXT = document.getElementById("instrument-chart-empty
 
 let priceChart = null;
 let candleSeries = null;
-let avgPriceLine = null;
 let heldAveragePrice = null;
 let heldPpl = null;
+let tradeLevels = []; // z /warp/trade_levels - [{type: "stop_loss"|"take_profit", price, source}]
+let overlayPriceLines = []; // wszystkie linie aktualnie narysowane na candleSeries (srednia + SL/TP)
 
 function themeColor(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 }
 
-// Linia sredniej ceny zakupu (dodane 2026-07-28, Adam: "pokazuj linie po
-// jakiej zakupione mam aktywa, srednia cena oczywiscie") - averagePrice z
-// /warp/account (patrz loadPosition() nizej), TA SAMA wartosc co w "Twoja
-// inwestycja". Kolor zielony/czerwony wg znaku ppl (2026-07-28, Adam: "jak
-// jest w zysku niech bedzie zielona kreska, troche grubsza niz ta teraz, a
-// jak strata to czerwona") - ten sam znak co juz uzywany w kolorowaniu
-// "Twoja inwestycja" (focus-tile__pnl--profit/loss), zeby nie bylo
-// niespojnosci miedzy linia a liczba obok niej. Wolane i po zaladowaniu
-// pozycji, i po kazdym przeladowaniu swiec (przelacznik zakladek tworzy nowe
-// dane, ale candleSeries to ten sam obiekt - trzeba usunac stara linie i
-// dodac nowa, inaczej by sie zdublowala).
-function updateAvgPriceLine() {
+function addOverlayLine(price, color, style, width, title) {
+    if (!candleSeries || price == null) return;
+    overlayPriceLines.push(candleSeries.createPriceLine({
+        price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title,
+    }));
+}
+
+// Linie na wykresie: srednia ceny zakupu + stop-loss/take-profit bota, jesli
+// pozycja jest przez ktoregos bota zarzadzana (dodane 2026-07-28, Adam:
+// "pokazuj linie po jakiej zakupione mam aktywa" + "pokazuj tez linie stop
+// loss oraz tp o ile sa, kolory?? hgw sam cos wymysl"):
+//   - Twoja srednia: zielona (w zysku) / czerwona (strata) wg ppl, przerywana,
+//     grubsza (2px) - ten sam znak co "Twoja inwestycja" (focus-tile__pnl),
+//     zeby linia i liczba obok byly spojne.
+//   - Stop-loss: czerwona, kropkowana, cienka - kolor "niebezpieczenstwa"
+//     spojny ze --sell-red uzywanym wszedzie indziej w appce.
+//   - Take-profit: fioletowa (--accent-amber, kolor sygnalu appki) kropkowana,
+//     cienka - swiadomie NIE zielona, zeby nie mylila sie z "Twoja srednia"
+//     gdy pozycja jest akurat w zysku (dwie zielone linie na raz bylyby
+//     nieczytelne).
+// Jeden ticker moze teoretycznie miec SL/TP z wiecej niz jednego silnika
+// (Micro-Grid/Sygnal/EOD dzialaja niezaleznie) - kazdy dostaje wlasna linie
+// z etykieta zrodla w tytule.
+function updateOverlayLines() {
     if (!candleSeries) return;
-    if (avgPriceLine) {
-        candleSeries.removePriceLine(avgPriceLine);
-        avgPriceLine = null;
+    overlayPriceLines.forEach((line) => candleSeries.removePriceLine(line));
+    overlayPriceLines = [];
+
+    if (heldAveragePrice) {
+        const color = heldPpl >= 0 ? themeColor("--buy-green") : themeColor("--sell-red");
+        addOverlayLine(heldAveragePrice, color, LightweightCharts.LineStyle.Dashed, 2, "Twoja średnia");
     }
-    if (!heldAveragePrice) return;
-    const color = heldPpl >= 0 ? themeColor("--buy-green") : themeColor("--sell-red");
-    avgPriceLine = candleSeries.createPriceLine({
-        price: heldAveragePrice,
-        color,
-        lineWidth: 2,
-        lineStyle: LightweightCharts.LineStyle.Dashed,
-        axisLabelVisible: true,
-        title: "Twoja średnia",
+    tradeLevels.forEach((lvl) => {
+        if (lvl.type === "stop_loss") {
+            addOverlayLine(lvl.price, themeColor("--sell-red"), LightweightCharts.LineStyle.Dotted, 1, `Stop-loss (${lvl.source})`);
+        } else if (lvl.type === "take_profit") {
+            addOverlayLine(lvl.price, themeColor("--accent-amber"), LightweightCharts.LineStyle.Dotted, 1, `Take-profit (${lvl.source})`);
+        }
     });
+}
+
+async function loadTradeLevels() {
+    try {
+        const resp = await fetch(`/warp/trade_levels?ticker=${encodeURIComponent(ticker)}`);
+        const data = await resp.json();
+        if (!data.ok) return;
+        tradeLevels = data.levels || [];
+        updateOverlayLines();
+    } catch (err) {
+        console.error("Błąd poziomów SL/TP:", err);
+    }
 }
 
 function ensureChart() {
@@ -116,7 +141,7 @@ async function loadCandles(days, interval) {
 
         candleSeries.setData(points);
         priceChart.timeScale().fitContent();
-        updateAvgPriceLine();
+        updateOverlayLines();
     } catch (err) {
         console.error("Błąd wykresu:", err);
         emptyEl.style.display = "";
@@ -278,7 +303,7 @@ async function loadPosition() {
 
             heldAveragePrice = avgPrice > 0 ? avgPrice : null;
             heldPpl = ppl;
-            updateAvgPriceLine();
+            updateOverlayLines();
         }
 
         updateMaxHints();
@@ -460,6 +485,7 @@ setupPresets();
 loadCandles(currentDays);
 refreshQuote();
 loadPosition();
+loadTradeLevels();
 loadLimits();
 loadStats();
 setInterval(refreshQuote, 5000);
