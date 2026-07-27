@@ -222,15 +222,23 @@ jako domyślna, ale bywa za sztywna, gdy Adam SAM chce oddać botowi kontrolę
 nad czymś kupionym ręcznie - stąd dwa powiązane pomysły, żaden jeszcze nie
 zaprojektowany ani nie zaimplementowany:
 
-1. **Switch "zarządzaj wszystkim"** ("idę spać, a ty handluj") - globalny
-   przełącznik per user (albo per `RiskSettings`), który na czas jego
-   włączenia pozwala botowi traktować WSZYSTKIE pozycje na koncie T212 (nie
-   tylko te z własnego `ActiveTrade`) jako swoje do zarządzania wyjściem
-   (trailing exit / DCA). Wymaga rozstrzygnięcia: co się dzieje przy wyłączeniu
-   trybu - bot "oddaje" pozycje z powrotem, czy zostają już na stałe pod jego
-   zarządzaniem? Ryzyko: bot nie zna historii/kontekstu ręcznego zakupu
-   (dlaczego kupione, jaki cel), więc "zarządzanie" ograniczałoby się
-   praktycznie do samego mechanizmu wyjścia (trailing stop), nie do wejścia.
+1. **ZROBIONE (2026-07-27). Switch "zarządzaj wszystkim"** ("idę spać, a ty
+   handluj") - `RiskSettings.manage_all_positions` (nowa kolumna, checkbox w
+   Ustawieniach ryzyka na `/bot/`). Rozstrzygnięcia z Adamem: (1) dotyczy
+   WYŁĄCZNIE Micro-Grid (Sygnał/EOD mają stały SL/TP, nie trailing/DCA, więc
+   "zarządzanie wyjściem" ma tam mniej sensu); (2) wyłączenie switcha
+   automatycznie ZWALNIA pozycje przejęte WYŁĄCZNIE dzięki niemu
+   (`ActiveTrade.auto_adopted=True`, nowa kolumna) - ręczna adopcja
+   przyciskiem "Przekaż botowi" zawsze zostaje pod botem do ręcznego
+   "Zwolnij", niezależnie od stanu switcha. DCA celowo WYŁĄCZONE dla pozycji
+   przejętych switchem (`grid_anchor_price=0`, ten sam mechanizm co stare
+   pozycje sprzed migracji) - bot nie zna kontekstu ręcznego zakupu, więc
+   "zarządzanie" faktycznie ogranicza się do samego mechanizmu wyjścia
+   (trailing stop), zgodnie z ryzykiem opisanym niżej. Patrz
+   `bot_engine.py::_auto_adopt_foreign_positions`,
+   `routes/bot.py::_release_auto_adopted_positions`, pełny opis w CLAUDE.md
+   z 27.07.2026. Ryzyko z pierwotnego zapisu (bot nie zna historii/kontekstu
+   ręcznego zakupu) zostaje jako ŚWIADOME ograniczenie, nie bug.
 
 2. **ZROBIONE (2026-07-24). Ręczne "adoptowanie" pojedynczej pozycji** - akcja w UI (np. przy
    pozycji na stronie Aktywa) "przekaż botowi" / "połącz z botem", która
