@@ -25,6 +25,7 @@ let heldAveragePrice = null;
 let heldPpl = null;
 let tradeLevels = []; // z /warp/trade_levels - [{type: "stop_loss"|"take_profit", price, source}]
 let overlayPriceLines = []; // wszystkie linie aktualnie narysowane na candleSeries (srednia + SL/TP)
+let livePriceLine = null; // osobna od overlayPriceLines - odswiezana co 5s, nie chcemy migotac reszty linii tak czesto
 
 function themeColor(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
@@ -35,6 +36,33 @@ function addOverlayLine(price, color, style, width, title) {
     overlayPriceLines.push(candleSeries.createPriceLine({
         price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title,
     }));
+}
+
+// Zywa linia aktualnej ceny (dodane 2026-07-28, Adam po zauwazeniu ze swiece
+// dzienne dla tickerow EUR (np. Allianz) potrafia byc kilka dni nieaktualne -
+// Yahoo, darmowe/nieoficjalne zrodlo, czasem po prostu jeszcze nie publikuje
+// swiecy za dzisiaj dla danej spolki, sprawdzone bezposrednio z pominieciem
+// cache'a: ta sama, nieaktualna swieca). "pewnie dopoki nie bedzie danych z
+// IBKR" - tymczasowe obejscie: prosta, zywa poprzeczka na TEJ SAMEJ cenie co
+// bot uzywa do decyzji (/warp/quote, ten sam price_feed co bot_engine.py),
+// wiec nawet gdy swiece sa stare, widac gdzie NAPRAWDE jest cena teraz.
+// Odswiezana co 5s razem z refreshQuote() - CELOWO osobna od
+// overlayPriceLines (srednia/SL/TP), ktore migotalyby bez potrzeby przy tak
+// czestym odswiezaniu.
+function updateLivePriceLine(price) {
+    if (!candleSeries || price == null) return;
+    if (livePriceLine) {
+        candleSeries.removePriceLine(livePriceLine);
+        livePriceLine = null;
+    }
+    livePriceLine = candleSeries.createPriceLine({
+        price,
+        color: themeColor("--text-bright"),
+        lineWidth: 1,
+        lineStyle: LightweightCharts.LineStyle.Solid,
+        axisLabelVisible: true,
+        title: "Cena teraz",
+    });
 }
 
 // Linie na wykresie: srednia ceny zakupu + stop-loss/take-profit bota, jesli
@@ -243,6 +271,7 @@ async function refreshQuote() {
 
         updateRangeMarkers();
         updateMaxHints();
+        updateLivePriceLine(lastQuote.c);
     } catch (err) {
         console.error("Błąd ceny:", err);
     }
