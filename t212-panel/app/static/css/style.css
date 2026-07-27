@@ -1104,6 +1104,22 @@ img.tile__logo {
 .history-table__side--buy { color: var(--buy-green); }
 .history-table__side--sell { color: var(--sell-red); }
 
+/* Panele przestawialne strzalkami (bot.html/signal.html/eod.html) - kazda
+   sekcja (Aktywa/Otwarte pozycje/Aktywacja/Ryzyko/Dziennik) to jeden panel,
+   kolejnosc user ustawia strzalkami gora/dol, patrz common.js::initReorderablePanels. */
+.reorderable-panel__toolbar { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 4px; }
+.reorderable-panel__move {
+    background: transparent;
+    border: 1px solid var(--hairline);
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    line-height: 1;
+    padding: 3px 7px;
+    border-radius: 4px;
+}
+.reorderable-panel__move:hover { color: var(--text-bright); border-color: var(--accent-amber); }
+
 .history-table__status--sent { color: var(--text-bright); }
 .history-table__status--filled { color: var(--buy-green); }
 .history-table__status--rejected { color: var(--sell-red); }

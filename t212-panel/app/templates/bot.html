@@ -33,6 +33,11 @@
     </div>
     {% endif %}
 
+    <div class="reorderable-panel" data-panel-id="assets">
+    <div class="reorderable-panel__toolbar">
+        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+    </div>
     <h2 class="section-heading" id="section-assets">AKTYWA BOTA</h2>
     <p class="auth-box__hint">
         Własna, niezależna lista tickerów bota — dodanie tickera tutaj nie ma
@@ -103,7 +108,13 @@
         {% endfor %}
     </div>
     {% endif %}
+    </div>
 
+    <div class="reorderable-panel" data-panel-id="positions">
+    <div class="reorderable-panel__toolbar">
+        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+    </div>
     <h2 class="section-heading" id="section-positions">OTWARTE POZYCJE</h2>
     <p class="auth-box__hint">
         Pozycje, na których bot aktualnie trzyma kapitał - niezależnie od tego
@@ -167,7 +178,13 @@
         </tbody>
     </table>
     {% endif %}
+    </div>
 
+    <div class="reorderable-panel" data-panel-id="activation">
+    <div class="reorderable-panel__toolbar">
+        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+    </div>
     <div class="pie-detail__add-asset" id="section-activation">
         <label class="auth-form__label" for="bot-password">Hasło (do aktywacji bota)</label>
         <input type="password" id="bot-password" class="auth-form__input" autocomplete="current-password">
@@ -177,7 +194,13 @@
         </div>
         <p class="auth-box__hint" id="bot-activate-status"></p>
     </div>
+    </div>
 
+    <div class="reorderable-panel" data-panel-id="risk">
+    <div class="reorderable-panel__toolbar">
+        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+    </div>
     <details class="collapsible" id="section-risk">
     <summary class="section-heading">USTAWIENIA RYZYKA</summary>
     <div class="pie-detail__budget-row">
@@ -234,7 +257,13 @@
     </button>
     <p class="auth-box__hint" id="bot-settings-status"></p>
     </details>
+    </div>
 
+    <div class="reorderable-panel" data-panel-id="log">
+    <div class="reorderable-panel__toolbar">
+        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+    </div>
     <div class="section-heading section-heading--with-action" id="section-log">
         <span>DZIENNIK BOTA (ostatnie 50)</span>
         <button type="button" id="btn-bot-clear-log" class="section-heading__action">Wyczyść log</button>
@@ -262,6 +291,7 @@
         </tbody>
     </table>
     {% endif %}
+    </div>
 
     <p class="auth-box__footer">
         <a href="{{ url_for('pie.list_view') }}">← Virtual Pie</a>

@@ -471,6 +471,80 @@ document.addEventListener("DOMContentLoaded", () => {
     initSortableTable(document.getElementById("eod-positions-table"), "snajper-eod-positions-sort");
 });
 
+/*
+=== Panele przestawialne strzalkami (bot/signal/eod) ===
+Adam nie chcial JEDNEJ ustalonej na sztywno kolejnosci sekcji (Aktywa/
+Otwarte pozycje/Aktywacja/Ustawienia ryzyka/Dziennik) - zamiast tego kazdy
+user ustawia wlasna kolejnosc strzalkami gora/dol przy kazdym panelu
+(27.07.2026, po tym jak proba zgadniecia "dobrej" kolejnosci nie trafila w
+oczekiwania). Panele to BEZPOSREDNIE dzieci kontenera (div.reorderable-panel
+z data-panel-id) - nav/bannery/stopka NIE sa panelami i zostaja na swoich
+miejscach (przed/po). Kolejnosc zapamietywana w localStorage (tablica ID),
+aplikowana NATYCHMIAST przy starcie skryptu - ten sam wzorzec co
+initSortableTable (zero czekania, bez skoku po zaladowaniu).
+*/
+function initReorderablePanels(container, storageKey) {
+    if (!container) return;
+    const panels = Array.from(container.children).filter((el) => el.classList.contains("reorderable-panel"));
+    if (!panels.length) return;
+
+    function applyOrder(order) {
+        const seen = new Set();
+        order.forEach((id) => {
+            const panel = panels.find((p) => p.dataset.panelId === id);
+            if (panel) {
+                container.appendChild(panel);
+                seen.add(id);
+            }
+        });
+        // Panele spoza zapisanej kolejnosci (np. dodane w kolejnej wersji appki
+        // PO tym jak user juz raz poukladal swoje) - dolaczane na koniec,
+        // zachowujac ich wzajemna kolejnosc z szablonu.
+        panels.forEach((p) => {
+            if (!seen.has(p.dataset.panelId)) container.appendChild(p);
+        });
+    }
+
+    function saveOrder() {
+        const order = Array.from(container.children)
+            .filter((el) => el.classList.contains("reorderable-panel"))
+            .map((p) => p.dataset.panelId);
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(order));
+        } catch (err) {
+            // localStorage niedostepny - kolejnosc dziala w tej wizycie, nie przetrwa F5
+        }
+    }
+
+    try {
+        const saved = JSON.parse(localStorage.getItem(storageKey));
+        if (Array.isArray(saved)) applyOrder(saved);
+    } catch (err) {
+        // brak/uszkodzony zapis - zostaje domyslna kolejnosc z szablonu
+    }
+
+    container.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("[data-move]");
+        if (!btn) return;
+        const panel = btn.closest(".reorderable-panel");
+        if (!panel) return;
+        if (btn.dataset.move === "up") {
+            const prev = panel.previousElementSibling;
+            if (prev && prev.classList.contains("reorderable-panel")) container.insertBefore(panel, prev);
+        } else {
+            const next = panel.nextElementSibling;
+            if (next && next.classList.contains("reorderable-panel")) container.insertBefore(next, panel);
+        }
+        saveOrder();
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    initReorderablePanels(document.getElementById("bot-panel"), "snajper-bot-panel-order");
+    initReorderablePanels(document.getElementById("signal-panel"), "snajper-signal-panel-order");
+    initReorderablePanels(document.getElementById("eod-panel"), "snajper-eod-panel-order");
+});
+
 async function fetchCategoryCounts() {
     try {
         const resp = await fetch("/settings/watchlist/category-counts");
