@@ -108,6 +108,30 @@ _portfolio_cache: dict[str, tuple[float, list[dict] | None, Exception | None]] =
 _pending_orders_cache: dict[str, tuple[float, list[dict] | None, Exception | None]] = {}
 SHARED_CACHE_TTL_SECONDS = 50.0
 
+# Backoff po błędach get_pending_orders() DZIELONY między Micro-Grid/Sygnał/
+# EOD (przeniesione tu 2026-07-29 - Adam: "musisz jakos wspolnie korelowac
+# te wejscia, nie moze byc ze boty nie widza o sobie i napierdlaja w ten sam
+# czas"). Wcześniej KAŻDY z trzech silników miał WŁASNY, osobny
+# `_tick_error_backoff` (w bot_engine.py/signal_engine.py/eod_engine.py) -
+# trzy niezależne "zegary", każdy odliczający OD MOMENTU WŁASNEJO pierwszego
+# błędu. Skutek na żywo (2026-07-29, PO already wdrożonym SHARED_CACHE_TTL
+# powyżej): Sygnał złapał 5 kolejnych 429 i wyszedł w 30-min backoff, mimo że
+# Micro-Grid i EOD w tym samym czasie ticowały bez błędu - zegar Sygnału był
+# całkowicie rozjechany względem tego, kiedy limit T212 faktycznie miał
+# jakiś budżet, bo "wie" tylko o WŁASNYCH nieudanych próbach, nie o tym, że
+# inny silnik właśnie zjadł jedyny dostępny slot. Backoff kluczowany
+# _cache_key (jak cache wyżej) - TA SAMA skala eskalacji (1,2,5,15,30 min),
+# ale JEDNO wspólne źródło prawdy: kto pierwszy w danym cyklu zobaczy błąd,
+# ten ustawia zegar dla WSZYSTKICH trzech silników, i wszystkie trzy czekają
+# do tego samego `retry_at`, zamiast każdy próbować według własnego uznania.
+TICK_ERROR_BACKOFF_MINUTES = (1, 2, 5, 15, 30)
+_shared_tick_backoff: dict[str, tuple[int, float]] = {}  # {cache_key: (consecutive, monotonic_retry_at)}
+
+
+def _next_tick_error_delay_seconds(consecutive_errors: int) -> float:
+    idx = min(consecutive_errors - 1, len(TICK_ERROR_BACKOFF_MINUTES) - 1)
+    return TICK_ERROR_BACKOFF_MINUTES[idx] * 60.0
+
 
 class T212APIError(Exception):
     """
@@ -204,18 +228,32 @@ class T212Client:
     def _cached_request(
         self, path: str, cache: dict[str, tuple[float, list[dict] | None, Exception | None]]
     ) -> list[dict]:
+        """GET z cache'em dzielonym między silnikami - patrz _cached_request_ex()."""
+        result, error, _ = self._cached_request_ex(path, cache)
+        if error is not None:
+            raise error
+        return result
+
+    def _cached_request_ex(
+        self, path: str, cache: dict[str, tuple[float, list[dict] | None, Exception | None]]
+    ) -> tuple[list[dict] | None, Exception | None, bool]:
         """
-        GET z cache'em dzielonym między silnikami, patrz komentarz przy
-        SHARED_CACHE_TTL_SECONDS - cache'uje TAKŻE błąd (re-raise tego
-        samego wyjątku kolejnym callerom w oknie TTL), nie tylko sukces.
+        Jak _cached_request(), ale zwraca też `was_fresh` (czy TO konkretne
+        wołanie zrobiło realny request, czy trafiło w cache) - potrzebne
+        get_pending_orders_for_tick() do eskalacji WSPÓLNEGO backoffu
+        wyłącznie na podstawie świeżego błędu, nie każdego re-raise'u
+        cache'owanego błędu (inaczej 2-3 silniki obserwujące TEN SAM
+        cache'owany błąd w tym samym oknie TTL podbiłyby licznik 2-3x
+        zamiast 1x, przez co backoff eskalowałby szybciej niż powinien).
+
+        Cache'uje TAKŻE błąd (re-raise tego samego wyjątku kolejnym
+        callerom w oknie TTL), nie tylko sukces.
         """
         with _shared_cache_lock:
             cached = cache.get(self._cache_key)
             if cached and (time.monotonic() - cached[0]) < SHARED_CACHE_TTL_SECONDS:
                 _, cached_result, cached_error = cached
-                if cached_error is not None:
-                    raise cached_error
-                return cached_result
+                return cached_result, cached_error, False
 
         result: list[dict] | None = None
         error: Exception | None = None
@@ -227,9 +265,57 @@ class T212Client:
         with _shared_cache_lock:
             cache[self._cache_key] = (time.monotonic(), result, error)
 
+        return result, error, True
+
+    def get_pending_orders_for_tick(self) -> list[dict] | None:
+        """
+        Używane przez tick() Micro-Grid/Sygnał/EOD ZAMIAST get_pending_orders()
+        + własny, silnik-specyficzny backoff - patrz komentarz przy
+        _shared_tick_backoff. Zwraca None, gdy jesteśmy we WSPÓLNYM backoffie
+        po poprzednich błędach (caller powinien pominąć CAŁY T212-zależny
+        odcinek ticku bez logowania, tak jak dotychczas). W przeciwnym razie
+        zachowuje się jak get_pending_orders() - zwraca listę albo podnosi
+        T212APIError (caller loguje treść błędu + woła tick_backoff_status()
+        po (consecutive, delay) do komunikatu).
+        """
+        with _shared_cache_lock:
+            backoff = _shared_tick_backoff.get(self._cache_key)
+            if backoff is not None and time.monotonic() < backoff[1]:
+                return None
+
+        result, error, was_fresh = self._cached_request_ex("/equity/orders", _pending_orders_cache)
+
         if error is not None:
+            if was_fresh:
+                self._escalate_tick_backoff()
             raise error
+
+        with _shared_cache_lock:
+            _shared_tick_backoff.pop(self._cache_key, None)
         return result
+
+    def tick_backoff_status(self) -> tuple[int, float] | None:
+        """
+        (consecutive, delay_seconds) aktualnego WSPÓLNEGO backoffu (patrz
+        _shared_tick_backoff), albo None gdy żaden silnik go nie eskalował.
+        Wołaj PO otrzymaniu T212APIError z get_pending_orders_for_tick() - do
+        zbudowania komunikatu logu z tymi samymi liczbami niezależnie od
+        tego, czy TEN caller zrobił świeży request, czy trafił w cache'owany
+        błąd zapisany przez inny silnik chwilę wcześniej.
+        """
+        with _shared_cache_lock:
+            backoff = _shared_tick_backoff.get(self._cache_key)
+        if backoff is None:
+            return None
+        consecutive, retry_at = backoff
+        return consecutive, max(retry_at - time.monotonic(), 0.0)
+
+    def _escalate_tick_backoff(self) -> None:
+        with _shared_cache_lock:
+            backoff = _shared_tick_backoff.get(self._cache_key)
+            consecutive = (backoff[0] if backoff else 0) + 1
+            delay = _next_tick_error_delay_seconds(consecutive)
+            _shared_tick_backoff[self._cache_key] = (consecutive, time.monotonic() + delay)
 
     @staticmethod
     def _log_rate_limit(resp: requests.Response) -> None:

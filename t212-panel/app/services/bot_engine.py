@@ -337,28 +337,22 @@ def _next_retry_delay(retry_count: int) -> dt.timedelta:
     return dt.timedelta(minutes=SELL_RETRY_BACKOFF_MINUTES[idx])
 
 
-# Backoff (minuty) dla tick()::get_pending_orders po DOWOLNYM błędzie T212API
-# (nie tylko 429 - historia 2026-07-21 pokazała, że każdy uporczywy błąd tego
-# wywołania, nie tylko rate limit, prowadzi do tego samego: tick co 60s
-# dobija się bez końca o ten sam problem zamiast dać mu czas się wyjaśnić).
-# Konto usera 2 utknęło w 429 na KAŻDYM ticku przez 13.5h bez ani jednego
-# udanego zapytania - stąd ten sam rosnący backoff co SELL_RETRY_BACKOFF_MINUTES,
-# osobna stała bo to inny licznik (per-user/per-tick, nie per-trade).
-TICK_ERROR_BACKOFF_MINUTES = (1, 2, 5, 15, 30)
-
-# user_id -> (kolejnych błędów z rzędu, kiedy wolno spróbować znowu).
-# W pamięci procesu (restart czyści, jak bot_credentials/price_feed cache) -
-# celowo nietrwałe, nie ma potrzeby przeżywać restartu appki.
-_tick_error_backoff: dict[int, tuple[int, dt.datetime]] = {}
-
-
-def _next_tick_error_delay(consecutive_errors: int) -> dt.timedelta:
-    idx = min(consecutive_errors - 1, len(TICK_ERROR_BACKOFF_MINUTES) - 1)
-    return dt.timedelta(minutes=TICK_ERROR_BACKOFF_MINUTES[idx])
-
+# Backoff dla tick()::get_pending_orders po DOWOLNYM błędzie T212API PRZENIESIONY
+# do t212_client.py::get_pending_orders_for_tick() (2026-07-29, Adam: "musisz
+# jakos wspolnie korelowac te wejscia, nie moze byc ze boty nie widza o sobie
+# i napierdlaja w ten sam czas") - był tu WŁASNY, silnik-specyficzny licznik
+# (`_tick_error_backoff`/`TICK_ERROR_BACKOFF_MINUTES`), niezależny od tych
+# samych w signal_engine.py/eod_engine.py, mimo że wszystkie trzy dobijają się
+# o TEN SAM, wspólny, bardzo ciasny limit T212 demo - efekt: Sygnał mógł
+# złapać serię 429 i wejść w 30-min backoff mimo że Micro-Grid/EOD w tym samym
+# czasie ticowały bez błędu, bo każdy silnik "wiedział" tylko o WŁASNYCH
+# nieudanych próbach. Teraz `client.get_pending_orders_for_tick()` zwraca None
+# (skip, bez logowania) gdy WSPÓLNY backoff jest aktywny, albo listę/wyjątek
+# jak dawny get_pending_orders() - patrz call site w tick() niżej.
 
 # (user_id, ticker) -> (kolejnych nieudanych prób wejścia z rzędu, kiedy
-# wolno spróbować znowu). W pamięci procesu, jak _tick_error_backoff wyżej.
+# wolno spróbować znowu). W pamięci procesu, jak _shared_tick_backoff w
+# t212_client.py (choć TEN konkretny licznik jest per-trade, nie wspólny).
 # Dodane 2026-07-22 - znaleziony realny problem: MAIN_US_EQ, potem DIS_US_EQ
 # nieprzerwanie łapały 429 przy próbie wejścia, a każda taka próba (nawet
 # nieudana) "zużywa slot" jednego wejścia na tick (patrz _process_entries) -
@@ -1668,38 +1662,26 @@ def tick(app) -> None:
                 # (potwierdzanie kupna/sprzedazy nizej).
                 _manage_trailing_exit(user_id, client, settings)
 
-                now = dt.datetime.utcnow()
-                backoff = _tick_error_backoff.get(user_id)
-                if backoff is not None and now < backoff[1]:
-                    # Wciąż w backoffie po poprzednich błędach - pomijamy CAŁY
-                    # T212-zależny odcinek tego ticku bez logowania (inaczej
-                    # dokładnie ten sam spam co próbowaliśmy tu zlikwidować),
-                    # żeby nie dokładać kolejnego zapytania do ciasnego limitu.
-                    # Nowe wejscia (ponizej) tez czekaja - patrz "kupno nie ma
-                    # priorytetu" wyzej.
-                    skip_new_entries = True
+                # get_pending_orders_for_tick() = get_pending_orders() + backoff
+                # WSPÓLNY między Micro-Grid/Sygnał/EOD, patrz t212_client.py -
+                # None = wciąż w backoffie po poprzednich błędach (JAKIEGOKOLWIEK
+                # z trzech silników), pomijamy CAŁY T212-zależny odcinek ticku bez
+                # logowania (inaczej dokładnie ten sam spam co próbowaliśmy tu
+                # zlikwidować). Nowe wejscia (ponizej) tez czekaja - patrz "kupno
+                # nie ma priorytetu" wyzej.
+                try:
+                    pending = client.get_pending_orders_for_tick()
+                except T212APIError as exc:
+                    consecutive, delay_seconds = client.tick_backoff_status() or (1, 60.0)
+                    _log(
+                        user_id, "ERROR",
+                        f"Tick: błąd pobierania pending orders #{consecutive} z rzędu ({exc}) - "
+                        f"kolejna próba za {max(1, round(delay_seconds / 60))} min zamiast za 60s.",
+                    )
                 else:
-                    # Jedno wspólne pobranie pending orders dla obu retry - unika
-                    # dublowania zapytania w ciasnym rate limicie demo. Kolejność:
-                    # najpierw goń kupno (bez tego sprzedaż i tak nie ma czego
-                    # dotyczyć), potem sprzedaż.
-                    try:
-                        pending = client.get_pending_orders()
-                    except T212APIError as exc:
-                        # Backoff dla KAŻDEGO błędu tego zapytania, nie tylko 429 -
-                        # 401/500/timeout uporczywie powtarzane co 60s to ten sam
-                        # spam i to samo obciążenie ciasnego limitu demo co rate
-                        # limit (patrz historia 2026-07-21 w komentarzu nad stałą).
-                        consecutive = (backoff[0] if backoff else 0) + 1
-                        delay = _next_tick_error_delay(consecutive)
-                        _tick_error_backoff[user_id] = (consecutive, now + delay)
-                        _log(
-                            user_id, "ERROR",
-                            f"Tick: błąd pobierania pending orders #{consecutive} z rzędu ({exc}) - "
-                            f"kolejna próba za {int(delay.total_seconds() // 60)} min zamiast za 60s.",
-                        )
+                    if pending is None:
+                        skip_new_entries = True
                     else:
-                        _tick_error_backoff.pop(user_id, None)
                         pending_ids = {str(o.get("id")) for o in pending}
                         _detect_exit_fills(user_id, client, pending_ids)
                         _confirm_dca_fills(user_id, client, settings, pending=pending)

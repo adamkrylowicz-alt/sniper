@@ -107,24 +107,21 @@ ENTRY_WINDOW = (dt.time(10, 0), dt.time(15, 45))
 # okno pokrywające prawie całą sesję NASDAQ/NYSE.
 US_ENTRY_WINDOW = (dt.time(15, 35), dt.time(21, 45))
 
-# Backoff (minuty) dla tick()::get_pending_orders po błędzie T212API - TEN
-# SAM mechanizm i uzasadnienie co TICK_ERROR_BACKOFF_MINUTES w bot_engine.py
-# (dodane 2026-07-28: znalezione na żywo - Micro-Grid już się wycofywał po
-# serii 429, ale Sygnał i EOD dalej dobijały się o get_pending_orders CO
-# 60s BEZ PRZERWY, bo żaden z nich nie miał własnego backoffu - non-stop
-# bombardowanie WSPÓLNEGO dla wszystkich trzech silników, ciasnego limitu
-# T212 demo nie dawało kontu żadnej szansy się zresetować, 429 ciągnęło się
-# 12+h zamiast typowych paru minut). _manage_exits (trailing stop-loss,
-# ochrona zysku) CELOWO nie jest tu blokowany, patrz tick() niżej i
+# Backoff dla tick()::get_pending_orders po błędzie T212API (dodane 2026-07-28:
+# znalezione na żywo - Micro-Grid już się wycofywał po serii 429, ale Sygnał i
+# EOD dalej dobijały się o get_pending_orders CO 60s BEZ PRZERWY, bo żaden z
+# nich nie miał własnego backoffu - non-stop bombardowanie WSPÓLNEGO dla
+# wszystkich trzech silników, ciasnego limitu T212 demo nie dawało kontu
+# żadnej szansy się zresetować, 429 ciągnęło się 12+h zamiast typowych paru
+# minut) PRZENIESIONY do t212_client.py::get_pending_orders_for_tick()
+# (2026-07-29 - był tu WŁASNY licznik/zegar, niezależny od tego samego w
+# bot_engine.py/eod_engine.py, mimo że wszystkie trzy dobijają się o TEN SAM
+# limit - Adam: "boty nie widza o sobie i napierdlaja w ten sam czas", złapane
+# na żywo: Sygnał złapał 5 kolejnych 429 mimo że Micro-Grid/EOD w tym samym
+# czasie ticowały bez błędu). _manage_exits (trailing stop-loss, ochrona
+# zysku) CELOWO nie jest tu blokowany, patrz tick() niżej i
 # [[feedback_snajper_profit_protection_priority]] - backoff dotyczy
 # WYŁĄCZNIE potwierdzania nowych wejść/detekcji wykonania stopa.
-TICK_ERROR_BACKOFF_MINUTES = (1, 2, 5, 15, 30)
-_tick_error_backoff: dict[int, tuple[int, dt.datetime]] = {}
-
-
-def _next_tick_error_delay(consecutive_errors: int) -> dt.timedelta:
-    idx = min(consecutive_errors - 1, len(TICK_ERROR_BACKOFF_MINUTES) - 1)
-    return dt.timedelta(minutes=TICK_ERROR_BACKOFF_MINUTES[idx])
 
 
 # Backoff (minuty) dla DRUGIEGO calla w _confirm_pending_entries -
@@ -602,27 +599,26 @@ def tick(app) -> None:
             # pomijamy TYLKO nowe wejścia i potwierdzanie/detekcję przez pending,
             # _manage_exits (trailing stop-loss) leci zawsze, patrz wyżej.
             skip_new_entries = False
-            now = dt.datetime.utcnow()
-            backoff = _tick_error_backoff.get(user_id)
-            if backoff is not None and now < backoff[1]:
+            # get_pending_orders_for_tick() = get_pending_orders() + backoff
+            # WSPÓLNY między Micro-Grid/Sygnał/EOD, patrz t212_client.py - None
+            # = wciąż w backoffie po poprzednich błędach (JAKIEGOKOLWIEK z
+            # trzech silników).
+            try:
+                pending = client.get_pending_orders_for_tick()
+            except T212APIError as exc:
+                consecutive, delay_seconds = client.tick_backoff_status() or (1, 60.0)
+                _log(
+                    user_id, "ERROR",
+                    f"Tick: błąd pobierania pending orders #{consecutive} z rzędu ({exc}) - "
+                    f"kolejna próba za {max(1, round(delay_seconds / 60))} min zamiast za 60s.",
+                )
                 skip_new_entries = True
                 _manage_exits(user_id, client, settings, pending_order_ids=set(), pending_fetch_ok=False)
             else:
-                try:
-                    pending = client.get_pending_orders()
-                except T212APIError as exc:
-                    consecutive = (backoff[0] if backoff else 0) + 1
-                    delay = _next_tick_error_delay(consecutive)
-                    _tick_error_backoff[user_id] = (consecutive, now + delay)
-                    _log(
-                        user_id, "ERROR",
-                        f"Tick: błąd pobierania pending orders #{consecutive} z rzędu ({exc}) - "
-                        f"kolejna próba za {int(delay.total_seconds() // 60)} min zamiast za 60s.",
-                    )
+                if pending is None:
                     skip_new_entries = True
                     _manage_exits(user_id, client, settings, pending_order_ids=set(), pending_fetch_ok=False)
                 else:
-                    _tick_error_backoff.pop(user_id, None)
                     pending_ids = {str(o.get("id")) for o in pending}
                     _confirm_pending_entries(user_id, client, settings, pending_ids)
                     _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=True)
