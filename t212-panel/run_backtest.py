@@ -35,6 +35,15 @@ def main() -> None:
     parser.add_argument("--starting-cash", type=Decimal, default=Decimal("10000"))
     parser.add_argument("--force-refresh", action="store_true", help="Ignoruj lokalny cache, pobierz dane od nowa")
     parser.add_argument("--csv", default=None, help="Ścieżka do zapisu listy transakcji jako CSV")
+    parser.add_argument(
+        "--arm-profit-atr-mult", type=Decimal, default=None,
+        help="EKSPERYMENT (patrz signal_strategy.compute_armed_trailing_stop): próg zysku w ATR zanim stop "
+             "zacznie się zaciskać. Wymaga też --trail-atr-mult, inaczej ignorowane (stare zachowanie).",
+    )
+    parser.add_argument(
+        "--trail-atr-mult", type=Decimal, default=None,
+        help="EKSPERYMENT: ciasny dystans ATR używany PO uzbrojeniu (patrz --arm-profit-atr-mult).",
+    )
     args = parser.parse_args()
 
     tickers = [t.strip() for t in args.tickers.split(",") if t.strip()]
@@ -49,6 +58,7 @@ def main() -> None:
             ticker, candles_by_ticker[ticker], portfolio,
             entry_amount=args.entry_amount, rsi_threshold=args.rsi_threshold,
             stop_loss_atr_mult=args.stop_loss_atr_mult, take_profit_atr_mult=args.take_profit_atr_mult,
+            arm_profit_atr_mult=args.arm_profit_atr_mult, trail_atr_mult=args.trail_atr_mult,
         )
         results[ticker] = portfolio
         print_report(ticker, portfolio)

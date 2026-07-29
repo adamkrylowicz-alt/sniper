@@ -84,3 +84,50 @@ def compute_trailing_stop(
         return None
 
     return candidate_stop
+
+
+def compute_armed_trailing_stop(
+    current_stop: Decimal,
+    current_price: Decimal,
+    entry_price: Decimal,
+    atr_at_entry: Decimal | None,
+    arm_profit_atr_mult: Decimal,
+    trail_atr_mult: Decimal,
+) -> Decimal | None:
+    """
+    EKSPERYMENT dodany 2026-07-30 (Adam, po analizie backtestu Sygnału -
+    "skup sie dlaczego sygnal sie tak kiepsci") - Sygnał od zawsze miał JEDEN
+    dystans ATR (stop_loss_atr_mult) używany zarówno jako floor od razu przy
+    wejściu, jak i do ciągłego trailingu - dokładnie ten sam wzorzec, który
+    Micro-Grid PORZUCIŁ 22.07/27.07 po tym jak złapał na żywo identyczny
+    problem (patrz bot_engine.py::_manage_trailing_exit, "protective floor" +
+    "bramka uzbrojenia po 2 progach zysku"). Sygnał wchodzi w pozycję
+    dokładnie wtedy, gdy RSI jest nisko (świeży dołek) - ciasny stop od dnia
+    0 regularnie wywala pozycję zwykłym szumem, zanim spodziewane odbicie
+    zdąży się rozwinąć (potwierdzone w logu backtestu - mnóstwo 1-dniowych
+    strat).
+
+    Analogiczna bramka: stop NIE zaciska się (zostaje na szerokim floorze
+    wyliczonym RAZ przy wejściu - `compute_entry`, `stop_loss_atr_mult`)
+    dopóki cena nie wyjdzie na plus o co najmniej `arm_profit_atr_mult *
+    atr_at_entry` ponad `entry_price` - odpowiednik "2 progów zysku" z
+    Micro-Gridu, tylko liczony w jednostkach ATR zamiast %. Po przekroczeniu
+    progu, trailing przechodzi na CIASNY dystans `trail_atr_mult` (typowo
+    < stop_loss_atr_mult) od bieżącej ceny - i, jak w oryginalnej wersji,
+    nigdy się nie cofa.
+
+    Zwraca None gdy: brak ATR, jeszcze nie uzbrojony (floor z wejścia
+    zostaje bez zmian), albo brak poprawy względem obecnego stopu.
+    """
+    if atr_at_entry is None or atr_at_entry <= 0:
+        return None
+
+    arm_threshold = entry_price + atr_at_entry * arm_profit_atr_mult
+    if current_price < arm_threshold:
+        return None  # jeszcze nieuzbrojony - floor z wejścia zostaje bez zmian
+
+    candidate_stop = (current_price - atr_at_entry * trail_atr_mult).quantize(Decimal("0.0001"))
+    if candidate_stop <= current_stop:
+        return None
+
+    return candidate_stop
