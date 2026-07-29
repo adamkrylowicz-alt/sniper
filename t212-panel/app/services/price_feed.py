@@ -267,7 +267,14 @@ def get_mini_chart_ohlc(
     Kolejność źródeł dla tickerów `*_US_EQ`: Alpaca (dodane 2026-07-27, ten
     sam klucz co get_live_price - Finnhub /stock/candle jest zablokowany na
     darmowym planie, patrz TICKER_MAP/finnhub_client.py) -> Finnhub -> Yahoo.
-    Dla reszty tickerów bez zmian: Finnhub -> Yahoo.
+    Dla reszty tickerów (EUR itd.): Finnhub POMIJANY całkowicie -> od razu
+    Yahoo. /stock/candle na darmowym planie Finnhub zwraca 403 dla KAŻDEGO
+    tickera spoza US bez wyjątku (potwierdzone w logach 2026-07-29 dla
+    wszystkich EU tickerów botów - AIRp_EQ, ASMLa_EQ, BNPp_EQ, DTEd_EQ,
+    FPp_EQ, IFXd_EQ, INGAa_EQ, MCp_EQ, PRXa_EQ, SAFp_EQ, SANe_EQ, SAPd_EQ,
+    SIEd_EQ, SUp_EQ) - dla tych tickerów Alpaca nigdy nie jest próbowane
+    (poza US), więc zapytanie do Finnhuba tu ZAWSZE kończyło się 403 i
+    wyłącznie zaśmiecało log przed spadkiem do Yahoo.
     """
     key = f"{ticker}:{days}"
     now = time.monotonic()
@@ -279,7 +286,7 @@ def get_mini_chart_ohlc(
     if ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret:
         candles = _fetch_alpaca_bars_daily(alpaca_api_key, alpaca_api_secret, ticker, days)
 
-    if not candles and api_key:
+    if not candles and api_key and ticker.endswith(_US_SUFFIX):
         candles = _fetch_candles_ohlc(api_key, ticker, days)
     if not candles:
         candles = _fetch_yahoo_candles_ohlc(ticker, days)
