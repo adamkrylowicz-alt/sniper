@@ -81,6 +81,7 @@ from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from . import bot_credentials, market_hours, price_feed
 from .bot_engine import _place_buy_with_precision_fallback
+from .strategy import eod_strategy
 from .t212_client import T212APIError, T212Client
 
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
@@ -114,6 +115,45 @@ SIZE_TIERS = (
     (Decimal("0.035"), Decimal("1.0")),   # -3.5% do -5.49%
     (Decimal("0.02"), Decimal("0.6")),    # -2.0% do -3.49%
 )
+
+# Backoff (minuty) dla tick()::get_pending_orders po błędzie T212API - TEN
+# SAM mechanizm i uzasadnienie co TICK_ERROR_BACKOFF_MINUTES w bot_engine.py
+# (dodane 2026-07-28: znalezione na żywo - Micro-Grid już się wycofywał po
+# serii 429, ale Sygnał i EOD dalej dobijały się o get_pending_orders CO
+# 60s BEZ PRZERWY, bo żaden z nich nie miał własnego backoffu - non-stop
+# bombardowanie WSPÓLNEGO dla wszystkich trzech silników, ciasnego limitu
+# T212 demo nie dawało kontu żadnej szansy się zresetować, 429 ciągnęło się
+# 12+h zamiast typowych paru minut). _manage_exits (trailing stop-loss +
+# take-profit, ochrona zysku) CELOWO nie jest tu blokowany, patrz tick()
+# niżej i [[feedback_snajper_profit_protection_priority]] - backoff dotyczy
+# WYŁĄCZNIE potwierdzania nowych wejść/detekcji wykonania stopa.
+TICK_ERROR_BACKOFF_MINUTES = (1, 2, 5, 15, 30)
+_tick_error_backoff: dict[int, tuple[int, dt.datetime]] = {}
+
+
+def _next_tick_error_delay(consecutive_errors: int) -> dt.timedelta:
+    idx = min(consecutive_errors - 1, len(TICK_ERROR_BACKOFF_MINUTES) - 1)
+    return dt.timedelta(minutes=TICK_ERROR_BACKOFF_MINUTES[idx])
+
+
+# Backoff (minuty) dla DRUGIEGO calla w _confirm_pending_entries -
+# get_position() per pozycja, wołane ZARAZ PO udanym get_pending_orders()
+# (patrz tick() wyżej) - na bardzo ciasnym limicie demo (x-ratelimit-limit
+# widziane jako 0/1 pozostało) dwa udane calle T212 pod rząd w tym samym
+# ticku to loteria, więc bez backoffu ten drugi call próbowałby ZNOWU na
+# każdym kolejnym udanym ticku, mimo że przed chwilą zawiódł - dokładając
+# kolejne zapytanie do tego samego, już wyczerpanego budżetu. Ten sam
+# wzorzec co _entry_fail_backoff w bot_engine.py (w pamięci procesu, per
+# (user_id, ticker), NIE per-trade w bazie - prostsze niż kolumny
+# sell_retry_count/next_sell_retry_at w ActiveTrade, bo EODTrade nie ma
+# ich odpowiednika i nie ma potrzeby przeżywać restartu appki).
+CONFIRM_FAIL_BACKOFF_MINUTES = (1, 2, 5, 15, 30)
+_confirm_fail_backoff: dict[tuple[int, str], tuple[int, dt.datetime]] = {}
+
+
+def _next_confirm_fail_delay(consecutive_fails: int) -> dt.timedelta:
+    idx = min(consecutive_fails - 1, len(CONFIRM_FAIL_BACKOFF_MINUTES) - 1)
+    return dt.timedelta(minutes=CONFIRM_FAIL_BACKOFF_MINUTES[idx])
 
 
 def _in_eod_window() -> bool:
@@ -204,24 +244,23 @@ def _enter_position(
     user_id: int, client: T212Client | None, asset: EODAsset, settings: EODSettings,
     price: Decimal, drop_pct: Decimal, multiplier: Decimal, reference_price: Decimal,
 ) -> None:
-    amount = asset.entry_amount * multiplier
-    quantity = (amount / price).quantize(Decimal("0.0001"))
-    if quantity <= 0:
-        _log(user_id, "ERROR", f"{asset.ticker}: wyliczona ilość <= 0 (kwota {amount} / cena {price}).")
+    # Matematyka (sizing, TP=reference_price z fallbackiem na sztywny %)
+    # wyciągnięta 2026-07-28 do eod_strategy.compute_entry() - PEŁNE
+    # uzasadnienie (Adam: "liczę na szybkie odbicie w okolice wcześniejszego
+    # poziomu... nawet nie musi być idealnie w punkt ale w okolice") zostaje
+    # w docstringu tego modułu i eod_strategy.py - tu tylko wołanie już
+    # zweryfikowanej formuły (sprawdzone 1:1 na 3 realnych transakcjach z bazy).
+    try:
+        decision = eod_strategy.compute_entry(
+            asset.entry_amount, price, multiplier, reference_price,
+            settings.stop_loss_pct, settings.take_profit_pct,
+        )
+    except eod_strategy.EntryValidationError as exc:
+        _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
         return
-
-    stop_loss_price = price * (1 - settings.stop_loss_pct)
-    # Take-profit = powrot w okolice ceny SPRZED SPADKU (reference_price z
-    # _worst_recent_drop), NIE sztywny price*(1+take_profit_pct) jak do
-    # 2026-07-28 - Adam: "liczę na szybkie odbicie w okolice wcześniejszego
-    # poziomu... nawet nie musi być idealnie w punkt ale w okolice" - cel
-    # skaluje się teraz z WIELKOŚCIĄ spadku (spadek 5% -> cel ~5% odbicia),
-    # zamiast oderwanego od niego sztywnego 0.6%. Zabezpieczenie na wypadek
-    # gdyby (rzadko, np. cena juz zdazyla odbic miedzy odczytem swiec a
-    # live price) reference_price wypadl <= entry price - wtedy sztywny %
-    # jako bezpieczny fallback, zeby TP nigdy nie byl ponizej/na wejsciu
-    # (natychmiastowa "realizacja zysku" tuz po zakupie).
-    take_profit_price = reference_price if reference_price > price else price * (1 + settings.take_profit_pct)
+    quantity = decision.quantity
+    stop_loss_price = decision.stop_loss_price
+    take_profit_price = decision.take_profit_price
 
     if settings.is_paper_trading:
         trade = EODTrade(
@@ -309,28 +348,41 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
         _enter_position(user_id, client, asset, settings, price, drop, multiplier, reference_price)
 
 
-def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSettings) -> None:
+def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSettings, pending_order_ids: set[str]) -> None:
+    """
+    `pending_order_ids` pobierane RAZ w tick() i dzielone z _manage_exits -
+    unika dublowania get_pending_orders w tym samym ticku (patrz
+    TICK_ERROR_BACKOFF_MINUTES wyżej, ten sam powód co w bot_engine.py).
+    """
     pending_trades = EODTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False,
     ).all()
     if not pending_trades:
         return
 
-    try:
-        pending_order_ids = {str(o.get("id")) for o in client.get_pending_orders()}
-    except T212APIError as exc:
-        _log(user_id, "ERROR", f"Nie udało się pobrać zleceń oczekujących (potwierdzanie kupna EOD) - {exc}")
-        return
-
+    now = dt.datetime.utcnow()
     for trade in pending_trades:
         if trade.buy_order_id in pending_order_ids:
             continue
 
+        backoff_key = (user_id, trade.ticker)
+        backoff = _confirm_fail_backoff.get(backoff_key)
+        if backoff is not None and now < backoff[1]:
+            continue  # w backoffie po poprzednich błędach get_position, patrz CONFIRM_FAIL_BACKOFF_MINUTES
+
         try:
             position = client.get_position(trade.ticker)
         except T212APIError as exc:
-            _log(user_id, "ERROR", f"{trade.ticker}: błąd sprawdzenia portfela po zakupie EOD - {exc}")
+            consecutive = (backoff[0] if backoff else 0) + 1
+            delay = _next_confirm_fail_delay(consecutive)
+            _confirm_fail_backoff[backoff_key] = (consecutive, now + delay)
+            _log(
+                user_id, "ERROR",
+                f"{trade.ticker}: błąd sprawdzenia portfela po zakupie EOD #{consecutive} z rzędu - {exc} - "
+                f"kolejna próba za {int(delay.total_seconds() // 60)} min.",
+            )
             continue
+        _confirm_fail_backoff.pop(backoff_key, None)
 
         current_owned = Decimal(str(position["quantity"])) if position else Decimal("0")
         filled = current_owned - trade.baseline_owned_quantity
@@ -351,6 +403,15 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSett
             stop_result = client.place_stop_order(trade.ticker, -filled, trade.stop_loss_price)
             trade.stop_order_id = stop_result.order_id
             db.session.commit()
+            # KRYTYCZNE: dopisz nowo uzbrojony stop do TEGO SAMEGO pending_order_ids,
+            # ktorego zaraz potem uzyje _manage_exits w tym samym ticku (patrz tick()/
+            # reconcile() - dzielony snapshot, TICK_ERROR_BACKOFF_MINUTES wyzej). Bez
+            # tego _manage_exits widzialby swiezo zlozony stop jako "nieobecny w
+            # pending" (bo snapshot pobrano PRZED tym place'em) i falszywie uznawal
+            # pozycje za zamknieta w tym samym ticku, w ktorym dopiero co ja otworzyl -
+            # ten sam zywy bug znaleziony 2026-07-28 na IFXd_EQ w signal_engine.py
+            # (identyczny wzorzec kodu tutaj, wiec identyczne ryzyko).
+            pending_order_ids.add(stop_result.order_id)
             _log(user_id, "INFO", f"{trade.ticker}: kupno EOD potwierdzone ({filled} szt.), stop-loss uzbrojony na {trade.stop_loss_price:.4f}.")
         except T212APIError as exc:
             _log(
@@ -405,14 +466,11 @@ def _trail_stop_loss(
     `price < take_profit_price` (jeśli TP już osiągnięty, pozycja i tak
     zaraz się zamyka - nie ma sensu przesuwać stopu tuż przed sprzedażą).
     """
-    candidate_stop = (price * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
-    if candidate_stop <= trade.stop_loss_price:
-        return  # nic do poprawy - stop juz jest na tym poziomie albo wyzej
-
-    distance = trade.buy_price * settings.stop_loss_pct
-    min_requote_threshold = trade.stop_loss_price + (distance * MIN_TRAIL_REQUOTE_EOD_FRACTION)
-    if candidate_stop < min_requote_threshold:
-        return  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
+    candidate_stop = eod_strategy.compute_trailing_stop(
+        trade.stop_loss_price, price, trade.buy_price, settings.stop_loss_pct, MIN_TRAIL_REQUOTE_EOD_FRACTION,
+    )
+    if candidate_stop is None:
+        return  # nic do poprawy - juz na tym poziomie/wyzej, albo poprawa za mala na Cancel-Replace
 
     if trade.stop_order_id:
         try:
@@ -445,7 +503,10 @@ def _trail_stop_loss_paper(trade: EODTrade, settings: EODSettings, price: Decima
     db.session.commit()
 
 
-def _manage_exits(user_id: int, client: T212Client, settings: EODSettings) -> None:
+def _manage_exits(
+    user_id: int, client: T212Client, settings: EODSettings,
+    pending_order_ids: set[str], pending_fetch_ok: bool,
+) -> None:
     open_trades = EODTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True,
     ).all()
@@ -454,19 +515,13 @@ def _manage_exits(user_id: int, client: T212Client, settings: EODSettings) -> No
 
     force_close = _should_force_close(settings)
 
-    # Niepowodzenie TEGO zapytania nie moze juz blokowac trailing stop-loss
-    # (ochrona zysku ma pierwszenstwo, patrz
-    # [[feedback_snajper_profit_protection_priority]] i ten sam fix w
-    # signal_engine.py tego samego dnia) - fetch_ok=False wylacza WYLACZNIE
-    # detekcje "czy stop juz sam sie wykonal", reszta petli leci dalej.
-    try:
-        pending_order_ids = {str(o.get("id")) for o in client.get_pending_orders()}
-        pending_fetch_ok = True
-    except T212APIError as exc:
-        _log(user_id, "ERROR", f"Nie udało się pobrać zleceń oczekujących (wyjścia EOD) - {exc}")
-        pending_order_ids = set()
-        pending_fetch_ok = False
-
+    # `pending_order_ids`/`pending_fetch_ok` pobierane RAZ w tick() (dzielone
+    # z _confirm_pending_entries, patrz TICK_ERROR_BACKOFF_MINUTES wyżej) -
+    # nie moga juz blokowac trailing stop-loss (ochrona zysku ma
+    # pierwszenstwo, patrz [[feedback_snajper_profit_protection_priority]] i
+    # ten sam fix w signal_engine.py tego samego dnia) - fetch_ok=False
+    # wylacza WYLACZNIE detekcje "czy stop juz sam sie wykonal", reszta
+    # petli leci dalej (nie potrzebuje pending, tylko ceny).
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
@@ -550,8 +605,16 @@ def reconcile(user_id: int) -> None:
     _manage_paper_exits(user_id, settings)
     if not settings.is_paper_trading:
         client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT)
-        _confirm_pending_entries(user_id, client, settings)
-        _manage_exits(user_id, client, settings)
+        try:
+            pending_ids = {str(o.get("id")) for o in client.get_pending_orders()}
+            pending_fetch_ok = True
+        except T212APIError as exc:
+            _log(user_id, "ERROR", f"Reconciliation: błąd pobierania pending orders - {exc}")
+            pending_ids = set()
+            pending_fetch_ok = False
+        if pending_fetch_ok:
+            _confirm_pending_entries(user_id, client, settings, pending_ids)
+        _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=pending_fetch_ok)
 
 
 def tick(app) -> None:
@@ -578,7 +641,37 @@ def tick(app) -> None:
                 continue
             client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT)
 
-            _confirm_pending_entries(user_id, client, settings)
-            _manage_exits(user_id, client, settings)
+            # Kupno nie ma priorytetu (Adam, 2026-07-27, patrz ten sam komentarz
+            # w bot_engine.py::tick) - w backoffie po błędach get_pending_orders
+            # pomijamy TYLKO nowe wejścia i potwierdzanie/detekcję przez pending,
+            # _manage_exits (trailing stop-loss + take-profit) leci zawsze.
+            skip_new_entries = False
+            now = dt.datetime.utcnow()
+            backoff = _tick_error_backoff.get(user_id)
+            if backoff is not None and now < backoff[1]:
+                skip_new_entries = True
+                _manage_exits(user_id, client, settings, pending_order_ids=set(), pending_fetch_ok=False)
+            else:
+                try:
+                    pending = client.get_pending_orders()
+                except T212APIError as exc:
+                    consecutive = (backoff[0] if backoff else 0) + 1
+                    delay = _next_tick_error_delay(consecutive)
+                    _tick_error_backoff[user_id] = (consecutive, now + delay)
+                    _log(
+                        user_id, "ERROR",
+                        f"Tick: błąd pobierania pending orders #{consecutive} z rzędu ({exc}) - "
+                        f"kolejna próba za {int(delay.total_seconds() // 60)} min zamiast za 60s.",
+                    )
+                    skip_new_entries = True
+                    _manage_exits(user_id, client, settings, pending_order_ids=set(), pending_fetch_ok=False)
+                else:
+                    _tick_error_backoff.pop(user_id, None)
+                    pending_ids = {str(o.get("id")) for o in pending}
+                    _confirm_pending_entries(user_id, client, settings, pending_ids)
+                    _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=True)
+
+            if skip_new_entries:
+                continue
             if _in_eod_window():
                 _process_entries(user_id, client, settings)

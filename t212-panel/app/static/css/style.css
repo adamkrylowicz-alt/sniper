@@ -177,6 +177,20 @@ html[data-theme="light"] .topbar__mark {
     text-decoration-thickness: 2px;
     text-underline-offset: 6px;
 }
+/* Liczba otwartych pozycji przy Bot/Sygnał/EOD (open_position_counts w base.html) */
+.topbar__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: 999px;
+    font-size: 9px;
+    font-weight: 700;
+    color: var(--bg);
+    background: var(--accent-amber);
+}
 
 .topbar__logout { margin: 0; }
 

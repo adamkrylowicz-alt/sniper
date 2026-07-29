@@ -315,6 +315,87 @@ _INTRADAY_INTERVALS: dict[str, tuple[str, int]] = {
     "1h": ("1Hour", 60),
 }
 
+# Odpowiednik _INTRADAY_INTERVALS dla IBKR (barSizeSetting ma inny format
+# stringów niż Alpaca) - SAME okna dni wstecz, już przetestowane 2026-07-28
+# jako szybkie i niezawodne w backtest/ibkr_data.py (60 dni tylko dla 1h -
+# dużo mniej punktów danych niż 60 dni 1-min, które się wieszało).
+_IBKR_BAR_SIZES: dict[str, str] = {
+    "1m": "1 min",
+    "5m": "5 mins",
+    "15m": "15 mins",
+    "1h": "1 hour",
+}
+
+# Mapowanie T212 -> kontrakt IBKR (symbol, exchange, currency) dla EU -
+# ten sam wzorzec co finnhub_client.TICKER_MAP ("ręcznie uzupełniany gdy
+# automatyczne nie działa"), ale IBKR potrzebuje TRZECH pól osobno, nie
+# jednego symbolu. Adam NIE ma subskrypcji Xetra (IBIS) ani pełnej
+# skonsolidowanej taśmy NASDAQ (SMART) - stąd Tradegate (TGATE, pokrywa
+# większość europejskich blue-chipów, darmowe w jego "Alternative European
+# Equities") zamiast primary exchange. 15 tickerów niżej zweryfikowanych
+# na żywo 2026-07-28 (patrz plan "IBKR jako źródło 1-min świec dla EU") -
+# reszta EU tickerów z list botów po prostu nie ma tu wpisu, dochodzą w
+# miarę potrzeby, ten sam duch co TICKER_MAP.
+IBKR_TICKER_MAP: dict[str, tuple[str, str, str]] = {
+    "AIRp_EQ": ("AIR", "TGATE", "EUR"),
+    "ALVd_EQ": ("ALV", "TGATE", "EUR"),
+    "ASMLa_EQ": ("ASML", "TGATE", "EUR"),
+    "BNPp_EQ": ("BNP", "TGATE", "EUR"),
+    "DTEd_EQ": ("DTE", "TGATE", "EUR"),
+    "FPp_EQ": ("TTE", "TGATE", "EUR"),  # TotalEnergies - T212 trzyma stary ticker FP sprzed rebrandingu
+    "IFXd_EQ": ("IFX", "TGATE", "EUR"),
+    "INGAa_EQ": ("INGA", "TGATE", "EUR"),
+    "MCp_EQ": ("MC", "TGATE", "EUR"),
+    "PRXa_EQ": ("PRX", "TGATE", "EUR"),
+    "SAFp_EQ": ("SAF", "TGATE", "EUR"),
+    "SANe_EQ": ("SAN", "TGATE", "EUR"),
+    "SAPd_EQ": ("SAP", "TGATE", "EUR"),
+    "SIEd_EQ": ("SIE", "TGATE", "EUR"),
+    "SUp_EQ": ("SU", "TGATE", "EUR"),
+}
+
+IB_GATEWAY_HOST = "127.0.0.1"
+IB_GATEWAY_PORT = 4002  # PAPER API - patrz docker-compose.yml::ib-gateway
+
+
+def _fetch_ibkr_intraday(symbol: str, exchange: str, currency: str, bar_size: str, lookback_days: int) -> list[dict] | None:
+    """
+    Świece śróddzienne z IBKR (ten sam kontener/gateway co backtest/ibkr_data.py,
+    ale timeouty KRÓTKIE - to blokuje wątek żądania Flask, strona nie może
+    czekać wiele minut jak jednorazowy skrypt backtestu gdy gateway
+    padnie/zwolni). Fail-open jak Finnhub/Yahoo wszędzie indziej w tym pliku -
+    KAŻDY błąd (brak połączenia, timeout, brak kontraktu) -> None, żeby
+    przejściowa awaria źródła nie wywalała strony instrumentu.
+    """
+    try:
+        from ib_insync import IB, Contract
+        import random
+
+        ib = IB()
+        try:
+            ib.connect(IB_GATEWAY_HOST, IB_GATEWAY_PORT, clientId=random.randint(100, 999999), readonly=True, timeout=8)
+        except Exception:
+            return None
+        try:
+            contract = Contract(symbol=symbol, secType="STK", exchange=exchange, currency=currency)
+            ib.qualifyContracts(contract)
+            bars = ib.reqHistoricalData(
+                contract, endDateTime="", durationStr=f"{lookback_days} D",
+                barSizeSetting=bar_size, whatToShow="TRADES", useRTH=True, formatDate=1, timeout=20,
+            )
+        finally:
+            ib.disconnect()
+
+        if not bars:
+            return None
+        candles = [
+            {"o": round(b.open, 4), "h": round(b.high, 4), "l": round(b.low, 4), "c": round(b.close, 4), "t": int(b.date.timestamp())}
+            for b in bars
+        ]
+        return candles if len(candles) >= 2 else None
+    except Exception:
+        return None
+
 
 def get_intraday_chart(
     ticker: str, interval: str, alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
@@ -327,25 +408,25 @@ def get_intraday_chart(
     alpaca", potem rozszerzone o kolejne interwały: "dodaj tez inne
     timestampy oprocz tych co juz sa".
 
-    TYLKO dla tickerów `*_US_EQ` (Alpaca) i TYLKO dla `interval` z
-    `_INTRADAY_INTERVALS` - zwraca None dla wszystkiego innego. Inne rynki
-    (EUR itd.) na razie NIE mają wiarygodnego, taniego źródła realnych
-    śróddziennych świec (patrz docstring get_eod_intraday_1m - sprawdzone 5
-    płatnych alternatyw, żadna nie dawała taniego 1-min dla Europy) -
-    świadomie pominięte, docelowo IBKR gdy dostępne.
+    Dla `*_US_EQ` -> Alpaca. Dla EU -> IBKR (dodane 2026-07-28, patrz
+    IBKR_TICKER_MAP/_fetch_ibkr_intraday wyżej), TYLKO dla tickerów z
+    IBKR_TICKER_MAP (ręczna mapa, jak finnhub_client.TICKER_MAP -
+    reszta EU tickerów po prostu nie ma jeszcze wpisu, `None` jak dawniej).
+    TYLKO dla `interval` z `_INTRADAY_INTERVALS` - `None` dla wszystkiego
+    innego.
 
-    CELOWO OSOBNA funkcja od get_eod_intraday_1m (ten sam surowy fetch
-    _fetch_alpaca_bars, ale get_eod_intraday_1m ma ZERO cache'u, bo to dane
-    do decyzji tradingowej bota EOD sprzed sekund) - tutaj to widok dla
-    człowieka, więc krótki cache (CACHE_1M_TTL_SECONDS - nazwa historyczna,
-    dotyczy teraz wszystkich interwałów śróddziennych, nie tylko 1m) jest
-    pożądany, nie problemem - oszczędza budżet Alpaca gdy ktoś odświeża/
-    przełącza zakładki na stronie instrumentu.
+    CELOWO OSOBNA funkcja od get_eod_intraday_1m (get_eod_intraday_1m ma
+    ZERO cache'u i ZERO IBKR - to dane do REALNEJ decyzji tradingowej bota
+    EOD sprzed sekund, świadomie zostaje na Yahoo, patrz plan "IBKR jako
+    źródło 1-min świec dla EU") - tutaj to widok dla człowieka, więc krótki
+    cache (CACHE_1M_TTL_SECONDS - nazwa historyczna, dotyczy teraz
+    wszystkich interwałów śróddziennych, nie tylko 1m) jest pożądany, nie
+    problemem - oszczędza budżet Alpaca/IBKR gdy ktoś odświeża/przełącza
+    zakładki na stronie instrumentu.
     """
     config = _INTRADAY_INTERVALS.get(interval)
-    if config is None or not (ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret):
+    if config is None:
         return None
-    timeframe, lookback_days = config
 
     cache_key = f"{ticker}:{interval}"
     now = time.monotonic()
@@ -353,11 +434,21 @@ def get_intraday_chart(
     if cached and (now - cached[0]) < CACHE_1M_TTL_SECONDS:
         return cached[1]
 
-    if lookback_days <= 1:
-        start = dt.datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+    timeframe, lookback_days = config
+    if ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret:
+        if lookback_days <= 1:
+            start = dt.datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
+        else:
+            start = (dt.datetime.utcnow() - dt.timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00Z")
+        candles = _fetch_alpaca_bars(alpaca_api_key, alpaca_api_secret, ticker, timeframe, start)
     else:
-        start = (dt.datetime.utcnow() - dt.timedelta(days=lookback_days)).strftime("%Y-%m-%dT00:00:00Z")
-    candles = _fetch_alpaca_bars(alpaca_api_key, alpaca_api_secret, ticker, timeframe, start)
+        ibkr_contract = IBKR_TICKER_MAP.get(ticker)
+        if ibkr_contract is None:
+            return None
+        symbol, exchange, currency = ibkr_contract
+        bar_size = _IBKR_BAR_SIZES[interval]
+        candles = _fetch_ibkr_intraday(symbol, exchange, currency, bar_size, lookback_days)
+
     _cache_1m[cache_key] = (now, candles)
     return candles
 
@@ -549,17 +640,19 @@ def get_live_price(
     Cena "na żywo" do decyzji bota. Dla tickerów `*_US_EQ`: Alpaca Market Data
     API jako GŁÓWNE źródło (dodane 2026-07-22, na życzenie Adama - nowy
     dostawca danych dla rynków USA), Finnhub -> Yahoo jako fallback gdyby
-    Alpaca zawiodło. Dla wszystkich innych tickerów (EUR itd.): bez zmian,
-    Finnhub jako główne (PRD: "Domyślnie Finnhub"), Yahoo Finance jako
-    fallback. Zwraca None jeśli WSZYSTKIE źródła zawiodą - wywołujący
-    (bot_engine.py) ma wtedy pominąć wejście, nie zgadywać ceny.
+    Alpaca zawiodło. Dla wszystkich innych tickerów (EUR itd.): Finnhub
+    POMIJANY całkowicie -> od razu Yahoo (ten sam powód co
+    get_mini_chart_ohlc - darmowy plan Finnhub odmawia dla każdego tickera
+    spoza US, więc zapytanie tylko zjadało limit 60/min i zaśmiecało log
+    429-kami, patrz 2026-07-29). Zwraca None jeśli WSZYSTKIE źródła zawiodą -
+    wywołujący (bot_engine.py) ma wtedy pominąć wejście, nie zgadywać ceny.
     """
     if ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret:
         price = _fetch_alpaca_quote(alpaca_api_key, alpaca_api_secret, ticker)
         if price is not None:
             return price
 
-    if api_key:
+    if api_key and ticker.endswith(_US_SUFFIX):
         price = _fetch_finnhub_quote(api_key, ticker)
         if price is not None:
             return price

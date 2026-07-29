@@ -42,6 +42,8 @@ from __future__ import annotations
 
 import base64
 import logging
+import threading
+import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal
@@ -58,6 +60,53 @@ BASE_URLS: dict[Environment, str] = {
 }
 
 DEFAULT_TIMEOUT = 10  # sekund na request
+
+# Globalna kolejka/throttle na WSZYSTKIE zapytania do T212 (dodane 2026-07-28,
+# Adam: "to musi byc jakos kolejkowane a nie faktycznie wszystkie zapytania
+# napierdlaja jednoczesnie") - Micro-Grid/Sygnał/Sygnał/EOD kazdy tworzy
+# WŁASNY T212Client co tick (3 osobne instancje), a APScheduler odpala
+# wszystkie trzy joby (interval=60s) w praktycznie tej samej sekundzie - bez
+# tego throttle'a 3 silniki potrafily wystrzelic po kilka zapytan do TEGO
+# SAMEGO, bardzo ciasnego limitu demo (zaobserwowane x-ratelimit-limit=1,
+# remaining=0 na /equity/orders, /equity/portfolio, /equity/orders/limit
+# OSOBNO) w oknie <1s, gwarantujac 429 nawet gdy pojedynczy silnik sam w
+# sobie nie przekraczalby limitu. Lock jest MODULOWY (nie per-instancja
+# T212Client) wlasnie dlatego, ze wszystkie trzy silniki dziala w TYM SAMYM
+# procesie Pythona (APScheduler = watki w jednym `run.py`, nie osobne
+# procesy) - dzieki temu serializuje zapytania NIEZALEZNIE od tego, ktory
+# silnik/instancja je wysyla. Trzyma lock przez CALY czas zapytania
+# (włącznie z oczekiwaniem na odpowiedź), więc w danej chwili do T212 leci
+# co najwyzej JEDNO zapytanie z calej appki, plus min. odstep miedzy kolejnymi.
+_rate_limit_lock = threading.Lock()
+_last_request_monotonic = 0.0
+MIN_REQUEST_INTERVAL_SECONDS = 2.0
+
+# Cache dzielony MIĘDZY silnikami dla get_portfolio()/get_pending_orders()
+# (dodane 2026-07-29 - throttle wyżej rozstrzelał zapytania w czasie, ale
+# NIE zmniejszył ich LICZBY: Micro-Grid/Sygnał/EOD nadal wołają te same dwa
+# endpointy OSOBNO w swoim własnym tick(), a wszystkie trzy joby APScheduler
+# mają interval=60s - więc mimo throttle'a i tak leciały 3 realne zapytania
+# do TEGO SAMEGO, bardzo ciasnego limitu (x-ratelimit-limit=1) w ciągu paru
+# sekund, gwarantując 429 dla 2 z 3 silników w KAŻDYM cyklu (potwierdzone w
+# run.log 2026-07-29 - non-stop "błąd pobierania pending orders" narastającym
+# backoffem cały dzień). Cache kluczowany (environment, api_key), TTL krótszy
+# niż interwał ticku (60s) - pierwszy silnik w danym cyklu robi realny
+# fetch, kolejne dwa dostają ten sam wynik z cache, a NASTĘPNY cykl (60s
+# później) i tak dostanie świeży fetch.
+#
+# WAŻNE: cache'owany jest też WYNIK BŁĘDU (T212APIError), nie tylko sukces -
+# pierwsza wersja tego fixu cache'owała tylko sukces, więc gdy limit był już
+# wyczerpany i pierwszy silnik dostawał 429, nic się nie zapisywało do cache'a
+# i drugi/trzeci silnik i tak strzelał WŁASNYM realnym zapytaniem (od razu
+# odtwarzając ten sam problem - potwierdzone w run.log 2026-07-29 tuz po
+# restarcie: signal ORAZ eod dostały każdy swój 429 w tym samym cyklu).
+# Trzymanie błędu w cache'u i re-raise'owanie go kolejnym callerom w tym
+# samym oknie TTL gwarantuje NAJWYŻEJ jedno realne zapytanie na (endpoint,
+# user) na cały cykl, niezależnie od tego czy się powiedzie czy nie.
+_shared_cache_lock = threading.Lock()
+_portfolio_cache: dict[str, tuple[float, list[dict] | None, Exception | None]] = {}
+_pending_orders_cache: dict[str, tuple[float, list[dict] | None, Exception | None]] = {}
+SHARED_CACHE_TTL_SECONDS = 50.0
 
 
 class T212APIError(Exception):
@@ -116,16 +165,28 @@ class T212Client:
             "Authorization": f"Basic {basic_token}",
             "Content-Type": "application/json",
         })
+        # Klucz do _portfolio_cache/_pending_orders_cache - environment+api_key,
+        # żeby dwóch różnych userów (albo demo/live tego samego usera) nie
+        # dzielili cache'a między sobą.
+        self._cache_key = f"{environment}:{api_key}"
 
     # -- Niskopoziomowa obsługa requestów -----------------------------------
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
+        global _last_request_monotonic
         url = f"{self.base_url}{path}"
-        try:
-            resp = self._session.request(method, url, timeout=self.timeout, **kwargs)
-        except requests.RequestException as exc:
-            logger.error("T212 request failed: %s %s -> %s", method, url, exc)
-            raise T212APIError(0, f"Błąd sieci: {exc}") from exc
+
+        with _rate_limit_lock:
+            wait = MIN_REQUEST_INTERVAL_SECONDS - (time.monotonic() - _last_request_monotonic)
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                resp = self._session.request(method, url, timeout=self.timeout, **kwargs)
+            except requests.RequestException as exc:
+                _last_request_monotonic = time.monotonic()
+                logger.error("T212 request failed: %s %s -> %s", method, url, exc)
+                raise T212APIError(0, f"Błąd sieci: {exc}") from exc
+            _last_request_monotonic = time.monotonic()
 
         self._log_rate_limit(resp)
 
@@ -139,6 +200,36 @@ class T212Client:
         if resp.status_code == 204 or not resp.content:
             return None
         return resp.json()
+
+    def _cached_request(
+        self, path: str, cache: dict[str, tuple[float, list[dict] | None, Exception | None]]
+    ) -> list[dict]:
+        """
+        GET z cache'em dzielonym między silnikami, patrz komentarz przy
+        SHARED_CACHE_TTL_SECONDS - cache'uje TAKŻE błąd (re-raise tego
+        samego wyjątku kolejnym callerom w oknie TTL), nie tylko sukces.
+        """
+        with _shared_cache_lock:
+            cached = cache.get(self._cache_key)
+            if cached and (time.monotonic() - cached[0]) < SHARED_CACHE_TTL_SECONDS:
+                _, cached_result, cached_error = cached
+                if cached_error is not None:
+                    raise cached_error
+                return cached_result
+
+        result: list[dict] | None = None
+        error: Exception | None = None
+        try:
+            result = self._request("GET", path) or []
+        except T212APIError as exc:
+            error = exc
+
+        with _shared_cache_lock:
+            cache[self._cache_key] = (time.monotonic(), result, error)
+
+        if error is not None:
+            raise error
+        return result
 
     @staticmethod
     def _log_rate_limit(resp: requests.Response) -> None:
@@ -184,8 +275,13 @@ class T212Client:
         Lista aktualnie otwartych pozycji: ticker, quantity, averagePrice,
         currentPrice, ppl (profit/loss) - dla instrumentów, które POSIADASZ.
         Nie zwraca cen dla instrumentów, których nie masz w portfelu.
+
+        Wynik cache'owany do SHARED_CACHE_TTL_SECONDS i dzielony między
+        Micro-Grid/Sygnał/EOD (patrz komentarz przy _portfolio_cache) -
+        NIE wołaj tego tam, gdzie potrzebujesz gwarantowanie świeżego stanu
+        (np. zaraz po własnoręcznie złożonym zleceniu w tym samym ticku).
         """
-        return self._request("GET", "/equity/portfolio")
+        return self._cached_request("/equity/portfolio", _portfolio_cache)
 
     def get_position(self, ticker: str) -> dict | None:
         """
@@ -322,8 +418,14 @@ class T212Client:
         )
 
     def get_pending_orders(self) -> list[dict]:
-        """Zlecenia jeszcze niewykonane / nieanulowane / niewygasłe."""
-        return self._request("GET", "/equity/orders")
+        """
+        Zlecenia jeszcze niewykonane / nieanulowane / niewygasłe.
+
+        Wynik cache'owany do SHARED_CACHE_TTL_SECONDS i dzielony między
+        Micro-Grid/Sygnał/EOD, patrz get_portfolio() i komentarz przy
+        _pending_orders_cache - te same zasady dot. świeżości.
+        """
+        return self._cached_request("/equity/orders", _pending_orders_cache)
 
     def cancel_order(self, order_id: str) -> None:
         """Próbuje anulować aktywne, niewykonane zlecenie po jego ID."""

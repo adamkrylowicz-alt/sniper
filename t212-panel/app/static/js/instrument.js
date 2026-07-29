@@ -201,10 +201,11 @@ function loadSavedChartRange() {
 
 // Wolane RAZ przy wejsciu na strone zamiast zawsze-domyslnego "1M" (30 dni) -
 // odtwarza ostatnio wybrana zakladke z localStorage. Jesli zapisana zakladka
-// to np. "1min", a AKTUALNY ticker nie jest USA (wiec ta zakladka w ogole
-// nie istnieje na tej stronie - patrz {% if ticker.endswith('_US_EQ') %} w
-// szablonie) - cichy fallback na domyslnie aktywna zakladke w HTML (1M),
-// zamiast bledu/pustego wykresu.
+// to np. "1min", a AKTUALNY ticker nie ma pokrycia intraday (wiec ta
+// zakladka w ogole nie istnieje na tej stronie - patrz {% if
+// has_intraday_chart %} w szablonie, US zawsze/EU tylko z
+// price_feed.IBKR_TICKER_MAP) - cichy fallback na domyslnie aktywna
+// zakladke w HTML (1M), zamiast bledu/pustego wykresu.
 function applyInitialChartRange() {
     const tabsContainer = document.getElementById("instrument-range-tabs");
     const saved = loadSavedChartRange();
@@ -236,7 +237,8 @@ document.getElementById("instrument-range-tabs").addEventListener("click", (e) =
     btn.classList.add("tab--active");
 
     // Zakladka "1min" (data-interval) - osobna od data-days (patrz
-    // routes/scalping.py::candles ?interval=1m, tylko tickery *_US_EQ).
+    // routes/scalping.py::candles ?interval=1m - US zawsze przez Alpaca,
+    // EU tylko tickery z price_feed.IBKR_TICKER_MAP).
     const interval = btn.dataset.interval || "";
     if (!interval) {
         currentDays = Number(btn.dataset.days);

@@ -390,11 +390,13 @@ def candles():
     ?interval= opcjonalne, jedno z 1m/5m/15m/1h (dodane 2026-07-27, Adam:
     "świeczki 1min na wykresach, tam gdzie się da poki co czyli usa z
     alpaca", potem rozszerzone o kolejne interwały: "dodaj tez inne
-    timestampy oprocz tych co juz sa") - zakładki śróddzienne na stronie
-    instrumentu, TYLKO dla tickerów *_US_EQ (Alpaca, patrz
-    price_feed.get_intraday_chart - inne rynki na razie nie mają
-    wiarygodnego źródła realnych świec śróddziennych). `days` jest wtedy
-    ignorowane (lookback zależny od interwału, patrz _INTRADAY_INTERVALS).
+    timestampy oprocz tych co juz sa"; rozszerzone o EU przez IBKR
+    2026-07-28, patrz price_feed.IBKR_TICKER_MAP) - zakładki śróddzienne na
+    stronie instrumentu. Pokrycie zależy od tickera (US zawsze przez
+    Alpaca, EU tylko te z IBKR_TICKER_MAP) - `price_feed.get_intraday_chart`
+    samo zwraca `None` dla tickerów bez pokrycia, stąd tu już nie ma
+    twardej blokady na `_US_EQ`. `days` jest wtedy ignorowane (lookback
+    zależny od interwału, patrz _INTRADAY_INTERVALS).
     """
     ticker = request.args.get("ticker", "").strip()
     if not ticker:
@@ -402,15 +404,13 @@ def candles():
 
     interval = request.args.get("interval", default="", type=str)
     if interval:
-        if not ticker.endswith("_US_EQ"):
-            return jsonify(ok=False, error="Świece śróddzienne są na razie dostępne tylko dla tickerów USA."), 400
         candles = price_feed.get_intraday_chart(
             ticker, interval,
             current_app.config.get("ALPACA_API_KEY"),
             current_app.config.get("ALPACA_API_SECRET"),
         )
         if not candles:
-            return jsonify(ok=False, error=f"Brak danych ({interval}) dla {ticker} (poza sesją albo Alpaca niedostępna)."), 404
+            return jsonify(ok=False, error=f"Brak danych ({interval}) dla {ticker} (poza sesją albo źródło niedostępne)."), 404
         return jsonify(ok=True, ticker=ticker, candles=candles)
 
     from ..extensions import finnhub

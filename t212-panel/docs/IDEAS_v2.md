@@ -202,6 +202,27 @@ odbicie, nie jazda z trendem). Przetestowane na sucho przed wdrożeniem
   opłata miesięczna, czasem obniżana/zerowa przy odpowiednim wolumenie
   prowizji u brokera) - i tak znacznie taniej niż Twelve Data Pro. Gdy IBKR
   dojedzie, to docelowe źródło danych dla EOD, Yahoo tylko na czas przejściowy.
+  **ZROBIONE (2026-07-28)**: IBKR dojechał (Adam miał już konto paper) -
+  kontener `ib-gateway` (`gnzsnz/ib-gateway-docker`, patrz
+  `docker-compose.yml` w korzeniu `/volume1/docker/`) + `backtest/ibkr_data.py`
+  (WYŁĄCZNIE do pobierania danych do backtestów, zero live tradingu przez
+  IBKR - Yahoo w `eod_engine.py` na produkcji NIE zostało zamienione, to
+  osobna, świadoma decyzja, patrz plan "IBKR jako źródło danych
+  historycznych"). Realne uprawnienia rynkowe Adama: BRAK Xetra (IBIS) i
+  BRAK pełnej skonsolidowanej taśmy NASDAQ (SMART) - obejście: europejskie
+  spółki przez `TGATE` (Tradegate, pokrywa większość blue-chipów EU), USA
+  przez `IEX` (jedna z 5 giełd w "US Real-Time Non Consolidated" bundle,
+  który Adam ma za darmo). Praktyczny sufit niezawodności zapytań
+  1-min: **20 dni w jednym zapytaniu działa stabilnie, 30/60 dni często
+  wisi bez błędu** (prawdopodobnie limit odpowiedzi/tempo po stronie IBKR
+  dla dużych zapytań 1-min, nie coś do naprawienia w kodzie) - `backtest/
+  eod_runner.py` i `run_eod_backtest.py` (+ `app/services/strategy/
+  eod_strategy.py`, wyciągnięta czysta logika sizing/trailing z
+  `eod_engine.py`) już zbudowane i przetestowane na pełnej liście 30
+  tickerów EOD. Pierwszy grid search (`stop_loss_pct`) na tej próbce dał
+  słaby, niepewny sygnał (mała liczba transakcji, ~24-29) - wdrożony
+  ostrożnie (0.4%→0.8%) i obserwowany live na koncie demo, NIE traktowany
+  jako ostateczny wniosek.
 - **ROZSTRZYGNIĘTE (2026-07-24): RSI/MA/ATR to OSOBNA strategia, DZIAŁA
   RÓWNOLEGLE do Micro-Grid Bota, NIE go zastępuje.** Micro-Grid (czysta
   siatka DCA bez sygnału, `bot_engine.py`, `BotAsset`/`ActiveTrade`) zostaje

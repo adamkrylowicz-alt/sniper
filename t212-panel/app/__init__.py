@@ -188,13 +188,42 @@ def _register_context_processors(app: Flask) -> None:
         session_data = get_session(token)
 
         theme = "dark"  # domyślny motyw dla niezalogowanych / braku ustawień
+        # Liczniki otwartych pozycji per silnik - Adam 2026-07-28: "w
+        # zakladkach pododawaj liczbe porzadkowa zeby bylo latwo widziec ile
+        # pozycji jest otwartych" - pokazywane jako plakietka przy Bot/
+        # Sygnał/EOD w topbarze (base.html), zeby nie trzeba bylo wchodzic
+        # do kazdej zakladki osobno. Tylko lokalny COUNT w bazie, ZERO
+        # zapytan do T212 - bezpieczne nawet przy ciasnym rate limicie demo.
+        open_position_counts = {"bot": 0, "signal": 0, "eod": 0, "aktywa": 0}
         if session_data is not None:
-            from .models import UserSettings
+            from .models import ActiveTrade, EODTrade, SignalTrade, UserSettings
             settings = UserSettings.query.filter_by(user_id=session_data.user_id).first()
             if settings is not None and settings.dark_mode is False:
                 theme = "light"
 
-        return {"is_authenticated": session_data is not None, "current_theme": theme}
+            # "Aktywa" (scalping.py::portfolio_view) - WSZYSTKIE pozycje z
+            # T212 (nie tylko botowe), stad nie liczba z lokalnej bazy jak
+            # wyzej, tylko len() z _portfolio_cache - TEGO SAMEGO cache co
+            # sama strona uzywa do renderu bez live-calla (patrz docstring
+            # portfolio_view - swiadomie zero zapytan do T212 przy
+            # renderowaniu, wask rate limit demo). Brak cache (jeszcze nikt
+            # nie odwiedzil Aktywa w tej sesji procesu) - brak plakietki,
+            # nie zgadujemy.
+            from .routes.scalping import _portfolio_cache
+            cached_portfolio = _portfolio_cache.get(session_data.user_id)
+
+            open_position_counts = {
+                "bot": ActiveTrade.query.filter_by(user_id=session_data.user_id, status="OPEN").count(),
+                "signal": SignalTrade.query.filter_by(user_id=session_data.user_id, status="OPEN").count(),
+                "eod": EODTrade.query.filter_by(user_id=session_data.user_id, status="OPEN").count(),
+                "aktywa": len(cached_portfolio["positions"]) if cached_portfolio else 0,
+            }
+
+        return {
+            "is_authenticated": session_data is not None,
+            "current_theme": theme,
+            "open_position_counts": open_position_counts,
+        }
 
 
 def _register_blueprints(app: Flask) -> None:

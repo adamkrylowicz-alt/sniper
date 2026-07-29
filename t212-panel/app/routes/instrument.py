@@ -16,7 +16,7 @@ from __future__ import annotations
 from flask import Blueprint, current_app, render_template
 
 from ..models import Instrument
-from ..services import logo_cache
+from ..services import logo_cache, price_feed
 from ..services.market_hours import is_market_open as _market_open
 from ..utils import avatar_hue, friendly_name, login_required
 
@@ -54,4 +54,8 @@ def detail(ticker):
         hue=avatar_hue(ticker),
         initial=(name or display_ticker)[0].upper(),
         logo_filename=logo_cache.get_cached_logo_filename(current_app.static_folder, ticker),
+        # Zakladki 1m/5m/15m/1h - US zawsze przez Alpaca, EU tylko tickery z
+        # price_feed.IBKR_TICKER_MAP (dodane 2026-07-28, patrz plan "IBKR
+        # jako zrodlo 1-min swiec dla EU").
+        has_intraday_chart=ticker.endswith("_US_EQ") or ticker in price_feed.IBKR_TICKER_MAP,
     )

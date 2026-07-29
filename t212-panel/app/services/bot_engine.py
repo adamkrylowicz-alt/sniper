@@ -146,6 +146,7 @@ from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSetting
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from . import bot_credentials, bot_entry_filters, mailer, price_feed
+from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
 
 BOT_ENVIRONMENT = "demo"
@@ -890,6 +891,14 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
     4. trail_milestone_steps (int(profit_pct / step)) zostaje wyliczane jak
        dawniej WYŁĄCZNIE do wyświetlenia w UI ("próg N") - nie steruje już
        SAMYM poziomem STOP-a, tylko bramką uzbrojenia (krok 1).
+    5. WYJĄTEK od bramki uzbrojenia (dodane 2026-07-28, patrz
+       microgrid_strategy.compute_exhausted_dca_floor) - pozycja BEZ amunicji
+       do dalszego DCA (dca_level == max_dca_levels-1) i jeszcze nigdy nie
+       uzbrojona dostaje natychmiastowy, ostatni-linii-obrony STOP zakotwiczony
+       w AKTUALNEJ cenie (ATR floor / stop_loss_pct fallback), NIE czekając na
+       2 progi zysku - bez tego taka pozycja mogła utknąć BEZ ŻADNEJ ochrony
+       na czas nieokreślony (znalezione backtestem: PRXa_EQ/MCp_EQ/SAPd_EQ,
+       dca_level=4, -27.7%/-18.1%/-13.7%, zero stop_target_price).
 
     Migracja ze starego dwunożnego OCO: jeśli pozycja ma jeszcze
     trade.sell_order_id (LIMIT SELL założony PRZED przeprojektowaniem
@@ -995,75 +1004,44 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             else trade.average_price
         )
 
-        profit_pct = (current_price - ref_price) / ref_price
-        milestone_steps = int(profit_pct / step) if profit_pct > 0 else 0
+        milestone_steps = microgrid_strategy.compute_milestone_steps(ref_price, current_price, step)
         if milestone_steps < 2:
-            continue  # jeszcze przed progiem uzbrojenia (potrzeba 2 progów, po odjęciu FX dla USD)
+            # WYJĄTEK 2026-07-28 (patrz compute_exhausted_dca_floor - znalezione
+            # backtestem: PRXa_EQ/MCp_EQ/SAPd_EQ utknęły na dca_level=4, głęboko
+            # pod wodą, ZERO ochrony) - pozycja bez amunicji do dalszego DCA
+            # (dca_level == max_dca_levels-1) i jeszcze NIGDY nie uzbrojona
+            # dostaje ostatnią linię obrony OD RAZU, bez czekania na 2 progi
+            # zysku, które przy wyczerpanym DCA mogą nigdy nie nadejść.
+            if trade.dca_level >= settings.max_dca_levels - 1 and trade.stop_order_id is None:
+                atr_distance = _get_atr_stop_distance(trade.ticker)
+                candidate_stop = microgrid_strategy.compute_exhausted_dca_floor(
+                    current_price, atr_distance, settings.stop_loss_pct,
+                )
+                pending.append((trade, candidate_stop, milestone_steps, current_price))
+            continue
 
-        if trade.stop_order_id is None:
-            # PIERWSZE uzbrojenie - szeroka ochrona kapitalu (ATR gdy da sie
-            # policzyc, inaczej stary sztywny %), NIE ciasny trailing. Bug
-            # znaleziony 2026-07-22 przy dopinaniu ATR: matematycznie, dla
-            # KAZDEGO realistycznego step<50%, current_price*(1-step) w
-            # momencie uzbrojenia jest ZAWSZE wyzszy niz ref_price*(1-X)
-            # (dowod: current_price >= ref_price*(1+2*step), wiec
-            # current_price*(1-step) >= ref_price*(1+step-2*step^2) >
-            # ref_price > kazdy floor ponizej ref_price) - czyli max() z
-            # poprzedniej wersji ZAWSZE wybieral ciasny target, floor byl
-            # martwym kodem, szeroki bufor "chroniacy kapital" przy pierwszym
-            # uzbrojeniu w ogole sie nie wlaczal. Naprawione: floor liczony
-            # WYLACZNIE tutaj, raz, przy przejsciu z nieuzbrojonej na
-            # uzbrojona - kolejne tiki juz go nie przeliczaja (patrz else).
-            #
-            # floor_anchor = max(ref_price, current_price), NIE goly ref_price
-            # (bug znaleziony 2026-07-27 na CRM_US_EQ - stop uzbrojony na 144
-            # przy cenie 174, prawie caly papierowy zysk bez ochrony). To
-            # uzbrojenie NIE zawsze dzieje sie "tuz po zakupie" - DCA fill
-            # (_confirm_dca_fills) i nieudane cancel/replace (bledy T212)
-            # CELOWO/przypadkowo zeruja stop_order_id, wiec do faktycznego
-            # ponownego uzbrojenia moze dojsc dlugo po tym jak cena juz
-            # odjechala daleko od ref_price. Floor liczony od goleg ref_price
-            # w takiej sytuacji zostawia ogromna, niezamierzona dziure miedzy
-            # stopem a cena. Anchor na max() nie zmienia zachowania w typowym
-            # przypadku (uzbrojenie zaraz po zakupie, current_price≈ref_price).
-            floor_anchor = max(ref_price, current_price)
-            atr_distance = _get_atr_stop_distance(trade.ticker)
-            if atr_distance is not None:
-                floor_candidate = (floor_anchor - atr_distance).quantize(Decimal("0.0001"))
-            else:
-                floor_candidate = (floor_anchor * (1 - settings.stop_loss_pct)).quantize(Decimal("0.0001"))
-
-            # JEDNYM STRZAŁEM do najlepszego poziomu (dodane 2026-07-27, Adam:
-            # "gdzie jest problem ze sie zacial na 159 zamiast chronic zysk i
-            # wystawic order na 173" - priorytet ochrony zysku > wszystko inne,
-            # patrz [[feedback_snajper_profit_protection_priority]]) - zamiast
-            # samego floor_candidate, bierzemy max(floor, ciasny_target_teraz).
-            # Bez tego: uzbrojenie ZAWSZE siadalo na szerokim floorze, a
-            # dociagniecie do ciasnego poziomu wymagalo DRUGIEGO, osobnego
-            # zlecenia (cancel+place) na KOLEJNYM ticku - przy ciasnym rate
-            # limicie demo to podwojenie szansy na utkniecie w 429 zanim
-            # ochrona faktycznie dojdzie tam gdzie powinna. Matematyczny dowod
-            # w komentarzu wyzej (2026-07-22) pokazuje ze dla SWIEZEGO wejscia
-            # (dokladnie na progu 2) ciasny_target ZAWSZE > floor - czyli max()
-            # i tak wybierze ciasny target w typowym przypadku (to swiadoma
-            # zmiana: "szeroki floor od razu po zakupie" byl kompromisem z
-            # 22.07, dzis Adam jednoznacznie postawil ochrone zysku ponad tym
-            # kompromisem). floor_candidate zostaje jako DOLNA granica na
-            # wypadek nietypowych/ujemnych przypadkow (np. bardzo swiezy wpis
-            # tuz nad progiem 2, gdzie ciasny_target moglby wypasc nizej niz
-            # rozsadna ochrona kapitalu przy naglym cofnieciu).
-            tight_target_now = (current_price * (1 - step)).quantize(Decimal("0.0001"))
-            candidate_stop = max(floor_candidate, tight_target_now)
-        else:
-            # JUZ uzbrojony - czysty ciagly trailing wzgledem WLASNEGO
-            # poprzedniego poziomu (nigdy w dol), bez ponownego przeliczania
-            # floora - patrz uzasadnienie wyzej.
-            continuous_target = (current_price * (1 - step)).quantize(Decimal("0.0001"))
-            candidate_stop = max(trade.stop_target_price, continuous_target)
-
-            min_requote_threshold = trade.stop_target_price * (1 + step * MIN_TRAIL_REQUOTE_FRACTION)
-            if candidate_stop < min_requote_threshold:
-                continue  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
+        # Matematyka (floor ATR/fallback, max(floor, ciasny_target) przy
+        # pierwszym uzbrojeniu, czysty ciagly trailing pozniej) wyciagnieta
+        # 2026-07-28 do microgrid_strategy.compute_trailing_stop() - PELNE
+        # uzasadnienie kazdego kroku (dlaczego floor tylko raz, dlaczego
+        # floor_anchor=max(ref_price,current_price), dlaczego jeden strzal
+        # do max(floor, ciasny_target) zamiast samego floora) zostaje w
+        # docstringu tej funkcji wyzej - tu tylko wolanie juz zweryfikowanej
+        # formuly.
+        is_first_arm = trade.stop_order_id is None
+        atr_distance = _get_atr_stop_distance(trade.ticker) if is_first_arm else None
+        candidate_stop = microgrid_strategy.compute_trailing_stop(
+            is_first_arm=is_first_arm,
+            ref_price=ref_price,
+            current_price=current_price,
+            step=step,
+            existing_stop_target=trade.stop_target_price,
+            atr_distance=atr_distance,
+            stop_loss_pct=settings.stop_loss_pct,
+            min_requote_fraction=MIN_TRAIL_REQUOTE_FRACTION,
+        )
+        if candidate_stop is None:
+            continue  # juz uzbrojony, ale poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
 
         pending.append((trade, candidate_stop, milestone_steps, current_price))
 
@@ -1882,10 +1860,12 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> bo
         _log(user_id, "ERROR", f"{asset.ticker}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
         return False
 
-    quantity = (asset.entry_amount / price).quantize(Decimal("0.0001"))
-    if quantity <= 0:
-        _log(user_id, "ERROR", f"{asset.ticker}: wyliczona ilość <= 0 (kwota {asset.entry_amount} / cena {price}).")
+    try:
+        entry_decision = microgrid_strategy.compute_entry_quantity(asset.entry_amount, price)
+    except microgrid_strategy.EntryValidationError as exc:
+        _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
         return False
+    quantity = entry_decision.quantity
 
     buy_price = price
     allocated_value = quantity * buy_price
