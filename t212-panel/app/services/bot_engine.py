@@ -163,6 +163,45 @@ MIN_ORDER_VALUE_ESTIMATE = Decimal("1.20")
 
 SELLING_EQUITY_NOT_OWNED_ERROR_TYPE = "/api-errors/selling-equity-not-owned"
 
+# Dodane 2026-07-29 (Adam: "niektore requesty powinny miec prio jak ochrona
+# zysku, a nie doprowadzac do oczekiwan po 30 min") - realny przypadek
+# ASML_US_EQ: KAŻDA próba wystawienia trailing STOP-a na PEŁNĄ trade.quantity
+# dostawała 400 selling-equity-not-owned (świeżo wypełniona noga DCA jeszcze
+# się rozliczała), a stary kod (_bump_retry) traktował to jak dowolny,
+# niewyjaśniony błąd i wchodził w rosnący backoff (SELL_RETRY_BACKOFF_MINUTES,
+# do 30 min) - pozycja została bez ochrony na 7+ godzin, mimo że treść błędu
+# ("Selling more equities than owned, owned: X") WPROST mówi ile da się
+# sprzedać JUŻ TERAZ. WAŻNE: to NIE jest prawdziwy stan posiadania (Adam
+# potwierdził 29.07 - portfolio 0.3709 było poprawne, T212 tylko chwilowo nie
+# pozwalał sprzedać nierozliczonej części) - używane WYŁĄCZNIE jako fallback
+# rozmiaru NA JEDNĄ próbę zlecenia (patrz _manage_trailing_exit), nigdy do
+# nadpisania trade.quantity.
+_OWNED_QUANTITY_RE = re.compile(r"owned:\s*([\d.]+)")
+
+
+def _extract_owned_quantity_from_error(exc: T212APIError) -> Decimal | None:
+    """
+    Zwraca ile T212 pozwala sprzedać JUŻ TERAZ, wyciągnięte z treści błędu
+    selling-equity-not-owned - NIE jest to koniecznie pełny, prawdziwy stan
+    posiadania (część pozycji może być po prostu jeszcze nierozliczona), więc
+    wywołujący ma użyć tego WYŁĄCZNIE jako rozmiaru zlecenia na tę jedną
+    próbę, nie jako nowej wartości trade.quantity. Zwraca None gdy błąd innego
+    typu/nie da się sparsować - wtedy wywołujący ma zrobić zwykły _bump_retry
+    (rosnący backoff nadal ma sens dla błędów, których przyczyny NIE znamy,
+    np. 429).
+    """
+    if not isinstance(exc.payload, dict):
+        return None
+    if exc.payload.get("type") != SELLING_EQUITY_NOT_OWNED_ERROR_TYPE:
+        return None
+    match = _OWNED_QUANTITY_RE.search(str(exc.payload.get("detail", "")))
+    if not match:
+        return None
+    try:
+        return Decimal(match.group(1))
+    except InvalidOperation:
+        return None
+
 # Okna sesji (ustalone z Adamem 2026-07-21, po tym jak ASMLa_EQ retry'owało
 # bez sensu CAŁĄ NOC podczas gdy Euronext Amsterdam był dawno zamknięty -
 # każda z funkcji poniżej, ktora goni cene/zarzadza zleceniem, dzieli ten sam
@@ -962,6 +1001,43 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             )
             continue
 
+        # Synchronizacja ilości z rzeczywistym stanem T212 (dodane 2026-07-29,
+        # na życzenie Adama - "niech boty maja pelna dostepnosc (testowo)...
+        # niech dodaje to do logiki trailing stop") - portfolio GET jest
+        # PRAWDZIWYM stanem posiadania (Adam potwierdził 29.07 wprost na
+        # żywym przykładzie ASML_US_EQ: realna ilość to 0.3709, NIE 0.3075),
+        # więc synchronizujemy w OBIE strony - i manualna sprzedaż, i
+        # manualne dokupienie mają być od razu widoczne w trailing stopie.
+        #
+        # WAŻNE odróżnienie (znalezione na żywo tego samego dnia, patrz
+        # _extract_owned_quantity_from_error przy place_stop_order niżej):
+        # gdy T212 odrzuca SPRZEDAŻ błędem selling-equity-not-owned z
+        # MNIEJSZĄ liczbą niż portfolio - to NIE jest dowód, że portfolio
+        # kłamie, tylko że część pozycji (np. świeżo wypełniona noga DCA)
+        # jeszcze się nie rozliczyła i chwilowo nie da się jej sprzedać.
+        # Pierwsza wersja tego fixu (usunięta) błędnie brała tę MNIEJSZĄ,
+        # "ile da się teraz sprzedać" liczbę za nowy stan PEŁNEGO posiadania
+        # i na stałe zaniżała trade.quantity - realny błąd: po naprawieniu
+        # rozjazdu wygasłoby ochranianie tej "zaginionej" części pozycji na
+        # zawsze, mimo że faktycznie należy do usera. Rozwiązanie: TA
+        # synchronizacja (portfolio, źródło prawdy o CAŁKOWITYM posiadaniu)
+        # zostaje jak było; ograniczenie "ile da się sprzedać TERAZ" jest
+        # obsługiwane WYŁĄCZNIE jako jednorazowy fallback przy samym
+        # wystawianiu zlecenia (patrz niżej), bez dotykania trade.quantity.
+        actual_owned = owned_map.get(trade.ticker) if owned_map is not None else None
+        if actual_owned is not None and actual_owned != trade.quantity:
+            old_quantity = trade.quantity
+            trade.quantity = actual_owned
+            trade.allocated_value = (actual_owned * trade.average_price).quantize(Decimal("0.01"))
+            db.session.commit()
+            _log(
+                user_id, "INFO",
+                f"{trade.ticker}: ilość zsynchronizowana z T212 ({old_quantity} -> {actual_owned}) - "
+                "wykryto ręczną zmianę pozycji poza botem (albo rozjazd po cancel/replace), trailing "
+                "STOP dalej liczony/wystawiany na aktualnej, prawdziwej ilości.",
+                trade.position_group_id,
+            )
+
         if trade.sell_order_id:
             old_sell_order_id = trade.sell_order_id
             try:
@@ -1060,15 +1136,45 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
                 )
                 continue
 
+        order_quantity = trade.quantity
+        partial_sellable: Decimal | None = None
         try:
-            stop_result = client.place_stop_order(trade.ticker, -trade.quantity, candidate_stop)
+            stop_result = client.place_stop_order(trade.ticker, -order_quantity, candidate_stop)
         except T212APIError as exc:
             trade.stop_order_id = None
-            _bump_retry(
-                user_id, trade,
-                f"uzbrojenie ciągłego trailing STOP (target {candidate_stop}) nie powiodło się - {exc}",
-            )
-            continue
+            # Fallback NA TĘ JEDNĄ próbę (dodane 2026-07-29, patrz [[feedback_
+            # snajper_profit_protection_priority]] - Adam: "niektore requesty
+            # powinny miec prio... a nie doprowadzac do oczekiwan po 30 min").
+            # Realny przypadek ASML_US_EQ 29.07: T212 odrzucił sprzedaż PEŁNEJ
+            # trade.quantity (0.3709, potwierdzone przez Adama jako PRAWDZIWY
+            # stan posiadania) błędem selling-equity-not-owned, "owned: 0.3075"
+            # - świeżo wypełniona noga DCA najwyraźniej jeszcze się rozlicza i
+            # chwilowo nie da się jej sprzedać, NIE oznacza to że user ma mniej
+            # akcji niż myślimy. Pierwsza wersja tego fixu (usunięta) błędnie
+            # NADPISYWAŁA trade.quantity tą mniejszą liczbą na stałe - trwale
+            # gubiąc ochronę "zaginionej" (w rzeczywistości wciąż posiadanej)
+            # części pozycji. Naprawione: próbujemy OD RAZU, w TYM SAMYM
+            # wywołaniu, wystawić STOP na to co błąd mówi że da się sprzedać
+            # TERAZ - trade.quantity zostaje nietknięte (prawdziwy total), więc
+            # przy KOLEJNYM ruchu ceny (Cancel-Replace) bot znów spróbuje
+            # najpierw pełnej ilości - naturalnie złapie resztę, gdy tylko się
+            # rozliczy, bez żadnego specjalnego mechanizmu "dogonienia".
+            partial_sellable = _extract_owned_quantity_from_error(exc)
+            if partial_sellable is None or not (0 < partial_sellable < order_quantity):
+                _bump_retry(
+                    user_id, trade,
+                    f"uzbrojenie ciągłego trailing STOP (target {candidate_stop}) nie powiodło się - {exc}",
+                )
+                continue
+            try:
+                stop_result = client.place_stop_order(trade.ticker, -partial_sellable, candidate_stop)
+            except T212APIError as exc2:
+                _bump_retry(
+                    user_id, trade,
+                    f"uzbrojenie ciągłego trailing STOP nawet dla dostępnej ilości ({partial_sellable} "
+                    f"z {order_quantity}, reszta prawdopodobnie jeszcze się rozlicza) nie powiodło się - {exc2}",
+                )
+                continue
 
         was_armed = trade.trail_milestone_steps > 0
         trade.stop_order_id = stop_result.order_id
@@ -1077,12 +1183,22 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         trade.sell_retry_count = 0
         trade.next_sell_retry_at = None
         db.session.commit()
-        _log(
-            user_id, "INFO",
-            f"{trade.ticker}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} "
-            f"na {candidate_stop} (próg {milestone_steps}, cena teraz {current_price}).",
-            trade.position_group_id,
-        )
+        if partial_sellable is not None:
+            _log(
+                user_id, "WARN",
+                f"{trade.ticker}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} na "
+                f"{candidate_stop} - CZĘŚCIOWO, tylko {partial_sellable} z {order_quantity} szt. (reszta "
+                "prawdopodobnie jeszcze się rozlicza na T212, nie sprzedana ani zgubiona) - przy kolejnym "
+                "ruchu ceny bot spróbuje ochronić całość ponownie.",
+                trade.position_group_id,
+            )
+        else:
+            _log(
+                user_id, "INFO",
+                f"{trade.ticker}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} "
+                f"na {candidate_stop} (próg {milestone_steps}, cena teraz {current_price}).",
+                trade.position_group_id,
+            )
 
 
 def _parse_dca_scenario(dca_scenario: str) -> list[Decimal]:
@@ -1559,30 +1675,16 @@ def reconcile(user_id: int) -> None:
     if settings is not None:
         _confirm_dca_fills(user_id, client, settings, pending=pending)
 
-    # Weryfikacja nadwyżek (dodane 2026-07-22 razem z fixem w _confirm_buy_fill/
-    # _confirm_dca_fills) - dla KAŻDEJ otwartej pozycji, nie tylko tych jeszcze
-    # niepotwierdzonych, porównuje rzeczywiste posiadanie na T212 z tym co baza
-    # oczekuje (baseline_owned_quantity sprzed zlecenia + trade.quantity).
-    # Łapie też nadwyżki potwierdzone JUŻ WCZEŚNIEJ pod starym (przed fixem)
-    # kodem, które wtedy zostały po cichu obcięte i nigdy nie trafiły do logu.
-    try:
-        owned_now = _portfolio_quantities(client)
-    except T212APIError as exc:
-        _log(user_id, "ERROR", f"Reconciliation: błąd pobierania portfolio do weryfikacji nadwyżek - {exc}")
-    else:
-        for trade in open_trades:
-            expected = trade.baseline_owned_quantity + trade.quantity
-            actual = owned_now.get(trade.ticker, Decimal("0"))
-            surplus = actual - expected
-            if surplus > Decimal("0.0001"):
-                _log(
-                    user_id, "WARN",
-                    f"{trade.ticker}: NADWYŻKA wykryta przy weryfikacji - T212 pokazuje {actual}, "
-                    f"baza oczekuje {expected} (baseline {trade.baseline_owned_quantity} + zlecenie "
-                    f"{trade.quantity}), różnica {surplus}. Sprawdź ręcznie w T212 - możliwe podwójne "
-                    "wykonanie zlecenia (cancel/replace race).",
-                    trade.position_group_id,
-                )
+    # Stara weryfikacja nadwyżek (dodana 2026-07-22) USUNIĘTA 2026-07-29 -
+    # porównywała baseline_owned_quantity + trade.quantity z rzeczywistym
+    # portfelem, ale (a) łapała WYŁĄCZNIE nadwyżkę, nigdy niedobór (dokładnie
+    # ten brak zablokował ASML_US_EQ na 7+ godzin bez żadnej ochrony STOP-a -
+    # patrz historia 29.07), i (b) sam WARN nigdy się nie gois - tylko
+    # informował, nie naprawiał. Zastąpione ciągłą synchronizacją ilości w
+    # _manage_trailing_exit() (patrz tam, wołane kilka linii wyżej) - trade.
+    # quantity jest tam na bieżąco ustawiane na to, co T212 faktycznie
+    # pokazuje, więc ten blok liczyłby teraz nieaktualną (już zsynchronizowaną)
+    # wartość i nie miałby czego wykrywać.
 
     if settings is not None:
         _retry_pending_buys(user_id, client, settings, pending=pending)
