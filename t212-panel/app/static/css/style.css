@@ -610,13 +610,19 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     display: flex;
     flex-direction: column;
     gap: 10px;
-    height: 340px; /* STAŁA wysokość - bez tego długie komunikaty błędów
-                       rozciągały cały kafelek (i cały wiersz siatki razem
-                       z sąsiednimi kafelkami), przez co layout "skakał"
-                       przy każdym kliknięciu. Podniesione z 280px na 340px
-                       (2026-07-30, patrz screen ss3.png) - dodanie wiersza
-                       LIMIT KUP/SPRZEDAJ przekroczylo stara wysokosc, wiec
-                       przycisk LIMIT znikal pod nastepnym wierszem siatki. */
+    min-height: 340px; /* Bylo STALE 280px, potem 340px - kazda proba
+                       zgadniecia "wlasciwej" liczby px konczyla sie tym
+                       samym: dodanie wiersza LIMIT (2026-07-30) znowu
+                       przekroczylo sztywna wysokosc, przyciski wystawaly
+                       POZA ramke kafelka (widoczne na screen ss4.png -
+                       dolne narozniki HUD koncza sie w polowie tresci).
+                       ZAMIENIONE na min-height - .tile__status (jedyny
+                       powod dawnej sztywnej wysokosci, dlugie komunikaty
+                       bledow rozciagajace caly kafelek) ma juz WLASNY
+                       limit (max-height:30px + overflow-y:auto nizej),
+                       wiec kafelek moze bezpiecznie rosnac do faktycznej
+                       tresci - narozniki (position:absolute, bottom:4px)
+                       poprawnie podazaja za realna wysokoscia. */
 }
 
 /* Sygnaturowy element: narożniki celownicze, jak w wizjerze HUD -
