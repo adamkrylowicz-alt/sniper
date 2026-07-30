@@ -88,6 +88,13 @@
                         SPRZEDAJ
                     </button>
                 </div>
+                <div class="focus-tile__limit-price-row">
+                    <input type="number" class="tile__price focus-tile__limit-price" placeholder="cena LIMIT" step="0.01" min="0" aria-label="Cena LIMIT dla {{ ticker }}">
+                </div>
+                <div class="focus-tile__limit-row">
+                    <button class="tile__btn tile__btn--limit tile__btn--limit-buy" data-side="buy">LIMIT KUP</button>
+                    <button class="tile__btn tile__btn--limit tile__btn--limit-sell" data-side="sell">LIMIT SPRZEDAJ</button>
+                </div>
             </div>
             {% endfor %}
         </div>

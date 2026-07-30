@@ -23,19 +23,44 @@ let priceChart = null;
 let candleSeries = null;
 let heldAveragePrice = null;
 let heldPpl = null;
-let tradeLevels = []; // z /warp/trade_levels - [{type: "stop_loss"|"take_profit", price, source}]
-let overlayPriceLines = []; // wszystkie linie aktualnie narysowane na candleSeries (srednia + SL/TP)
+// z /warp/trade_levels - [{type: "stop_loss"|"take_profit"|"pending_buy", price, source,
+// order_id?, editable?}] - order_id/editable tylko dla pending_buy (dodane 2026-07-30).
+let tradeLevels = [];
+let overlayPriceLines = []; // wszystkie linie aktualnie narysowane na candleSeries (srednia + SL/TP + pending_buy)
 let livePriceLine = null; // osobna od overlayPriceLines - odswiezana co 5s, nie chcemy migotac reszty linii tak czesto
+
+// Przeciaganie linii oczekujacych zlecen LIMIT BUY (dodane 2026-07-30, Adam:
+// "chce zeby mozna bylo... lapiac za kreske i przesuwajac ja po wykresie").
+// TYLKO dla wpisow pending_buy z editable=true (nie-bota, patrz
+// scalping.py::_bot_order_sources) - reszta linii nie ma tu zadnego wpisu,
+// wiec mousedown w ich poblizu nic nie robi.
+let draggablePendingBuys = []; // [{line, orderId, price}] - ilosc/ticker rozwiazywane server-side w /reprice
+let dragState = null; // {entry, startPrice} podczas aktywnego przeciagania, inaczej null
+let repricePopoverEl = null;
+let dragPriceLabelEl = null; // zywa etykieta ceny podazajaca za kursorem w trakcie przeciagania
+// Prawdziwy bug (2026-07-30, Adam: "na ekranie byl chuj wielki i 2 babelki"):
+// klik "Zatwierdz" odpala commitReprice() (request sieciowy) + potem
+// loadTradeLevels() (przebudowuje WSZYSTKIE linie/draggablePendingBuys z
+// serwera). Jesli w tym czasie (kilkaset ms) user zdazyl zlapac za INNA
+// linie i ja przeciagnac, dragState.entry.line wskazywal juz na obiekt
+// usuniety przez updateOverlayLines() - duch, ktory nadal "reagowal" na
+// mousemove/mouseup i tworzyl WLASNY popover obok tego ze świeżo
+// przeladowanych danych = 2 bąbelki + krzaczaca sie linia. Blokujemy nowe
+// przeciaganie na czas trwania zatwierdzania (do konca loadTradeLevels()).
+let repriceInFlight = false;
+const DRAG_HIT_TOLERANCE_PX = 6;
 
 function themeColor(varName) {
     return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
 }
 
 function addOverlayLine(price, color, style, width, title) {
-    if (!candleSeries || price == null) return;
-    overlayPriceLines.push(candleSeries.createPriceLine({
+    if (!candleSeries || price == null) return null;
+    const line = candleSeries.createPriceLine({
         price, color, lineWidth: width, lineStyle: style, axisLabelVisible: true, title,
-    }));
+    });
+    overlayPriceLines.push(line);
+    return line;
 }
 
 // Zywa linia aktualnej ceny (dodane 2026-07-28, Adam po zauwazeniu ze swiece
@@ -85,6 +110,10 @@ function updateOverlayLines() {
     if (!candleSeries) return;
     overlayPriceLines.forEach((line) => candleSeries.removePriceLine(line));
     overlayPriceLines = [];
+    draggablePendingBuys = [];
+    hideRepricePopover();
+    hideDragPriceLabel();
+    dragState = null; // linie ponizej przebudowane od zera - stary obiekt linii juz nie istnieje
 
     if (heldAveragePrice) {
         const color = heldPpl >= 0 ? themeColor("--buy-green") : themeColor("--sell-red");
@@ -95,7 +124,279 @@ function updateOverlayLines() {
             addOverlayLine(lvl.price, themeColor("--sell-red"), LightweightCharts.LineStyle.Dotted, 1, `Stop-loss (${lvl.source})`);
         } else if (lvl.type === "take_profit") {
             addOverlayLine(lvl.price, themeColor("--accent-amber"), LightweightCharts.LineStyle.Dotted, 1, `Take-profit (${lvl.source})`);
+        } else if (lvl.type === "pending_buy") {
+            // Dodane 2026-07-30 (Adam: "chce zeby tez byla taka kreska jak
+            // odpale np buy limit order recznie") - LargeDashed odroznia
+            // wizualnie od Dashed (srednia) i Dotted (SL/TP). Przeciaganie
+            // (bindDragHandlers) dziala WYLACZNIE dla editable=true (nie-bota,
+            // patrz scalping.py::_bot_order_sources) - zlecenia bota rysuja
+            // sie identycznie, ale bez wpisu w draggablePendingBuys, wiec
+            // mousedown w ich poblizu nic nie robi.
+            const line = addOverlayLine(
+                lvl.price, themeColor("--accent-blue"), LightweightCharts.LineStyle.LargeDashed, 1,
+                `Kupno LIMIT (${lvl.source})`,
+            );
+            if (lvl.editable && line) {
+                draggablePendingBuys.push({ line, orderId: lvl.order_id, price: lvl.price, source: lvl.source });
+            }
         }
+    });
+}
+
+// -- Przeciaganie linii pending_buy (edytowalnych zlecen LIMIT BUY) --------
+
+function hideRepricePopover() {
+    if (repricePopoverEl) {
+        repricePopoverEl.remove();
+        repricePopoverEl = null;
+    }
+}
+
+function updateDragPriceLabel(y, price, container) {
+    if (!dragPriceLabelEl) {
+        dragPriceLabelEl = document.createElement("div");
+        dragPriceLabelEl.className = "chart-drag-price-label";
+        container.appendChild(dragPriceLabelEl);
+    }
+    dragPriceLabelEl.style.top = `${Math.max(0, y - 11)}px`;
+    // Ostrzezenie na biezaco w trakcie przeciagania (Adam: "daj warna jak
+    // wyjedzie za wysoko") - >= cena rynkowa = wykona sie NATYCHMIAST jak
+    // zwykle kupno, nie zostanie oczekujace (patrz tez confirm() przy
+    // zatwierdzaniu w showRepricePopover).
+    const marketPrice = lastQuote && lastQuote.c != null ? Number(lastQuote.c) : null;
+    const crossesMarket = marketPrice != null && price >= marketPrice;
+    dragPriceLabelEl.classList.toggle("chart-drag-price-label--warn", crossesMarket);
+    dragPriceLabelEl.textContent = crossesMarket ? `${price.toFixed(4)} ⚠ kupi po rynku` : price.toFixed(4);
+}
+
+function hideDragPriceLabel() {
+    if (dragPriceLabelEl) {
+        dragPriceLabelEl.remove();
+        dragPriceLabelEl = null;
+    }
+}
+
+function isMarketCrossing(price) {
+    return lastQuote != null && lastQuote.c != null && price >= Number(lastQuote.c);
+}
+
+// Przelacza wyglad linii pending_buy miedzy "LIMIT" (niebieska, przerywana)
+// a "MARKET" (czerwona, ciagla) na biezaco w trakcie przeciagania (Adam,
+// 2026-07-30: "jak wjedzie wyzej zmien na market bo dalej swieci limit") -
+// sama etykieta ostrzegawcza przy kursorze (updateDragPriceLabel) nie
+// wystarczala, tytul/kolor SAMEJ linii tez musial sie zmienic, bo to ona
+// zostaje widoczna na wykresie (dymek znika po puszczeniu myszy).
+function applyDragLineAppearance(entry, price) {
+    const crosses = isMarketCrossing(price);
+    entry.line.applyOptions({
+        price,
+        color: themeColor(crosses ? "--sell-red" : "--accent-blue"),
+        lineStyle: crosses ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.LargeDashed,
+        title: crosses ? `Kupno MARKET, natychmiast (${entry.source})` : `Kupno LIMIT (${entry.source})`,
+    });
+    entry.price = price;
+}
+
+async function commitReprice(entry) {
+    try {
+        const resp = await fetch(`/warp/order/${encodeURIComponent(entry.orderId)}/reprice`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_price: entry.price }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert(data.error || data.reason || "Nie udało się zmienić ceny zlecenia.");
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error("Błąd repricingu zlecenia:", err);
+        alert("Błąd połączenia przy zmianie ceny zlecenia.");
+        return false;
+    }
+}
+
+async function commitCancelOrder(entry) {
+    try {
+        const resp = await fetch(`/warp/order/${encodeURIComponent(entry.orderId)}/cancel`, { method: "POST" });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert(data.error || data.reason || "Nie udało się skasować zlecenia.");
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error("Błąd kasowania zlecenia:", err);
+        alert("Błąd połączenia przy kasowaniu zlecenia.");
+        return false;
+    }
+}
+
+function showRepricePopover(entry, startPrice, container) {
+    hideRepricePopover();
+    const y = candleSeries.priceToCoordinate(entry.price);
+    if (y == null) return;
+
+    // Guzik "Skasuj zlecenie" - ZAWSZE widoczny (poprawione 2026-07-30:
+    // wczesniej ukrywany gdy cena >= rynek, na blednym zalozeniu ze taka
+    // cena i tak wykona sie natychmiast jak market. Obalone na zywo -
+    // zlecenie KO_US_EQ @ 90.14 (rynek 88.49) stalo realnie OCZEKUJACE
+    // 10+ minut, nigdy sie nie wykonalo - user nie mogl go skasowac, bo
+    // przycisk po prostu znikal. isMarketCrossing() to niepewna heurystyka
+    // z WLASNEGO price feedu (Alpaca/Finnhub/Yahoo), nie prawdziwy stan
+    // ksiegi T212 - nie wolno na niej ukrywac akcji, ktora moze byc
+    // jedynym sposobem pozbycia sie zlecenia).
+    const el = document.createElement("div");
+    el.className = "chart-reprice-popover";
+    el.style.top = `${Math.max(0, y - 14)}px`;
+    el.style.right = "44px";
+    el.innerHTML = `
+        <span class="chart-reprice-popover__price">${entry.price.toFixed(4)}</span>
+        <button type="button" class="pending-orders-list__action-btn pending-orders-list__action-btn--confirm" data-action="confirm">Zatwierdź</button>
+        <button type="button" class="pending-orders-list__action-btn pending-orders-list__action-btn--cancel" data-action="cancel-order">Skasuj</button>
+        <button type="button" class="pending-orders-list__action-btn" data-action="cancel">Anuluj</button>
+    `;
+    // KLUCZOWY fix (2026-07-30, Adam: "kliknalem i chuja sie dzieje" - zero
+    // logow w konsoli nawet dla samego kliknięcia): popover jest DZIECKIEM
+    // TEGO SAMEGO kontenera co sam wykres (container.appendChild(el) nizej),
+    // a bindDragHandlers() wiesza wlasny "mousedown" na CALYM kontenerze do
+    // wykrywania przeciagania linii. Bez zatrzymania propagacji, kazdy klik
+    // w przycisk popovera (Skasuj/Zatwierdz/Anuluj) najpierw przechodzil
+    // przez ten handler kontenera - w praktyce nie blokowal (entry=null ->
+    // return), ale prawdopodobnie interferowal z biblioteka wykresu
+    // (Lightweight Charts tez nasluchuje mousedown na tym samym elemencie
+    // do pan/zoom) na tyle, ze klik nigdy nie docieral do faktycznego
+    // <button>. stopPropagation() na mousedown popovera gwarantuje ze
+    // zaden z tych zewnetrznych handlerow go juz nie zobaczy.
+    el.addEventListener("mousedown", (e) => e.stopPropagation());
+    // Potwierdzenie "kliknij drugi raz" ZAMIAST natywnego confirm() (Adam,
+    // 2026-07-30: "nic nie znikało po prostu nie działało") - podejrzenie:
+    // natywne okienko confirm() w polskiej przegladarce ma przyciski
+    // "OK"/"Anuluj", a w TYM SAMYM popoverze jest tez wlasny przycisk
+    // "Anuluj" (o zupelnie innym znaczeniu - cofniecie przeciagniecia) -
+    // latwo kliknac nie ten przycisk i nie zauwazyc, ze cala akcja po cichu
+    // sie nie wykonala. Bez osobnego okienka nie ma tej dwuznacznosci.
+    function armTwoStep(btn, armedLabel) {
+        let armed = false;
+        let timer = null;
+        const originalLabel = btn.textContent;
+        return {
+            isArmed: () => armed,
+            disarm: () => {
+                armed = false;
+                clearTimeout(timer);
+                btn.textContent = originalLabel;
+                btn.classList.remove("pending-orders-list__action-btn--armed");
+            },
+            arm: () => {
+                armed = true;
+                btn.textContent = armedLabel;
+                btn.classList.add("pending-orders-list__action-btn--armed");
+                timer = setTimeout(() => {
+                    armed = false;
+                    btn.textContent = originalLabel;
+                    btn.classList.remove("pending-orders-list__action-btn--armed");
+                }, 4000);
+            },
+        };
+    }
+
+    const confirmBtn = el.querySelector('[data-action="confirm"]');
+    const confirmArm = armTwoStep(confirmBtn, "Kupi PO RYNKU - kliknij ponownie");
+    confirmBtn.addEventListener("click", async () => {
+        // Ostrzezenie (Adam: "daj warna jak wyjedzie za wysoko ze kupno
+        // market") - LIMIT BUY z cena >= aktualnej ceny rynkowej wykona sie
+        // NATYCHMIAST jak zwykle kupno (patrz realny przypadek 30.07 - 0,2
+        // szt. KO kupione po 88,35 zamiast zostac oczekujace). Wymaga
+        // DRUGIEGO klikniecia zamiast confirm() - patrz komentarz wyzej.
+        if (isMarketCrossing(entry.price) && !confirmArm.isArmed()) {
+            confirmArm.arm();
+            return;
+        }
+        confirmArm.disarm();
+        el.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+        repriceInFlight = true;
+        try {
+            const ok = await commitReprice(entry);
+            hideRepricePopover();
+            if (ok) {
+                await loadTradeLevels(); // odswiez z serwera - nowy order_id po anuluj+zloz-nowe
+            } else {
+                applyDragLineAppearance(entry, startPrice);
+            }
+        } finally {
+            repriceInFlight = false;
+        }
+    });
+
+    // Skasuj = JEDEN klik, bez potwierdzenia (Adam, 2026-07-30: "kasuje i
+    // nic się nie dzieje kumasz?" - podwojne kliknicie do potwierdzenia
+    // bylo kolejnym zrodlem "nic sie nie dzieje", user nie zauwazal zmiany
+    // tekstu na przycisku po pierwszym kliknieciu). Niskie ryzyko pomylki -
+    // w najgorszym razie trzeba zlozyc zlecenie ponownie, w odroznieniu od
+    // przypadkowego KUPNA po rynku (Zatwierdz przy market-crossing), gdzie
+    // podwojne kliknięcie NADAL obowiazuje.
+    const cancelOrderBtn = el.querySelector('[data-action="cancel-order"]');
+    cancelOrderBtn.addEventListener("click", async () => {
+        el.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+        repriceInFlight = true;
+        try {
+            const ok = await commitCancelOrder(entry);
+            hideRepricePopover();
+            if (ok) {
+                await loadTradeLevels(); // odswiez z serwera - linia zniknie, zlecenie faktycznie skasowane
+            } else {
+                applyDragLineAppearance(entry, startPrice);
+            }
+        } finally {
+            repriceInFlight = false;
+        }
+    });
+    el.querySelector('[data-action="cancel"]').addEventListener("click", () => {
+        applyDragLineAppearance(entry, startPrice);
+        hideRepricePopover();
+    });
+
+    container.appendChild(el);
+    repricePopoverEl = el;
+}
+
+function bindDragHandlers(container) {
+    container.addEventListener("mousedown", (event) => {
+        if (dragState || !candleSeries || repriceInFlight) return;
+        const rect = container.getBoundingClientRect();
+        const y = event.clientY - rect.top;
+        const entry = draggablePendingBuys.find((e) => {
+            const lineY = candleSeries.priceToCoordinate(e.price);
+            return lineY != null && Math.abs(lineY - y) <= DRAG_HIT_TOLERANCE_PX;
+        });
+        if (!entry) return;
+        event.preventDefault();
+        hideRepricePopover();
+        dragState = { entry, startPrice: entry.price };
+        container.style.cursor = "ns-resize";
+        updateDragPriceLabel(y, entry.price, container);
+    });
+
+    document.addEventListener("mousemove", (event) => {
+        if (!dragState || !candleSeries) return;
+        const rect = container.getBoundingClientRect();
+        const y = event.clientY - rect.top;
+        const newPrice = candleSeries.coordinateToPrice(y);
+        if (newPrice == null || newPrice <= 0) return;
+        applyDragLineAppearance(dragState.entry, newPrice);
+        updateDragPriceLabel(y, newPrice, container);
+    });
+
+    document.addEventListener("mouseup", () => {
+        if (!dragState) return;
+        container.style.cursor = "";
+        hideDragPriceLabel();
+        const { entry, startPrice } = dragState;
+        dragState = null;
+        if (Math.abs(entry.price - startPrice) < 1e-9) return; // brak realnej zmiany
+        showRepricePopover(entry, startPrice, container);
     });
 }
 
@@ -104,7 +405,18 @@ async function loadTradeLevels() {
         const resp = await fetch(`/warp/trade_levels?ticker=${encodeURIComponent(ticker)}`);
         const data = await resp.json();
         if (!data.ok) return;
-        tradeLevels = data.levels || [];
+        if (data.pending_unavailable) {
+            // Backend nie zdolal sprawdzic oczekujacych zlecen teraz (429/
+            // cache bledu T212, patrz scalping.py::trade_levels) - NIE
+            // kasujemy dotychczasowej linii "Kupno LIMIT", tylko dokladamy
+            // do niej swiezo pobrane SL/TP. Bez tego linia znikala losowo
+            // przy kazdym odswiezeniu strony, mimo ze zlecenie realnie
+            // istnialo na T212 (Adam, 2026-07-30: "NIE MA ZADNEGO").
+            const oldPendingBuys = tradeLevels.filter((lvl) => lvl.type === "pending_buy");
+            tradeLevels = [...(data.levels || []), ...oldPendingBuys];
+        } else {
+            tradeLevels = data.levels || [];
+        }
         updateOverlayLines();
     } catch (err) {
         console.error("Błąd poziomów SL/TP:", err);
@@ -130,7 +442,21 @@ function ensureChart() {
         borderVisible: false,
         wickUpColor: themeColor("--buy-green"),
         wickDownColor: themeColor("--sell-red"),
+        // Domyslne wskazniki biblioteki "ostatnia cena" - DWIE OSOBNE opcje,
+        // obie wlaczone domyslnie (latwo przeoczyc, ze to nie jedna rzecz):
+        // lastValueVisible = etykieta/tag na osi, priceLineVisible = sama
+        // poprzeczna kreska na wykresie. WYLACZONE OBIE 2026-07-30 (Adam:
+        // pierwszy fix lastValueVisible usunal tylko etykiete, ale kreska
+        // sama w sobie (priceLineVisible) zostala i dalej nakladala sie
+        // wizualnie na WLASNA linie "Cena teraz" - patrz screen asml2.png).
+        // Obie pokazuja cene zamkniecia OSTATNIEJ SWIECY (na wykresie 5min
+        // moze byc kilka minut nieaktualna), nie live cene - mamy juz WLASNA,
+        // opisana linia "Cena teraz" (updateLivePriceLine, odswiezana co 5s
+        // z /warp/quote), biblioteczne byly zbedne i wprowadzaly w blad.
+        lastValueVisible: false,
+        priceLineVisible: false,
     });
+    bindDragHandlers(container);
 }
 
 async function loadCandles(days, interval) {
@@ -546,6 +872,65 @@ document.querySelector(".instrument-detail__actions").addEventListener("click", 
     const btn = e.target.closest(".focus-tile__btn");
     if (btn) sendOrder(btn.dataset.side);
 });
+
+// Zlozenie NOWEGO zlecenia LIMIT (Adam, 2026-07-30: "jak wystawić order
+// limit np na cocacole?? jak kurwa??") - w odroznieniu od Kup/Sprzedaj
+// wyzej (zawsze MARKET po biezacej cenie), tu cena jest WYMAGANA (to
+// faktyczny limit, nie szacunek) - pole #instrument-limit-price, bez
+// auto-wypelniania (swiadomy wybor usera, nie podpowiedz).
+async function sendLimitOrder(side) {
+    const quantity = getQuantity(side);
+    const priceInput = document.getElementById("instrument-limit-price");
+    const price = priceInput.value;
+    const statusEl = document.getElementById("instrument-status");
+    const btns = document.querySelectorAll(".focus-tile__btn, .tile__btn--limit");
+
+    if (!quantity || Number(quantity) <= 0) {
+        statusEl.textContent = "Podaj ilość > 0";
+        return;
+    }
+    if (!price || Number(price) <= 0) {
+        statusEl.textContent = "Podaj cenę LIMIT > 0";
+        priceInput.focus();
+        return;
+    }
+
+    btns.forEach((b) => (b.disabled = true));
+    statusEl.textContent = "wysyłanie LIMIT…";
+
+    try {
+        const resp = await fetch("/warp/order/limit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticker, side, quantity, price }),
+        });
+        const data = await resp.json();
+
+        if (data.ok) {
+            playSuccess();
+            statusEl.textContent = `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}`;
+            const flash = document.getElementById("instrument-flash");
+            flash.classList.add("focus-tile__flash--ok");
+            setTimeout(() => flash.classList.remove("focus-tile__flash--ok"), 400);
+            await loadTradeLevels(); // odswiez linie na wykresie - nowe zlecenie pojawi sie od razu
+        } else if (data.blocked) {
+            playError();
+            statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
+        } else {
+            playError();
+            statusEl.textContent = `BŁĄD: ${data.error ?? "nieznany"}`;
+        }
+    } catch (err) {
+        playError();
+        statusEl.textContent = "BŁĄD SIECI";
+        console.error(err);
+    } finally {
+        btns.forEach((b) => (b.disabled = false));
+    }
+}
+
+document.getElementById("btn-limit-buy").addEventListener("click", () => sendLimitOrder("buy"));
+document.getElementById("btn-limit-sell").addEventListener("click", () => sendLimitOrder("sell"));
 
 document.getElementById("btn-instrument-back").addEventListener("click", () => {
     if (document.referrer) {

@@ -157,7 +157,7 @@ from ..extensions import db
 from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from . import bot_credentials, bot_entry_filters, mailer, price_feed
+from . import bot_credentials, bot_entry_filters, diagnostics, mailer, price_feed
 from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
 
@@ -224,8 +224,8 @@ def _extract_owned_quantity_from_error(exc: T212APIError) -> Decimal | None:
 # unika cyklicznego importu z routes/scalping.py, ktory ponizej importuje
 # _log_order stamtad).
 from .market_hours import (  # noqa: E402
-    _AMSTERDAM_TZ, EU_SESSION_WINDOW, US_SESSION_WINDOW, is_market_open as _market_open,
-    is_position_management_hours as _position_hours,
+    _AMSTERDAM_TZ, EU_SESSION_WINDOW, US_SESSION_WINDOW, held_by_other_engine,
+    is_market_open as _market_open, is_position_management_hours as _position_hours,
 )
 
 # Konto Adama jest w EUR - kupno/sprzedaż instrumentu w USD wymaga DWÓCH
@@ -443,7 +443,13 @@ def _log(user_id: int, action_type: str, message: str, position_group_id: str | 
     BotAuditLog/Dziennika w appce - patrz komentarz przy BOT_ERROR_LOG_FILENAME.
     Wszystko inne (BUY/INFO/WARN) zapisywane jak dotychczas, z commitem
     natychmiast (każdy wpis niezależny, ten sam styl co OrderLog).
+
+    Dodane 2026-07-30: KAŻDE wywołanie (niezależnie od action_type) leci
+    TAKŻE do diagnostics.py::log_diag() - ukryty log, nie zmienia niczego
+    z powyższego (Dziennik/plik błędów zostają jak były), tylko dokłada
+    kopię do wewnętrznej diagnostyki (instance/bot_diagnostics.log).
     """
+    diagnostics.log_diag(user_id, "bot", f"[{action_type}] {message}")
     if action_type == "ERROR":
         _log_error_to_file(user_id, message)
         return
@@ -471,7 +477,10 @@ def _get_client_for_user(user_id: int, settings: RiskSettings) -> T212Client | N
     creds = get_decrypted_credentials(user_id, master_key, BOT_ENVIRONMENT)
     if creds is None:
         return None
-    return T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
+    return T212Client(
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+        engine="bot", user_id=user_id,
+    )
 
 
 def _portfolio_quantities(client: T212Client) -> dict[str, Decimal]:
@@ -826,6 +835,17 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
     for p in portfolio:
         ticker = p.get("ticker")
         if not ticker or ticker in open_tickers:
+            continue
+        other = held_by_other_engine(user_id, ticker, "bot")
+        if other is not None:
+            # Ticker realnie leży w portfelu, ale JUŻ zarządza nim inny
+            # silnik (Sygnał/EOD) - "zarządzaj wszystkim" NIE powinno go
+            # sobie zawłaszczać, inaczej odtworzylibyśmy kolizję SUp_EQ
+            # tym razem przez auto-adopcję zamiast zwykłego wejścia.
+            diagnostics.log_diag(
+                user_id, "bot",
+                f"{ticker}: pominięte auto-adopcją - już zarządzane przez {other}.",
+            )
             continue
         try:
             quantity = Decimal(str(p.get("quantity", 0)))
@@ -1643,7 +1663,10 @@ def reconcile(user_id: int) -> None:
 
     settings = RiskSettings.query.filter_by(user_id=user_id).first()
 
-    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
+    client = T212Client(
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+        engine="bot", user_id=user_id,
+    )
 
     # PRZED sprawdzeniem "czy jest cokolwiek do zrobienia" - switch "zarzadzaj
     # wszystkim" (patrz _auto_adopt_foreign_positions) moze wlasnie TERAZ
@@ -1718,6 +1741,8 @@ def tick(app) -> None:
             settings = RiskSettings.query.filter_by(user_id=user_id).first()
             if not settings or not settings.is_bot_active:
                 continue
+
+            diagnostics.log_diag(user_id, "bot", "tick start")
 
             # Bezpiecznik dziennej straty - SPRAWDZANY PRZED czymkolwiek innym
             # w tym ticku. Gdy próg przekroczony: bot się wyłącza (is_bot_active
@@ -1857,6 +1882,17 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
             continue  # giełda właściwa dla tej waluty zamknięta - patrz _market_open
         if ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN").first():
             continue
+        other = held_by_other_engine(user_id, asset.ticker, "bot")
+        if other is not None:
+            # Cudza pozycja (Sygnał/EOD) na tym samym tickerze - pomijamy,
+            # zeby nie powtorzyc kolizji SUp_EQ (patrz market_hours.py::
+            # held_by_other_engine). Do ukrytego logu, nie do Dziennika -
+            # to techniczny szczegol, nie cos co user musi widziec w UI.
+            diagnostics.log_diag(
+                user_id, "bot",
+                f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
+            )
+            continue
         backoff = _entry_fail_backoff.get((user_id, asset.ticker))
         if backoff is not None and now < backoff[1]:
             continue  # asset "w pauzie" po serii nieudanych prób
@@ -1994,7 +2030,10 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> bo
         )
         return True
 
-    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT)
+    client = T212Client(
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+        engine="bot", user_id=user_id,
+    )
 
     # Zapis TUŻ PRZED złożeniem zlecenia - ile tickera user już posiada
     # (np. z ręcznego tradingu tą samą appką). _retry_pending_sells() później

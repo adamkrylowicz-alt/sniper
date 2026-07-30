@@ -50,6 +50,8 @@ from typing import Any, Literal
 
 import requests
 
+from . import diagnostics
+
 logger = logging.getLogger(__name__)
 
 Environment = Literal["demo", "live"]
@@ -61,25 +63,83 @@ BASE_URLS: dict[Environment, str] = {
 
 DEFAULT_TIMEOUT = 10  # sekund na request
 
-# Globalna kolejka/throttle na WSZYSTKIE zapytania do T212 (dodane 2026-07-28,
-# Adam: "to musi byc jakos kolejkowane a nie faktycznie wszystkie zapytania
-# napierdlaja jednoczesnie") - Micro-Grid/Sygnał/Sygnał/EOD kazdy tworzy
-# WŁASNY T212Client co tick (3 osobne instancje), a APScheduler odpala
+# Kolejka/throttle PER-ENDPOINT na wszystkie zapytania do T212 (dodane
+# 2026-07-28, Adam: "to musi byc jakos kolejkowane a nie faktycznie wszystkie
+# zapytania napierdlaja jednoczesnie"; PRZEROBIONE na per-endpoint 2026-07-30,
+# Adam podrzucil oficjalny plik specyfikacji API T212 (pliki/api.json/yaml) z
+# limitami wpisanymi wprost w opis kazdej operacji - "skoro niektore mozna
+# postowac co 1s to na chuja czekac 5s". Micro-Grid/Sygnal/EOD kazdy tworzy
+# WLASNY T212Client co tick (3 osobne instancje), a APScheduler odpala
 # wszystkie trzy joby (interval=60s) w praktycznie tej samej sekundzie - bez
-# tego throttle'a 3 silniki potrafily wystrzelic po kilka zapytan do TEGO
-# SAMEGO, bardzo ciasnego limitu demo (zaobserwowane x-ratelimit-limit=1,
-# remaining=0 na /equity/orders, /equity/portfolio, /equity/orders/limit
-# OSOBNO) w oknie <1s, gwarantujac 429 nawet gdy pojedynczy silnik sam w
-# sobie nie przekraczalby limitu. Lock jest MODULOWY (nie per-instancja
-# T212Client) wlasnie dlatego, ze wszystkie trzy silniki dziala w TYM SAMYM
-# procesie Pythona (APScheduler = watki w jednym `run.py`, nie osobne
-# procesy) - dzieki temu serializuje zapytania NIEZALEZNIE od tego, ktory
-# silnik/instancja je wysyla. Trzyma lock przez CALY czas zapytania
-# (włącznie z oczekiwaniem na odpowiedź), więc w danej chwili do T212 leci
-# co najwyzej JEDNO zapytanie z calej appki, plus min. odstep miedzy kolejnymi.
+# throttle'a 3 silniki potrafily wystrzelic po kilka zapytan do TEGO SAMEGO,
+# bardzo ciasnego limitu (potwierdzone spec'iem I zmierzone recznie 2026-07-30
+# - patrz tabela w _rate_limit_key_and_interval nizej) w oknie <1s, gwarantujac
+# 429 nawet gdy pojedynczy silnik sam w sobie nie przekraczalby limitu.
+#
+# Lock jest MODULOWY (nie per-instancja T212Client) wlasnie dlatego, ze
+# wszystkie trzy silniki dzialaja w TYM SAMYM procesie Pythona (APScheduler =
+# watki w jednym `run.py`, nie osobne procesy) - dzieki temu serializuje
+# zapytania NIEZALEZNIE od tego, ktory silnik/instancja je wysyla. Trzyma lock
+# przez CALY czas zapytania (wlacznie z oczekiwaniem na odpowiedz), wiec w
+# danej chwili do T212 leci co najwyzej JEDNO zapytanie z calej appki - ale
+# odstep MINIMALNY wyliczany jest teraz OSOBNO per endpoint (slownik zamiast
+# pojedynczego float), zamiast jednego wspolnego zegara dla wszystkiego. Dzieki
+# temu np. Skasuj/nowe zlecenie Market (limit T212: 50/60s) nie czeka juz na
+# ten sam, ciasny 5.5s odstep co odczyt listy zlecen (limit: 1/5s) - kazdy
+# endpoint dostaje WLASNY, poprawny odstep.
 _rate_limit_lock = threading.Lock()
-_last_request_monotonic = 0.0
-MIN_REQUEST_INTERVAL_SECONDS = 2.0
+_last_request_by_key: dict[str, float] = {}
+
+# Limity WPROST ze specyfikacji OpenAPI T212 (pliki/api.json/api.yaml,
+# dostarczone przez Adama 2026-07-30 - jeden wspolny spec dla demo i live,
+# bez rozroznienia per-srodowisko). Wartosc = period/limit + maly zapas (dla
+# limitow >1 to bezpieczny odstep przy CIAGLYM uzyciu, nie realne wykorzystanie
+# calej pojemnosci "wybuchu" - swiadomy kompromis prostoty). "portfolio" nie
+# jest w spec'ie wcale (widocznie starszy/nieudokumentowany alias) - zmierzone
+# recznie 2026-07-30 (zatrzymany Snajper, 10x bez opoznienia): identyczny wzor
+# jak account/summary i orders (1/5s), stad taka sama wartosc.
+#   GET    /equity/orders (lista)         -> 1 / 5s
+#   GET    /equity/orders/{id}            -> 1 / 1s
+#   DELETE /equity/orders/{id}            -> 50 / 60s
+#   POST   /equity/orders/market          -> 50 / 60s
+#   POST   /equity/orders/limit           -> 1 / 2s
+#   POST   /equity/orders/stop            -> 1 / 2s
+#   GET    /equity/account/summary        -> 1 / 5s
+#   GET    /equity/portfolio              -> niedokumentowany, zmierzony jako 1 / 5s
+#   GET    /equity/metadata/instruments   -> 1 / 50s
+#   GET    /equity/history/orders         -> 6 / 60s
+DEFAULT_MIN_INTERVAL_SECONDS = 5.5  # bezpieczny fallback dla niewymienionych wprost
+
+
+def _rate_limit_key_and_interval(method: str, path: str) -> tuple[str, float]:
+    """
+    Mapuje (method, path) na (klucz throttle'a, minimalny bezpieczny odstep
+    w sekundach) wg tabeli wyzej. Kolejnosc sprawdzania WAZNA - najpierw
+    najbardziej specyficzne sciezki (np. /equity/orders/market), dopiero potem
+    ogolniejsze wzorce z tym samym prefiksem (np. /equity/orders/{id}),
+    inaczej te pierwsze zlapalyby sie w zly, ogolniejszy przypadek.
+    """
+    if method == "POST" and path == "/equity/orders/market":
+        return "orders/market", 1.3
+    if method == "POST" and path == "/equity/orders/limit":
+        return "orders/limit", 2.2
+    if method == "POST" and path == "/equity/orders/stop":
+        return "orders/stop", 2.2
+    if method == "DELETE" and path.startswith("/equity/orders/"):
+        return "orders/cancel", 1.3
+    if method == "GET" and path.startswith("/equity/orders/"):
+        return "orders/by_id", 1.1
+    if method == "GET" and path == "/equity/orders":
+        return "orders/list", 5.5
+    if method == "GET" and path == "/equity/account/summary":
+        return "account/summary", 5.5
+    if method == "GET" and path == "/equity/portfolio":
+        return "portfolio", 5.5
+    if method == "GET" and path == "/equity/metadata/instruments":
+        return "metadata/instruments", 50.5
+    if method == "GET" and path == "/equity/history/orders":
+        return "history/orders", 10.5
+    return f"{method} {path}", DEFAULT_MIN_INTERVAL_SECONDS
 
 # Cache dzielony MIĘDZY silnikami dla get_portfolio()/get_pending_orders()
 # (dodane 2026-07-29 - throttle wyżej rozstrzelał zapytania w czasie, ale
@@ -174,6 +234,8 @@ class T212Client:
         environment: Environment = "demo",
         timeout: int = DEFAULT_TIMEOUT,
         session: requests.Session | None = None,
+        engine: str = "?",
+        user_id: int | None = None,
     ):
         if environment not in BASE_URLS:
             raise ValueError(f"Nieznane środowisko: {environment!r} (oczekiwano 'demo' albo 'live')")
@@ -182,6 +244,12 @@ class T212Client:
         self.base_url = BASE_URLS[environment]
         self.timeout = timeout
         self._session = session or requests.Session()
+        # engine/user_id - WYŁĄCZNIE do otagowania wpisów w ukrytym logu
+        # diagnostycznym (diagnostics.py, 2026-07-30) - nie wpływają na żadne
+        # zachowanie/cache/rate-limit, patrz _cache_key niżej (ten zostaje
+        # bez zmian, po environment+api_key).
+        self.engine = engine
+        self.user_id = user_id
 
         credentials = f"{api_key}:{api_secret}".encode("utf-8")
         basic_token = base64.b64encode(credentials).decode("utf-8")
@@ -197,22 +265,32 @@ class T212Client:
     # -- Niskopoziomowa obsługa requestów -----------------------------------
 
     def _request(self, method: str, path: str, **kwargs) -> Any:
-        global _last_request_monotonic
         url = f"{self.base_url}{path}"
+        rl_key, min_interval = _rate_limit_key_and_interval(method, path)
 
         with _rate_limit_lock:
-            wait = MIN_REQUEST_INTERVAL_SECONDS - (time.monotonic() - _last_request_monotonic)
+            last = _last_request_by_key.get(rl_key, 0.0)
+            wait = min_interval - (time.monotonic() - last)
             if wait > 0:
                 time.sleep(wait)
             try:
                 resp = self._session.request(method, url, timeout=self.timeout, **kwargs)
             except requests.RequestException as exc:
-                _last_request_monotonic = time.monotonic()
+                _last_request_by_key[rl_key] = time.monotonic()
                 logger.error("T212 request failed: %s %s -> %s", method, url, exc)
+                diagnostics.log_diag(
+                    self.user_id, self.engine, f"T212 {method} {path} -> błąd sieci: {exc}",
+                )
                 raise T212APIError(0, f"Błąd sieci: {exc}") from exc
-            _last_request_monotonic = time.monotonic()
+            _last_request_by_key[rl_key] = time.monotonic()
 
         self._log_rate_limit(resp)
+        diagnostics.log_diag(
+            self.user_id, self.engine,
+            f"T212 {method} {path} -> {resp.status_code}, "
+            f"rate_limit remaining={resp.headers.get('x-ratelimit-remaining', '?')}"
+            f"/{resp.headers.get('x-ratelimit-limit', '?')}",
+        )
 
         if resp.status_code >= 400:
             try:
@@ -266,6 +344,10 @@ class T212Client:
             cached = cache.get(self._cache_key)
             if cached and (time.monotonic() - cached[0]) < SHARED_CACHE_TTL_SECONDS:
                 _, cached_result, cached_error = cached
+                age = time.monotonic() - cached[0]
+                diagnostics.log_diag(
+                    self.user_id, self.engine, f"T212 GET {path} -> cache hit (wiek {age:.1f}s)",
+                )
                 return cached_result, cached_error, False
 
             result: list[dict] | None = None
@@ -515,14 +597,30 @@ class T212Client:
             raw=raw or {},
         )
 
-    def get_pending_orders(self) -> list[dict]:
+    def get_pending_orders(self, *, force_refresh: bool = False) -> list[dict]:
         """
         Zlecenia jeszcze niewykonane / nieanulowane / niewygasłe.
 
         Wynik cache'owany do SHARED_CACHE_TTL_SECONDS i dzielony między
         Micro-Grid/Sygnał/EOD, patrz get_portfolio() i komentarz przy
         _pending_orders_cache - te same zasady dot. świeżości.
+
+        force_refresh=True pomija cache całkowicie (prawdziwy request do
+        T212) - dodane 2026-07-30 po realnym buggu: cancel_one()/
+        reprice_order() w routes/scalping.py sprawdzały istnienie
+        KONKRETNEGO, świeżo utworzonego zlecenia przez ten sam 50s cache co
+        boty - jeśli cache zdążył się zapełnić TUZ PRZED utworzeniem tego
+        zlecenia (np. przez tick jednego z silników), "Skasuj"/edycja
+        dostawały 404 "zlecenie nie istnieje" mimo ze ono realnie tam było
+        (Adam: "nie da się skasować orderu", "skasuj działa jak anuluj" -
+        czyli cichcem trafialo w galaz "nie ok", front cofal linie).
+        Świadomie NIE zmieniamy tu domyślnego zachowania (boty nadal
+        korzystają z cache'a przy każdym ticku) - to pojedyncza, rzadka
+        akcja user-initiated (klik), nie okresowe pollowanie, więc jeden
+        dodatkowy realny request jest do przyjęcia.
         """
+        if force_refresh:
+            return self._request("GET", "/equity/orders") or []
         return self._cached_request("/equity/orders", _pending_orders_cache)
 
     def cancel_order(self, order_id: str) -> None:

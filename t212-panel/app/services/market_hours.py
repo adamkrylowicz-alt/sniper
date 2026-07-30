@@ -78,3 +78,45 @@ def is_position_management_hours(currency: str) -> bool:
     """
     now_local = dt.datetime.now(_AMSTERDAM_TZ)
     return now_local.weekday() < 5  # sobota=5, niedziela=6
+
+
+def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | None:
+    """
+    Zwraca nazwe INNEGO silnika (Micro-Grid/Sygnal/EOD), ktory ma juz OTWARTA
+    pozycje na tym tickerze dla tego usera, albo None gdy ticker jest wolny.
+    `this_engine` ("bot"/"signal"/"eod") - silnik wolajacy sam siebie oczywiscie
+    pomija.
+
+    Dodane 2026-07-30 (znalezione na zywo - SUp_EQ/Schneider Electric, Micro-Grid
+    i Sygnal niezaleznie otworzyly pozycje na TYM SAMYM tickerze 29.07, kazdy
+    nieswiadomy drugiego, bo kazdy sprawdzal WYLACZNIE wlasna tabele. T212
+    pozwala tylko na JEDEN wylaczny resting stop-sell na dostepna ilosc akcji,
+    wiec ktory silnik zlozyl swoj stop pierwszy, ten "wygrywal", a drugi w
+    nieskonczonosc dostawal "selling more than owned, owned: 0.0" przy kazdej
+    probie przesuniecia wlasnego stopu - Micro-Grid utknal na retry #17 i dalej
+    rosnacym, bez zadnego naturalnego konca). Adam: "najlepiej niech kazdy bot
+    trzyma i zarzadza swoja pozycja" - wolane PRZED otwarciem KAZDEJ nowej
+    pozycji (_process_entries w kazdym z 3 silnikow, bot_engine.py::
+    _auto_adopt_foreign_positions, routes/bot.py::adopt_position) - zapobiega
+    kolizji zamiast leczyc ja po fakcie.
+
+    Import modeli LENIWY (nie na poziomie modulu) - market_hours.py jest
+    swiadomie bez zadnych zaleznosci wewnatrz app/ (patrz docstring modulu),
+    zeby uniknac cyklicznego importu; ten sam wzorzec co finnhub_client.py::
+    t212_to_finnhub() (lazy `from . import yahoo_resolver`).
+    """
+    from ..models import ActiveTrade, EODTrade, SignalTrade
+
+    if this_engine != "bot" and ActiveTrade.query.filter_by(
+        user_id=user_id, ticker=ticker, status="OPEN",
+    ).first():
+        return "Micro-Grid"
+    if this_engine != "signal" and SignalTrade.query.filter_by(
+        user_id=user_id, ticker=ticker, status="OPEN",
+    ).first():
+        return "Sygnał"
+    if this_engine != "eod" and EODTrade.query.filter_by(
+        user_id=user_id, ticker=ticker, status="OPEN",
+    ).first():
+        return "EOD"
+    return None

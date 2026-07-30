@@ -252,6 +252,58 @@ async function sendFocusOrder(tile, side) {
     }
 }
 
+// Zlozenie NOWEGO zlecenia LIMIT (Adam, 2026-07-30: "jak wystawić order
+// limit np na cocacole?? jak kurwa??") - ten sam wzorzec co warp.js/
+// instrument.js, cena WYMAGANA (wlasne pole .focus-tile__limit-price,
+// bez auto-wypelniania z live quote - swiadomy wpis usera).
+async function sendFocusLimitOrder(tile, side) {
+    const ticker = tile.dataset.ticker;
+    const quantity = getFocusQuantity(tile);
+    const priceInput = tile.querySelector(".focus-tile__limit-price");
+    const price = priceInput.value;
+    const statusEl = tile.querySelector(".focus-tile__status");
+    const btns = tile.querySelectorAll(".focus-tile__btn, .tile__btn--limit");
+
+    if (!quantity || Number(quantity) <= 0) {
+        statusEl.textContent = "Podaj ilość > 0";
+        return;
+    }
+    if (!price || Number(price) <= 0) {
+        statusEl.textContent = "Podaj cenę LIMIT > 0";
+        priceInput.focus();
+        return;
+    }
+
+    btns.forEach(b => b.disabled = true);
+    statusEl.textContent = "wysyłanie LIMIT…";
+
+    try {
+        const resp = await fetch("/warp/order/limit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticker, side, quantity, price }),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            playSuccess();
+            statusEl.textContent = `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}`;
+            tile.querySelector(".focus-tile__flash").classList.add("focus-tile__flash--ok");
+            setTimeout(() => tile.querySelector(".focus-tile__flash").classList.remove("focus-tile__flash--ok"), 400);
+        } else if (data.blocked) {
+            playError();
+            statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
+        } else {
+            playError();
+            statusEl.textContent = `BŁĄD: ${data.error ?? "nieznany"}`;
+        }
+    } catch (err) {
+        playError();
+        statusEl.textContent = "Błąd sieci";
+    } finally {
+        btns.forEach(b => b.disabled = false);
+    }
+}
+
 // --- Init ---
 
 document.querySelectorAll(".focus-tile").forEach(tile => {
@@ -259,6 +311,10 @@ document.querySelectorAll(".focus-tile").forEach(tile => {
     tile.querySelector(".focus-tile__actions").addEventListener("click", e => {
         const btn = e.target.closest(".focus-tile__btn");
         if (btn) sendFocusOrder(tile, btn.dataset.side);
+    });
+    tile.querySelector(".focus-tile__limit-row").addEventListener("click", e => {
+        const btn = e.target.closest(".tile__btn--limit");
+        if (btn) sendFocusLimitOrder(tile, btn.dataset.side);
     });
 });
 

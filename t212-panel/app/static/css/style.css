@@ -30,6 +30,7 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
     --accent-glow: rgba(168, 85, 255, 0.35);
     --buy-green: #2FD98A;
     --sell-red: #FF5C5C;
+    --accent-blue: #4A9EFF;
     --currency-eur: #FF9F45;
     --currency-usd: #4EA1FF;
 }
@@ -47,6 +48,7 @@ html[data-theme="light"] {
     --accent-glow: rgba(109, 40, 217, 0.2);
     --buy-green: #15803D;
     --sell-red: #DC2626;
+    --accent-blue: #2563EB;
     --currency-eur: #C2560B;
     --currency-usd: #1D6FD1;
 }
@@ -464,12 +466,12 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
 }
 
 .pending-orders-list {
+    /* Bez max-height/scrolla (usunięte 2026-07-30, Adam: "ma być od razu
+       rozwinięty na max") - panel rośnie do pełnej wysokości zawartości. */
     margin-top: 8px;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    max-height: 220px;
-    overflow-y: auto;
 }
 .pending-orders-list__item {
     display: flex;
@@ -481,6 +483,111 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
 }
 .pending-orders-list__name { font-size: 11px; color: var(--text-bright); font-weight: 600; }
 .pending-orders-list__meta { font-size: 10px; color: var(--text-muted); }
+
+/* Edycja zleceń LIMIT BUY nieśledzonych przez bota - dodane 2026-07-30
+   (Adam: "chcę żeby można je było edytować cyfrowo podciągając bądź
+   obniżając cenę"). Style pożyczone z .tile__preset (te same wymiary/
+   zaokrąglenia), kolor --accent-blue zamiast --accent-amber (żeby nie
+   mylić z Kup/Sprzedaj/presetami ilości gdzie indziej w Warp) - ten sam
+   --accent-blue co linia pending_buy na wykresie instrumentu (spójność
+   "to jest oczekujące zlecenie" niezależnie gdzie akurat patrzysz. */
+.pending-orders-list__price {
+    font-size: 11px;
+    color: var(--accent-blue);
+    font-weight: 600;
+    min-width: 64px;
+    display: inline-block;
+    text-align: right;
+}
+/* Niezapisana zmiana (przed Zatwierdź) - dodane 2026-07-30 (Adam: "cena/ilość
+   ma się po prostu zmieniać, a nie tańczyć po ekranie"). Tylko kolor/obwódka,
+   BEZ zmiany długości tekstu - liczba zawsze zajmuje to samo miejsce
+   (min-width wyżej), więc przyciski obok niej nigdy się nie przesuwają. */
+.pending-orders-list__price--staged {
+    color: var(--sell-red);
+    box-shadow: inset 0 -2px 0 var(--sell-red);
+}
+
+/* Wiersz cena/ilość + WŁASNE przyciski +/- obok - naprawione 2026-07-30
+   (Adam: "panel się rozjeżdża jak klikam na przyciski") - wcześniej
+   wszystkie 4 przyciski nudge + akcje leciały w jeden, zbyt wąski wiersz
+   sidebaru. min-width:0 + flex-shrink na wartości, żeby długa "przekreślona
+   stara -> nowa" nie rozpychała przycisków poza widoczny obszar. */
+.pending-orders-list__field-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 3px;
+    flex-wrap: wrap;
+}
+.pending-orders-list__field-row .pending-orders-list__price { min-width: 0; overflow-wrap: anywhere; }
+
+.pending-orders-list__controls { display: flex; align-items: center; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
+.pending-orders-list__nudge-btn,
+.pending-orders-list__action-btn {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 7px;
+    border-radius: 2px;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+.pending-orders-list__nudge-btn:hover { border-color: var(--accent-blue); color: var(--accent-blue); }
+.pending-orders-list__action-btn--confirm { border-color: var(--accent-blue); color: var(--accent-blue); }
+.pending-orders-list__action-btn--confirm:hover { background: rgba(74, 158, 255, 0.1); }
+.pending-orders-list__action-btn--cancel { border-color: var(--sell-red); color: var(--sell-red); }
+.pending-orders-list__action-btn--cancel:hover { background: rgba(255, 92, 92, 0.1); }
+/* Stan "uzbrojony" (czeka na drugie kliknięcie) - patrz armTwoStep()
+   w instrument.js / cancelBtn w warp.js. Wyraźnie inny niż zwykły hover,
+   żeby było widać że wymagane jest jeszcze jedno kliknięcie. */
+.pending-orders-list__action-btn--armed {
+    background: var(--sell-red);
+    color: #fff;
+    border-color: var(--sell-red);
+}
+
+/* Pływający kontrolek Zatwierdź/Anuluj przy przeciąganej linii na wykresie
+   instrumentu (instrument.js) - position:absolute w kontenerze wykresu,
+   pozycjonowany JS-em na wysokości linii (priceToCoordinate). */
+.chart-reprice-popover {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--panel);
+    border: 1px solid var(--accent-blue);
+    border-radius: 3px;
+    padding: 4px 6px;
+    font-size: 11px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+}
+.chart-reprice-popover__price { color: var(--accent-blue); font-weight: 600; margin-right: 2px; }
+
+/* Zywa etykieta ceny podczas przeciagania linii pending_buy (2026-07-30,
+   Adam: "ma byc pokazywanie ceny a nie zgadywanki gdzie dojedzie") - podaza
+   za kursorem w pionie, pointer-events:none zeby nie przeszkadzala w
+   samym przeciaganiu (mysz musi "przechodzic przez" ten element). */
+.chart-drag-price-label {
+    position: absolute;
+    right: 44px;
+    background: var(--accent-blue);
+    color: #fff;
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    pointer-events: none;
+    z-index: 11;
+    white-space: nowrap;
+}
+.chart-drag-price-label--warn {
+    background: var(--sell-red);
+}
 
 @media (max-width: 900px) {
     .warp-layout { flex-direction: column; align-items: stretch; }
@@ -700,6 +807,35 @@ img.tile__logo {
     border-color: var(--sell-red);
 }
 .tile__btn--sell:hover { background: rgba(229, 72, 77, 0.12); }
+
+/* Drugi rzad akcji - LIMIT KUP/SPRZEDAJ (dodane 2026-07-30, Adam: "jak
+   wystawić order limit np na cocacole", potem "zob lik limit jak sie
+   chojowo rozjecahlo wsio" - pierwsza wersja mialo tekst "LIMIT KUP"/
+   "LIMIT SPRZEDAJ" przy zmniejszonym foncie w polowie waskiego kafelka
+   (160-200px), przez co "SPRZEDAJ" sie zawijalo i psulo wysokosc calego
+   wiersza siatki 3x3. FIX: same litery co glowne KUP/SPRZEDAJ (dowiedzione
+   ze mieszcza sie w polowie kafelka przy tym samym rozmiarze), etykieta
+   "LIMIT" przeniesiona na WLASNA, pelnoszerokosciowa linijke nad
+   przyciskami (zero ryzyka zawijania - jeden ciag tekstu na cala szerokosc).
+*/
+.tile__limit-label {
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    letter-spacing: 0.04em;
+    margin-top: 6px;
+}
+.tile__actions--limit {
+    margin-top: 4px;
+    flex-direction: row;
+    gap: 6px;
+}
+.tile__btn--limit {
+    color: var(--accent-blue);
+    border-color: var(--accent-blue);
+    opacity: 0.75;
+}
+.tile__btn--limit:hover { background: rgba(74, 158, 255, 0.12); opacity: 1; }
 
 .tile__btn:disabled {
     opacity: 0.35;
@@ -1898,6 +2034,18 @@ img.focus-tile__logo {
     margin-top: auto;
 }
 
+/* LIMIT KUP/SPRZEDAJ (2026-07-30) - cena na WLASNEJ linii, przyciski pod
+   nia (nie w jednym wierszu z polem ceny) - patrz analogiczny komentarz
+   przy .instrument-detail__limit-price-row (fix po "rozjecahlo wsio"). */
+.focus-tile__limit-price-row { margin-top: 6px; }
+.focus-tile__limit-price-row .tile__price { width: 100%; }
+.focus-tile__limit-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+.focus-tile__limit-row .tile__btn--limit { flex: 1 1 auto; }
+
 .focus-tile__btn {
     flex: 1;
     display: flex;
@@ -2014,6 +2162,7 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__change { font-size: 13px; font-weight: 600; }
 
 .instrument-detail__chart-wrap {
+    position: relative; /* zakotwiczenie .chart-reprice-popover (instrument.js, drag zleceń) */
     width: 100%;
     aspect-ratio: 600 / 300;
     min-height: 220px;
@@ -2024,7 +2173,7 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
     align-items: center;
     justify-content: center;
 }
-.instrument-detail__chart { width: 100%; height: 100%; }
+.instrument-detail__chart { position: relative; width: 100%; height: 100%; }
 .instrument-detail__chart-empty { margin: 0; }
 
 .instrument-detail__position {
@@ -2057,6 +2206,24 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__qty-row { max-width: 420px; margin: 0 auto 12px; }
 .instrument-detail__qty-presets { grid-template-columns: repeat(5, 1fr); }
 .instrument-detail__actions { max-width: 420px; margin: 0 auto; }
+
+/* Nowy wiersz LIMIT KUP/SPRZEDAJ (2026-07-30) - pod glownymi Kup/Sprzedaj
+   (market). Cena na WLASNEJ linii nad przyciskami (nie w jednym wierszu
+   z nimi) - naprawione po zgloszeniu "zob lik limit jak sie chojowo
+   rozjecahlo wsio": trzy elementy (input+2 przyciski) w jednym wierszu
+   zbyt latwo sie zawijaly/gniotly przy waskim ekranie. */
+.instrument-detail__limit-price-row {
+    max-width: 420px;
+    margin: 8px auto 0;
+}
+.instrument-detail__limit-price-row .tile__price { width: 100%; }
+.instrument-detail__limit-row {
+    display: flex;
+    gap: 6px;
+    max-width: 420px;
+    margin: 6px auto 0;
+}
+.instrument-detail__limit-row .tile__btn--limit { flex: 1 1 auto; }
 
 .instrument-detail__max-hints {
     display: flex;

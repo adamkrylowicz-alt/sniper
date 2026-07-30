@@ -26,7 +26,7 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 from .. import cipher
 from ..extensions import db
 from ..models import ActiveTrade, ApiKeySet, BotAsset, BotAuditLog, Instrument, RiskSettings, User
-from ..services import bot_credentials, bot_engine, price_feed
+from ..services import bot_credentials, bot_engine, market_hours, price_feed
 from ..services.t212_client import T212APIError, T212Client
 from ..utils import avatar_hue, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
@@ -220,10 +220,20 @@ def adopt_position():
     if ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first() is not None:
         return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez bota."), 400
 
+    # Dodane 2026-07-30 (patrz market_hours.py::held_by_other_engine, historia
+    # buga SUp_EQ) - ta sama kolizja mogłaby powstać przez ręczną adopcję,
+    # nie tylko przez automatyczne wejście/auto-adopt.
+    other = market_hours.held_by_other_engine(user_id, ticker, "bot")
+    if other is not None:
+        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
+
     creds = get_decrypted_credentials(user_id, current_master_key(), "demo")
     if creds is None:
         return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
-    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo")
+    client = T212Client(
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo",
+        engine="bot", user_id=user_id,
+    )
 
     try:
         position = client.get_position(ticker)

@@ -73,7 +73,35 @@ def _get_client(environment: str = "demo") -> T212Client:
         api_key=creds["api_key"],
         api_secret=creds["api_secret"],
         environment=environment,
+        engine="web",
+        user_id=current_user_id(),
     )
+
+
+def _bot_order_sources(user_id: int) -> dict[str, str]:
+    """
+    Mapa {order_id: nazwa silnika} dla WSZYSTKICH zleceń kupna śledzonych
+    przez którykolwiek z 3 silników bota (dowolny ticker, dowolna otwarta
+    pozycja) - czysty odczyt (SELECT), zero zapisu. Używane do etykiety
+    "source" i editable=False w /warp/pending i /warp/trade_levels -
+    edycja/kasowanie z poziomu Warp/wykresu celowo NIE dotyka zleceń bota
+    (Adam, 2026-07-30: "to ma nie być związane z botami" - edycja zleceń
+    bota wymagałaby dodatkowej synchronizacji ActiveTrade/SignalTrade/
+    EODTrade po każdej ręcznej zmianie, świadomie poza zakresem).
+    """
+    sources: dict[str, str] = {}
+    for trade in ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").all():
+        if trade.buy_order_id:
+            sources[str(trade.buy_order_id)] = "Micro-Grid"
+        if trade.dca_pending_buy_order_id:
+            sources[str(trade.dca_pending_buy_order_id)] = "Micro-Grid"
+    for trade in SignalTrade.query.filter_by(user_id=user_id, status="OPEN").all():
+        if trade.buy_order_id:
+            sources[str(trade.buy_order_id)] = "Sygnał"
+    for trade in EODTrade.query.filter_by(user_id=user_id, status="OPEN").all():
+        if trade.buy_order_id:
+            sources[str(trade.buy_order_id)] = "EOD"
+    return sources
 
 
 @scalping_bp.route("/", methods=["GET"])
@@ -187,10 +215,20 @@ def pending_orders():
     Lista oczekujących (niewykonanych) zleceń - do prawego panelu.
     Wywoływane automatycznie przy wejściu na /warp (patrz warp.js -
     loadPendingOrders() z opóźnieniem 1.5s), nie na żądanie przyciskiem.
+
+    Dodane 2026-07-30: "editable" per zlecenie (True dla LIMIT BUY NIE
+    śledzonych przez żaden silnik bota, patrz _bot_order_sources) - panel
+    dorysowuje przyciski +/-/Zatwierdź/Skasuj WYŁĄCZNIE dla editable=True
+    (Adam: "to ma nie być związane z botami"). "limitPrice" jest już w
+    surowym dict z T212, tu tylko jawnie wykorzystane.
     """
     try:
         client = _get_client()
-        orders = client.get_pending_orders()
+        # force_refresh=True - wolane tylko przy wejsciu na strone + po akcji
+        # usera (nie na interwale, patrz warp.js), wiec bezpieczne; bez tego
+        # swiezo zlozone/anulowane/edytowane zlecenie potrafilo "nie istniec"
+        # jeszcze do 50s (ten sam bug co w cancel_one()/reprice_order()).
+        orders = client.get_pending_orders(force_refresh=True)
     except RuntimeError as exc:
         return jsonify(ok=False, error=str(exc)), 500
     except T212APIError as exc:
@@ -205,9 +243,12 @@ def pending_orders():
         {i.ticker: i for i in Instrument.query.filter(Instrument.ticker.in_(tickers)).all()}
         if tickers else {}
     )
+    bot_sources = _bot_order_sources(current_user_id())
     for order in orders:
         instrument = instruments_by_ticker.get(order.get("ticker"))
         order["name"] = friendly_name(instrument.name) if instrument else None
+        is_limit_buy = order.get("type") == "LIMIT" and order.get("side") == "BUY"
+        order["editable"] = is_limit_buy and str(order.get("id")) not in bot_sources
 
     return jsonify(ok=True, orders=orders)
 
@@ -295,6 +336,91 @@ def place_order():
         ticker=ticker,
         side=side,
         quantity=str(quantity),
+    )
+
+
+@scalping_bp.route("/order/limit", methods=["POST"])
+@login_required
+def place_limit_order_route():
+    """
+    Skladanie NOWEGO zlecenia LIMIT (buy/sell), w odroznieniu od place_order()
+    wyzej (zawsze MARKET). Dodane 2026-07-30 (Adam: "jak wystawić order limit
+    np na cocacole?? jak kurwa??") - do tej pory jedynym sposobem bylo zlozyc
+    je recznie w prawdziwej apce T212 albo poprosic o ad-hoc skrypt. Celowo
+    "wszedzie" (Warp/Focus/instrument) - patrz odpowiednie *.js.
+
+    NIE dotyczy zadnego z 3 silnikow bota - to zwykle, bezposrednie zlecenie
+    na koncie, tak samo jak place_order(), wiec bez ograniczen typu
+    _bot_order_sources (te dotycza tylko EDYCJI/KASOWANIA istniejacych
+    zlecen, patrz reprice_order()/cancel_one() wyzej).
+
+    Przyjmuje JSON: {"ticker": ..., "side": "buy"|"sell", "quantity": "...",
+    "price": "..."} - wszystko wymagane, price to faktyczny limit (nie
+    szacunek jak w place_order()).
+    """
+    payload = request.get_json(silent=True) or {}
+
+    ticker = payload.get("ticker")
+    side = payload.get("side")
+    raw_quantity = payload.get("quantity")
+    raw_price = payload.get("price")
+
+    if not ticker or side not in ("buy", "sell") or not raw_quantity or not raw_price:
+        return jsonify(ok=False, error="Brak wymaganych pól (ticker/side/quantity/price)."), 400
+
+    try:
+        quantity = abs(Decimal(str(raw_quantity)))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa ilość."), 400
+    if quantity <= 0:
+        return jsonify(ok=False, error="Ilość musi być dodatnia."), 400
+
+    try:
+        price = Decimal(str(raw_price))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa cena."), 400
+    if price <= 0:
+        return jsonify(ok=False, error="Cena musi być dodatnia."), 400
+
+    guard_result = _get_guard(current_user_id()).check_before_order(ticker, quantity, price)
+    if not guard_result.allowed:
+        _log_order(
+            user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+            price_snapshot=price, status="blocked", block_reason=guard_result.decision.value,
+        )
+        return jsonify(
+            ok=False, blocked=True, reason=guard_result.reason, decision=guard_result.decision.value,
+        ), 200  # 200 celowo - decyzja biznesowa, nie błąd serwera (ten sam wzorzec co place_order())
+
+    try:
+        client = _get_client()
+        if side == "buy":
+            # _place_buy_with_precision_fallback (nie surowe place_limit_order)
+            # - ten sam powod co w reprice_order() nizej: zle zaokraglona
+            # ilosc dostaje 400 z T212 (quantity-precision-mismatch), fallback
+            # przelicza i ponawia RAZ zamiast zostawic usera z bledem bez
+            # zadnego zlecenia zlozonego.
+            from ..services.bot_engine import _place_buy_with_precision_fallback
+            result, quantity = _place_buy_with_precision_fallback(client, ticker, quantity, price)
+        else:
+            result = client.place_limit_order(ticker, -quantity, price)
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    except T212APIError as exc:
+        _log_order(
+            user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+            price_snapshot=price, status="rejected", block_reason=f"T212_ERROR_{exc.status_code}",
+        )
+        return jsonify(ok=False, error=str(exc)), 502
+
+    _log_order(
+        user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+        price_snapshot=price, status="sent", t212_order_id=result.order_id,
+    )
+
+    return jsonify(
+        ok=True, order_id=result.order_id, ticker=ticker, side=side,
+        quantity=str(quantity), price=str(price),
     )
 
 
@@ -447,6 +573,13 @@ def trade_levels():
     moze miec wiecej niz jeden wpis jesli ten sam ticker jest OTWARTY w wiecej
     niz jednym silniku naraz (rzadkie, kazdy silnik dziala niezaleznie,
     wlasna lista aktywow).
+
+    Dodane 2026-07-30: TAKZE oczekujace zlecenia LIMIT BUY na tym tickerze
+    (type="pending_buy") - realne zapytanie do T212 (get_pending_orders),
+    nie tylko lokalne tabele bota. Kazdy wpis ma "editable" (False dla
+    zlecen sledzonych przez bota, patrz _bot_order_sources) - instrument.js
+    rysuje ich linie zawsze, ale pozwala przeciagac/edytowac WYLACZNIE
+    editable=True (Adam: "to ma nie byc zwiazane z botami").
     """
     ticker = request.args.get("ticker", "").strip()
     if not ticker:
@@ -473,7 +606,50 @@ def trade_levels():
         levels.append({"type": "stop_loss", "price": float(eod_trade.stop_loss_price), "source": "EOD"})
         levels.append({"type": "take_profit", "price": float(eod_trade.take_profit_price), "source": "EOD"})
 
-    return jsonify(ok=True, ticker=ticker, levels=levels)
+    # Oczekujące LIMIT BUY na tym tickerze (dodane 2026-07-30, Adam: "chce
+    # zeby tez byla taka kreska jak odpale np buy limit order recznie") -
+    # editable=False dla zleceń śledzonych przez bota (patrz
+    # _bot_order_sources) - te zostają WYŁĄCZNIE do podglądu, edycja/
+    # kasowanie z tego widoku celowo ich nie dotyka.
+    # Prawdziwy bug (2026-07-30, Adam: "NIE MA ŻADNEGO" mimo realnie
+    # istniejącego zlecenia na T212) - przy 429/timeout z T212 (rzadki, ale
+    # realny - ciasny limit demo, cache błędu WSPÓLNY dla botów+strony na
+    # 50s, patrz _cached_request_ex) tu było "except: pending = []", co
+    # WYGLĄDAŁO jak "brak zleceń" (ok=True, pusta lista) zamiast "nie
+    # udało się sprawdzić". Skutek: linia "Kupno LIMIT" na wykresie znikała
+    # losowo przy odświeżeniu, mimo że zlecenie cały czas istniało - front
+    # (instrument.js) teraz odróżnia te dwa stany dzięki pending_unavailable.
+    pending_unavailable = False
+    try:
+        client = _get_client()
+        # force_refresh=True - dodane po tym jak swiezo zlozony LIMIT (przez
+        # nowy /warp/order/limit) potrafil nie pojawic sie na wykresie od
+        # razu (ten sam 50s-cache bug co w cancel_one()/reprice_order()).
+        # loadTradeLevels() jest wolane tylko przy wejsciu na strone + po
+        # akcji usera (patrz instrument.js), nigdy na interwale - bezpieczne.
+        pending = client.get_pending_orders(force_refresh=True)
+    except (RuntimeError, T212APIError):
+        pending = []
+        pending_unavailable = True
+
+    bot_sources = _bot_order_sources(user_id)
+    for order in pending:
+        if order.get("ticker") != ticker or order.get("type") != "LIMIT" or order.get("side") != "BUY":
+            continue
+        limit_price = order.get("limitPrice")
+        if limit_price is None:
+            continue
+        order_id = str(order.get("id"))
+        bot_source = bot_sources.get(order_id)
+        levels.append({
+            "type": "pending_buy",
+            "price": float(limit_price),
+            "source": bot_source or "Ręcznie",
+            "order_id": order_id,
+            "editable": bot_source is None,
+        })
+
+    return jsonify(ok=True, ticker=ticker, levels=levels, pending_unavailable=pending_unavailable)
 
 
 @scalping_bp.route("/focus", methods=["GET"])
@@ -628,6 +804,175 @@ def cancel_all():
 
     cancelled_count = sum(1 for r in results if r["ok"])
     return jsonify(ok=True, cancelled=cancelled_count, total=len(to_cancel), details=results)
+
+
+@scalping_bp.route("/order/<order_id>/cancel", methods=["POST"])
+@login_required
+def cancel_one(order_id: str):
+    """
+    Anuluje POJEDYNCZE oczekujące zlecenie LIMIT BUY po ID - dodane 2026-07-30
+    razem z reprice_order() niżej (Adam: "chcę żeby można je było edytować").
+    Celowo TYLKO dla zleceń NIE śledzonych przez bota (patrz
+    _bot_order_sources) - pełne uzasadnienie w docstringu reprice_order().
+    """
+    user_id = current_user_id()
+    try:
+        client = _get_client()
+        # force_refresh=True - patrz docstring T212Client.get_pending_orders,
+        # bez tego pomijalismy realnie istniejace, swiezo utworzone zlecenie
+        # przez stary wpis w 50s cache'u wspoldzielonym z botami (404 mimo
+        # ze zlecenie tam bylo, Adam: "nie da sie skasowac orderu").
+        pending = client.get_pending_orders(force_refresh=True)
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    except T212APIError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+
+    order = next((o for o in pending if str(o.get("id")) == str(order_id)), None)
+    if order is None:
+        return jsonify(ok=False, error="Zlecenie nie istnieje albo już zostało wykonane/anulowane."), 404
+    if order.get("type") != "LIMIT" or order.get("side") != "BUY":
+        return jsonify(ok=False, error="Kasowanie z tego miejsca dostępne tylko dla zleceń LIMIT BUY."), 400
+
+    bot_sources = _bot_order_sources(user_id)
+    if str(order_id) in bot_sources:
+        return jsonify(
+            ok=False, error=f"To zlecenie należy do bota ({bot_sources[str(order_id)]}) - nie można go tu skasować.",
+        ), 403
+
+    try:
+        client.cancel_order(order_id)
+    except T212APIError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+
+    _log_order(
+        user_id=user_id, ticker=order.get("ticker", ""), side="buy",
+        quantity=Decimal(str(order.get("quantity", 0))), price_snapshot=None, status="cancelled",
+        t212_order_id=str(order_id),
+    )
+    return jsonify(ok=True, order_id=order_id)
+
+
+@scalping_bp.route("/order/<order_id>/reprice", methods=["POST"])
+@login_required
+def reprice_order(order_id: str):
+    """
+    "Edycja" zlecenia LIMIT BUY - T212 nie ma natywnego modify/PATCH (patrz
+    T212Client - tylko place_*/cancel_order), więc to zawsze anuluj-i-złóż-
+    nowe pod maską, dokładnie ten sam wzorzec co bot stosuje przy gonieniu
+    ceny (bot_engine.py::_retry_pending_buys). Dodane 2026-07-30 (Adam: "chcę
+    żeby można było edytować cyfrowo podciągając bądź obniżając cenę lub
+    łapiąc za kreskę i przesuwając ją po wykresie").
+
+    Celowo TYLKO dla zleceń NIE śledzonych przez żaden z 3 silników bota
+    (_bot_order_sources) - reprice zlecenia bota podmieniłby jego order_id
+    pod silnikiem bez jego wiedzy (silnik szukałby starego ID w pending,
+    zobaczyłby "zniknęło", wpadłby w tę samą niejednoznaczną pętlę co przy
+    prawdziwym DTEd_EQ 2026-07-30) - świadomie poza zakresem tej zmiany,
+    wymagałoby osobnej synchronizacji ActiveTrade/SignalTrade/EODTrade.
+
+    Body: {"new_price": "...", "new_quantity": "..."} - new_quantity OPCJONALNE
+    (dodane 2026-07-30, Adam: "zmiany ilości nie zaimplementowałeś a powinna
+    być") - gdy brak/puste, zostaje ilość z ISTNIEJĄCEGO zlecenia (get_pending_
+    orders). Ticker ZAWSZE z istniejącego zlecenia, nigdy z requestu - żeby
+    nie dało się podmienić niczego poza ceną/ilością.
+    """
+    user_id = current_user_id()
+    payload = request.get_json(silent=True) or {}
+    raw_price = payload.get("new_price")
+    if not raw_price:
+        return jsonify(ok=False, error="Brak new_price."), 400
+    try:
+        new_price = Decimal(str(raw_price))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa cena."), 400
+    if new_price <= 0:
+        return jsonify(ok=False, error="Cena musi być dodatnia."), 400
+
+    raw_quantity = payload.get("new_quantity")
+    new_quantity: Decimal | None = None
+    if raw_quantity not in (None, ""):
+        try:
+            new_quantity = Decimal(str(raw_quantity))
+        except (InvalidOperation, ValueError):
+            return jsonify(ok=False, error="Nieprawidłowa ilość."), 400
+        if new_quantity <= 0:
+            return jsonify(ok=False, error="Ilość musi być dodatnia."), 400
+
+    try:
+        client = _get_client()
+        # force_refresh=True - patrz komentarz w cancel_one() wyzej, ten sam
+        # powod (walidacja KONKRETNEGO, mozliwe ze przed chwila utworzonego
+        # zlecenia nie moze polegac na do 50s starym wspoldzielonym cache).
+        pending = client.get_pending_orders(force_refresh=True)
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    except T212APIError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+
+    order = next((o for o in pending if str(o.get("id")) == str(order_id)), None)
+    if order is None:
+        return jsonify(ok=False, error="Zlecenie nie istnieje albo już zostało wykonane/anulowane."), 404
+    if order.get("type") != "LIMIT" or order.get("side") != "BUY":
+        return jsonify(ok=False, error="Edycja dostępna tylko dla zleceń LIMIT BUY."), 400
+
+    bot_sources = _bot_order_sources(user_id)
+    if str(order_id) in bot_sources:
+        return jsonify(
+            ok=False, error=f"To zlecenie należy do bota ({bot_sources[str(order_id)]}) - nie można go tu edytować.",
+        ), 403
+
+    ticker = order.get("ticker")
+    try:
+        existing_quantity = Decimal(str(order.get("quantity", 0)))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa ilość w istniejącym zleceniu."), 500
+    if existing_quantity <= 0:
+        return jsonify(ok=False, error="Nieprawidłowa ilość w istniejącym zleceniu."), 500
+    quantity = new_quantity if new_quantity is not None else existing_quantity
+
+    # Ten sam bezpiecznik co zwykłe /warp/order - reprice to efektywnie nowe
+    # zlecenie, więc Hard Cap/cooldown musi je widzieć tak samo.
+    guard_result = _get_guard(user_id).check_before_order(ticker, quantity, new_price)
+    if not guard_result.allowed:
+        _log_order(
+            user_id=user_id, ticker=ticker, side="buy", quantity=quantity,
+            price_snapshot=new_price, status="blocked", block_reason=guard_result.decision.value,
+        )
+        return jsonify(
+            ok=False, blocked=True, reason=guard_result.reason, decision=guard_result.decision.value,
+        ), 200  # 200 celowo - decyzja biznesowa, nie błąd serwera (ten sam wzorzec co place_order())
+
+    try:
+        client.cancel_order(order_id)
+    except T212APIError as exc:
+        return jsonify(ok=False, error=f"Anulowanie starego zlecenia nie powiodło się: {exc}"), 502
+
+    try:
+        # _place_buy_with_precision_fallback (nie surowe place_limit_order) -
+        # dodane 2026-07-30 po realnym błędzie na żywo: reprice KO_US_EQ na
+        # 0.11 szt. dostał 400 z T212, ten sam typ ryzyka co historyczny bug
+        # DTEd_EQ (_retry_pending_buys pomijało ten fallback). Stare zlecenie
+        # jest już anulowane w tym momencie, więc brak tego zabezpieczenia
+        # oznaczałby utratę zlecenia bez zamiennika przy złej precyzji ilości.
+        # Import LENIWY (nie na poziomie modułu) - bot_engine.py importuje
+        # _log_order STĄD (routes/scalping.py), więc import na górze pliku
+        # zapętliłby się (ten sam powód co market_hours.py::
+        # held_by_other_engine, patrz jego docstring).
+        from ..services.bot_engine import _place_buy_with_precision_fallback
+        result, quantity = _place_buy_with_precision_fallback(client, ticker, quantity, new_price)
+    except T212APIError as exc:
+        _log_order(
+            user_id=user_id, ticker=ticker, side="buy", quantity=quantity,
+            price_snapshot=new_price, status="rejected", block_reason=f"T212_ERROR_{exc.status_code}",
+        )
+        return jsonify(ok=False, error=f"Stare zlecenie anulowane, ale nowe nie powiodło się: {exc}"), 502
+
+    _log_order(
+        user_id=user_id, ticker=ticker, side="buy", quantity=quantity,
+        price_snapshot=new_price, status="sent", t212_order_id=result.order_id,
+    )
+    return jsonify(ok=True, order_id=result.order_id, price=str(new_price), ticker=ticker, quantity=str(quantity))
 
 
 @scalping_bp.route("/limits", methods=["GET"])

@@ -75,8 +75,8 @@ from ..extensions import db
 from ..models import SignalAsset, SignalAuditLog, SignalSettings, SignalTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from . import bot_credentials, market_hours, price_feed
-from .bot_engine import _place_buy_with_precision_fallback
+from . import bot_credentials, diagnostics, market_hours, price_feed
+from .bot_engine import _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import signal_strategy
 from .t212_client import T212APIError, T212Client
 
@@ -153,6 +153,10 @@ def _in_entry_window(currency: str) -> bool:
 
 
 def _log(user_id: int, action_type: str, message: str) -> None:
+    # Dodane 2026-07-30: kopia KAŻDEGO wpisu do ukrytego logu diagnostycznego
+    # (diagnostics.py) - nie zmienia nic z poniższego (SignalAuditLog/Dziennik
+    # zostają jak były, ERROR nadal też leci do current_app.logger.error).
+    diagnostics.log_diag(user_id, "signal", f"[{action_type}] {message}")
     if action_type == "ERROR":
         current_app.logger.error("[signal user=%s] %s", user_id, message)
     entry = SignalAuditLog(user_id=user_id, action_type=action_type, message=message)
@@ -299,6 +303,16 @@ def _process_entries(user_id: int, client: T212Client | None, settings: SignalSe
     for asset in assets:
         if asset.ticker in open_tickers:
             continue
+        other = market_hours.held_by_other_engine(user_id, asset.ticker, "signal")
+        if other is not None:
+            # Cudza pozycja (Micro-Grid/EOD) na tym samym tickerze - pomijamy,
+            # zeby nie powtorzyc kolizji SUp_EQ (patrz market_hours.py::
+            # held_by_other_engine).
+            diagnostics.log_diag(
+                user_id, "signal",
+                f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
+            )
+            continue
         if not market_hours.is_market_open(asset.currency):
             continue
         if not _in_entry_window(asset.currency):
@@ -406,6 +420,121 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalS
                 f"{trade.ticker}: kupno potwierdzone, ale NIE udało się uzbroić stop-loss - {exc}. "
                 "Pozycja NIECHRONIONA żadnym resting orderem, sprawdź ręcznie.",
             )
+
+
+def _bump_buy_retry(user_id: int, trade: SignalTrade, reason: str) -> None:
+    trade.buy_retry_count += 1
+    trade.next_buy_retry_at = dt.datetime.utcnow() + _next_retry_delay(trade.buy_retry_count)
+    db.session.commit()
+    _log(user_id, "INFO", f"{trade.ticker}: sprawdzenie LIMIT BUY #{trade.buy_retry_count} - {reason}")
+
+
+def _retry_pending_buys(
+    user_id: int, client: T212Client, settings: SignalSettings, pending: list[dict],
+) -> None:
+    """
+    "Goni" cenę LIMIT BUY, który jeszcze się nie wypełnił i przy obecnej
+    cenie rynkowej JUŻ SIĘ NIE MOŻE wypełnić (rynek odjechał POWYŻEJ limitu -
+    LIMIT BUY z definicji nigdy nie wykona się drożej niż jego limit) -
+    anuluje stare zlecenie i wystawia nowe po aktualnej cenie, żeby pozycja
+    nie czekała w nieskończoność. Dokładny port `bot_engine.py::
+    _retry_pending_buys` (Micro-Grid) - dodane 2026-07-30 po realnym
+    znalezisku: IFXd_EQ utknęło na 9+ godzin (limit 55,18€, cena uciekła do
+    59,47€, ~8% wyżej), Sygnał do tej pory nie miał ŻADNEGO mechanizmu
+    ponawiania (w odróżnieniu od Micro-Gridu, który ma to od 2026-07-21).
+
+    Przeliczanie ilości od DOCELOWEJ kwoty alokacji (SignalAsset.entry_amount),
+    NIE od starej `trade.quantity` - ten sam fix co w bot_engine.py 2026-07-22
+    (Meta/FB: stara, 14x niższa cena rozdęła pozycję z 25 USD do 354 USD,
+    bo kod trzymał starą ilość i tylko podmieniał cenę).
+
+    `pending`: już pobrana lista z get_pending_orders[_for_tick]() - dzielona
+    z `_confirm_pending_entries` w tym samym cyklu (rate limit demo ciasny).
+    """
+    now = dt.datetime.utcnow()
+    candidates = (
+        SignalTrade.query
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
+        .filter(db.or_(SignalTrade.next_buy_retry_at.is_(None), SignalTrade.next_buy_retry_at <= now))
+        .all()
+    )
+    candidates = [t for t in candidates if market_hours.is_position_management_hours(t.currency)]
+    if not candidates:
+        return
+
+    pending_by_id = {str(o.get("id")): o for o in pending}
+
+    for trade in candidates:
+        pending_order = pending_by_id.get(trade.buy_order_id)
+        if pending_order is None:
+            continue  # zniknęło z pending - zajmie się tym _confirm_pending_entries
+
+        if Decimal(str(pending_order.get("filledQuantity", 0))) > 0:
+            continue  # częściowo już wypełnione - nie anulujemy w połowie, niech dokończy
+
+        current_price = price_feed.get_live_price(
+            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
+            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+        )
+        if current_price is None or current_price <= 0:
+            _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
+            continue
+
+        if current_price <= trade.buy_price:
+            # Limit wciąż marketable (cena nie odjechała w górę) - zwyczajnie
+            # jeszcze się nie wykonało, nic do gonienia.
+            _bump_buy_retry(
+                user_id, trade,
+                f"cena ({current_price}) wciąż <= limitu ({trade.buy_price}), czekam na wypełnienie.",
+            )
+            continue
+
+        asset = SignalAsset.query.get(trade.signal_asset_id)
+        target_amount = asset.entry_amount if asset is not None else (trade.quantity * trade.buy_price)
+        new_quantity = (target_amount / current_price).quantize(Decimal("0.0001"))
+        if new_quantity <= 0:
+            _bump_buy_retry(
+                user_id, trade,
+                f"cena odjechała ({current_price} > limit {trade.buy_price}), ale przeliczona ilość <= 0 "
+                f"(kwota {target_amount} / cena {current_price}), pomijam ten tick.",
+            )
+            continue
+
+        try:
+            client.cancel_order(trade.buy_order_id)
+        except T212APIError as exc:
+            _bump_buy_retry(
+                user_id, trade,
+                f"cena odjechała ({current_price} > limit {trade.buy_price}), ale anulowanie starego "
+                f"zlecenia nie powiodło się - {exc}",
+            )
+            continue
+
+        try:
+            new_result, new_quantity = _place_buy_with_precision_fallback(
+                client, trade.ticker, new_quantity, current_price,
+            )
+        except T212APIError as exc:
+            _bump_buy_retry(
+                user_id, trade,
+                f"stare LIMIT BUY anulowane, ale nowe po {current_price} nie powiodło się - {exc}",
+            )
+            continue
+
+        old_price = trade.buy_price
+        old_quantity = trade.quantity
+        trade.buy_order_id = new_result.order_id
+        trade.buy_price = current_price
+        trade.quantity = new_quantity
+        trade.allocated_value = (new_quantity * current_price).quantize(Decimal("0.01"))
+        trade.buy_retry_count = 0
+        trade.next_buy_retry_at = None
+        db.session.commit()
+        _log(
+            user_id, "INFO",
+            f"{trade.ticker}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
+            f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}.",
+        )
 
 
 # Ulamek jednego ATR - jak duza musi byc poprawa zanim oplaca sie placic
@@ -554,9 +683,13 @@ def reconcile(user_id: int) -> None:
 
     _manage_paper_exits(user_id, settings)
     if not settings.is_paper_trading:
-        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=SIGNAL_ENVIRONMENT)
+        client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=SIGNAL_ENVIRONMENT,
+            engine="signal", user_id=user_id,
+        )
         try:
-            pending_ids = {str(o.get("id")) for o in client.get_pending_orders()}
+            pending = client.get_pending_orders()
+            pending_ids = {str(o.get("id")) for o in pending}
             pending_fetch_ok = True
         except T212APIError as exc:
             _log(user_id, "ERROR", f"Reconciliation: błąd pobierania pending orders - {exc}")
@@ -564,6 +697,7 @@ def reconcile(user_id: int) -> None:
             pending_fetch_ok = False
         if pending_fetch_ok:
             _confirm_pending_entries(user_id, client, settings, pending_ids)
+            _retry_pending_buys(user_id, client, settings, pending=pending)
         _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=pending_fetch_ok)
 
 
@@ -574,6 +708,8 @@ def tick(app) -> None:
             settings = SignalSettings.query.filter_by(user_id=user_id).first()
             if not settings or not settings.is_active:
                 continue
+
+            diagnostics.log_diag(user_id, "signal", "tick start")
 
             _manage_paper_exits(user_id, settings)
 
@@ -592,7 +728,10 @@ def tick(app) -> None:
             if creds is None:
                 _log(user_id, "ERROR", "Brak zapisanego klucza API demo, pomijam tick.")
                 continue
-            client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=SIGNAL_ENVIRONMENT)
+            client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=SIGNAL_ENVIRONMENT,
+            engine="signal", user_id=user_id,
+        )
 
             # Kupno nie ma priorytetu (Adam, 2026-07-27, patrz ten sam komentarz
             # w bot_engine.py::tick) - w backoffie po błędach get_pending_orders
@@ -621,9 +760,9 @@ def tick(app) -> None:
                 else:
                     pending_ids = {str(o.get("id")) for o in pending}
                     _confirm_pending_entries(user_id, client, settings, pending_ids)
+                    _retry_pending_buys(user_id, client, settings, pending=pending)
                     _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=True)
 
             if skip_new_entries:
                 continue
-            _process_entries(user_id, client, settings)
             _process_entries(user_id, client, settings)

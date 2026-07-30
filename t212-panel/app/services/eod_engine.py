@@ -79,8 +79,8 @@ from ..extensions import db
 from ..models import EODAsset, EODAuditLog, EODSettings, EODTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from . import bot_credentials, market_hours, price_feed
-from .bot_engine import _place_buy_with_precision_fallback
+from . import bot_credentials, diagnostics, market_hours, price_feed
+from .bot_engine import _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import eod_strategy
 from .t212_client import T212APIError, T212Client
 
@@ -171,6 +171,10 @@ def _should_force_close(settings: EODSettings) -> bool:
 
 
 def _log(user_id: int, action_type: str, message: str) -> None:
+    # Dodane 2026-07-30: kopia KAŻDEGO wpisu do ukrytego logu diagnostycznego
+    # (diagnostics.py) - nie zmienia nic z poniższego (EODAuditLog/Dziennik
+    # zostają jak były, ERROR nadal też leci do current_app.logger.error).
+    diagnostics.log_diag(user_id, "eod", f"[{action_type}] {message}")
     if action_type == "ERROR":
         current_app.logger.error("[eod user=%s] %s", user_id, message)
     entry = EODAuditLog(user_id=user_id, action_type=action_type, message=message)
@@ -326,6 +330,16 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
     for asset in assets:
         if asset.ticker in open_tickers:
             continue
+        other = market_hours.held_by_other_engine(user_id, asset.ticker, "eod")
+        if other is not None:
+            # Cudza pozycja (Micro-Grid/Sygnał) na tym samym tickerze -
+            # pomijamy, zeby nie powtorzyc kolizji SUp_EQ (patrz
+            # market_hours.py::held_by_other_engine).
+            diagnostics.log_diag(
+                user_id, "eod",
+                f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
+            )
+            continue
         if not market_hours.is_market_open(asset.currency):
             continue
 
@@ -416,6 +430,117 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSett
                 f"{trade.ticker}: kupno EOD potwierdzone, ale NIE udało się uzbroić stop-loss - {exc}. "
                 "Pozycja NIECHRONIONA, sprawdź ręcznie.",
             )
+
+
+def _bump_buy_retry(user_id: int, trade: EODTrade, reason: str) -> None:
+    trade.buy_retry_count += 1
+    trade.next_buy_retry_at = dt.datetime.utcnow() + _next_retry_delay(trade.buy_retry_count)
+    db.session.commit()
+    _log(user_id, "INFO", f"{trade.ticker}: sprawdzenie LIMIT BUY #{trade.buy_retry_count} - {reason}")
+
+
+def _retry_pending_buys(
+    user_id: int, client: T212Client, settings: EODSettings, pending: list[dict],
+) -> None:
+    """
+    "Goni" cenę LIMIT BUY, który jeszcze się nie wypełnił i przy obecnej
+    cenie rynkowej JUŻ SIĘ NIE MOŻE wypełnić - anuluje stare zlecenie i
+    wystawia nowe po aktualnej cenie. Dokładny port `bot_engine.py::
+    _retry_pending_buys` (Micro-Grid), identyczny jak `signal_engine.py::
+    _retry_pending_buys` - dodane 2026-07-30, ten sam powód (IFXd_EQ utknięte
+    9+ godzin w Sygnale, EOD miał identyczną dziurę, patrz komentarz przy
+    `_confirm_pending_entries` wyżej - "identyczny wzorzec kodu, identyczne
+    ryzyko").
+
+    Przeliczanie ilości od DOCELOWEJ kwoty alokacji (EODAsset.entry_amount),
+    NIE od starej `trade.quantity` - ten sam fix co w bot_engine.py 2026-07-22
+    (Meta/FB, patrz pełne uzasadnienie w signal_engine.py::_retry_pending_buys).
+
+    `pending`: już pobrana lista z get_pending_orders[_for_tick]() - dzielona
+    z `_confirm_pending_entries` w tym samym cyklu (rate limit demo ciasny).
+    """
+    now = dt.datetime.utcnow()
+    candidates = (
+        EODTrade.query
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
+        .filter(db.or_(EODTrade.next_buy_retry_at.is_(None), EODTrade.next_buy_retry_at <= now))
+        .all()
+    )
+    candidates = [t for t in candidates if market_hours.is_position_management_hours(t.currency)]
+    if not candidates:
+        return
+
+    pending_by_id = {str(o.get("id")): o for o in pending}
+
+    for trade in candidates:
+        pending_order = pending_by_id.get(trade.buy_order_id)
+        if pending_order is None:
+            continue  # zniknęło z pending - zajmie się tym _confirm_pending_entries
+
+        if Decimal(str(pending_order.get("filledQuantity", 0))) > 0:
+            continue  # częściowo już wypełnione - nie anulujemy w połowie, niech dokończy
+
+        current_price = price_feed.get_live_price(
+            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
+            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+        )
+        if current_price is None or current_price <= 0:
+            _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
+            continue
+
+        if current_price <= trade.buy_price:
+            _bump_buy_retry(
+                user_id, trade,
+                f"cena ({current_price}) wciąż <= limitu ({trade.buy_price}), czekam na wypełnienie.",
+            )
+            continue
+
+        asset = EODAsset.query.get(trade.eod_asset_id)
+        target_amount = asset.entry_amount if asset is not None else (trade.quantity * trade.buy_price)
+        new_quantity = (target_amount / current_price).quantize(Decimal("0.0001"))
+        if new_quantity <= 0:
+            _bump_buy_retry(
+                user_id, trade,
+                f"cena odjechała ({current_price} > limit {trade.buy_price}), ale przeliczona ilość <= 0 "
+                f"(kwota {target_amount} / cena {current_price}), pomijam ten tick.",
+            )
+            continue
+
+        try:
+            client.cancel_order(trade.buy_order_id)
+        except T212APIError as exc:
+            _bump_buy_retry(
+                user_id, trade,
+                f"cena odjechała ({current_price} > limit {trade.buy_price}), ale anulowanie starego "
+                f"zlecenia nie powiodło się - {exc}",
+            )
+            continue
+
+        try:
+            new_result, new_quantity = _place_buy_with_precision_fallback(
+                client, trade.ticker, new_quantity, current_price,
+            )
+        except T212APIError as exc:
+            _bump_buy_retry(
+                user_id, trade,
+                f"stare LIMIT BUY anulowane, ale nowe po {current_price} nie powiodło się - {exc}",
+            )
+            continue
+
+        old_price = trade.buy_price
+        old_quantity = trade.quantity
+        trade.buy_order_id = new_result.order_id
+        trade.buy_price = current_price
+        trade.quantity = new_quantity
+        trade.allocated_value = (new_quantity * current_price).quantize(Decimal("0.01"))
+        trade.buy_retry_count = 0
+        trade.next_buy_retry_at = None
+        db.session.commit()
+        _log(
+            user_id, "INFO",
+            f"{trade.ticker}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
+            f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}.",
+        )
 
 
 def _force_close_real(user_id: int, client: T212Client, trade: EODTrade) -> None:
@@ -601,9 +726,13 @@ def reconcile(user_id: int) -> None:
 
     _manage_paper_exits(user_id, settings)
     if not settings.is_paper_trading:
-        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT)
+        client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT,
+            engine="eod", user_id=user_id,
+        )
         try:
-            pending_ids = {str(o.get("id")) for o in client.get_pending_orders()}
+            pending = client.get_pending_orders()
+            pending_ids = {str(o.get("id")) for o in pending}
             pending_fetch_ok = True
         except T212APIError as exc:
             _log(user_id, "ERROR", f"Reconciliation: błąd pobierania pending orders - {exc}")
@@ -611,6 +740,7 @@ def reconcile(user_id: int) -> None:
             pending_fetch_ok = False
         if pending_fetch_ok:
             _confirm_pending_entries(user_id, client, settings, pending_ids)
+            _retry_pending_buys(user_id, client, settings, pending=pending)
         _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=pending_fetch_ok)
 
 
@@ -621,6 +751,8 @@ def tick(app) -> None:
             settings = EODSettings.query.filter_by(user_id=user_id).first()
             if not settings or not settings.is_active:
                 continue
+
+            diagnostics.log_diag(user_id, "eod", "tick start")
 
             _manage_paper_exits(user_id, settings)
 
@@ -636,7 +768,10 @@ def tick(app) -> None:
             if creds is None:
                 _log(user_id, "ERROR", "Brak zapisanego klucza API demo, pomijam tick.")
                 continue
-            client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT)
+            client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT,
+            engine="eod", user_id=user_id,
+        )
 
             # Kupno nie ma priorytetu (Adam, 2026-07-27, patrz ten sam komentarz
             # w bot_engine.py::tick) - w backoffie po błędach get_pending_orders
@@ -665,6 +800,7 @@ def tick(app) -> None:
                 else:
                     pending_ids = {str(o.get("id")) for o in pending}
                     _confirm_pending_entries(user_id, client, settings, pending_ids)
+                    _retry_pending_buys(user_id, client, settings, pending=pending)
                     _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=True)
 
             if skip_new_entries:

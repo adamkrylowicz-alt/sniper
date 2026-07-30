@@ -175,9 +175,70 @@ async function sendOrder(tile, side) {
     }
 }
 
+// Zlozenie NOWEGO zlecenia LIMIT (Adam, 2026-07-30: "jak wystawić order
+// limit np na cocacole?? jak kurwa??" - do tej pory jedynym sposobem bylo
+// zlozyc je recznie w prawdziwej apce T212 albo przez ad-hoc skrypt).
+// Reuzywa TO SAMO pole tile__price co MARKET (tam opcjonalne - tu wymagane,
+// bo to faktyczny limit, nie szacunek) i te sama ilosc/preset.
+async function sendLimitOrder(tile, side) {
+    const ticker = tile.dataset.ticker;
+    const quantity = getQuantity(tile);
+    const price = getEstimatedPrice(tile);
+    const buttons = tile.querySelectorAll(".tile__btn");
+
+    if (!quantity || Number(quantity) <= 0) {
+        setStatus(tile, "Podaj ilość > 0");
+        return;
+    }
+    if (!price || Number(price) <= 0) {
+        setStatus(tile, "Podaj cenę LIMIT > 0 (pole ceny powyżej)");
+        return;
+    }
+
+    buttons.forEach((b) => (b.disabled = true));
+    setStatus(tile, "wysyłanie LIMIT…");
+
+    try {
+        const resp = await fetch("/warp/order/limit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ticker, side, quantity, price }),
+        });
+        const data = await resp.json();
+
+        if (data.ok) {
+            flashTile(tile, "ok");
+            playSuccess();
+            setStatus(tile, `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}`);
+            loadPendingOrders();
+        } else if (data.blocked) {
+            flashTile(tile, "error");
+            playError();
+            setStatus(tile, `ZABLOKOWANE: ${data.reason ?? data.decision}`);
+        } else {
+            flashTile(tile, "error");
+            playError();
+            setStatus(tile, `BŁĄD: ${data.error ?? "nieznany"}`);
+        }
+    } catch (err) {
+        flashTile(tile, "error");
+        playError();
+        setStatus(tile, "BŁĄD SIECI");
+        console.error(err);
+    } finally {
+        buttons.forEach((b) => (b.disabled = false));
+    }
+}
+
 document.querySelectorAll(".tile").forEach(setupPresets);
 
 document.getElementById("warp-grid").addEventListener("click", (event) => {
+    const limitBtn = event.target.closest(".tile__btn--limit");
+    if (limitBtn) {
+        const tile = limitBtn.closest(".tile");
+        sendLimitOrder(tile, limitBtn.dataset.side);
+        return;
+    }
     const btn = event.target.closest(".tile__btn");
     if (!btn) return;
     const tile = btn.closest(".tile");
@@ -349,11 +410,209 @@ async function loadPendingOrders() {
             metaEl.textContent = `${o.ticker ?? "?"} · ${side} ${Math.abs(qty)}`;
             div.appendChild(metaEl);
 
+            // Edycja/kasowanie - dodane 2026-07-30 (Adam: "chce zeby mozna
+            // bylo edytowac cyfrowo podciagajac badz obnizajac cene").
+            // TYLKO dla o.editable=true (LIMIT BUY nie sledzone przez bota,
+            // patrz scalping.py::_bot_order_sources) - zlecenia bota
+            // zostaja jak wyzej, bez zadnych przyciskow.
+            if (o.editable && o.limitPrice != null) {
+                buildEditableOrderRow(div, o);
+            }
+
             container.appendChild(div);
         });
     } catch (err) {
         container.innerHTML = '<p class="sidebar-widget__empty">Błąd sieci.</p>';
         console.error(err);
+    }
+}
+
+// Dopisuje wiersz cena + przyciski +/- + Zatwierdz/Anuluj (po zmianie) +
+// Skasuj do istniejacego elementu diva pojedynczego zlecenia. +/- tylko
+// PRZESUWAJA lokalny "staged" stan (podglad) - realne anuluj+zloz-nowe
+// wychodzi do T212 dopiero po kliknieciu Zatwierdz (ten sam wzorzec
+// potwierdzenia co przy przeciaganiu linii na wykresie, instrument.js).
+function buildEditableOrderRow(div, order) {
+    const orderId = String(order.id);
+    const originalPrice = Number(order.limitPrice);
+    const originalQuantity = Number(order.quantity);
+    let stagedPrice = originalPrice;
+    let stagedQuantity = originalQuantity;
+    const priceStep = originalPrice * 0.001 || 0.01; // ~0,1% ceny na klikniecie
+    // Ilosc: krok procentowy (10%) zamiast stalej liczby - zleceni bywaja
+    // ulamkowe (0.1, 1.813 itd.), stala wartosc byłaby albo za duza dla
+    // malych, albo za mala dla duzych. Dodane 2026-07-30 (Adam: "zmiany
+    // ilosci nie zaimplementowales a powinna byc").
+    const qtyStep = originalQuantity * 0.1 || 0.01;
+
+    // Kazde pole (cena/ilosc) w WLASNYM wierszu razem ze SWOIMI przyciskami
+    // +/- (nie wszystkie 4 nudge + akcje w jednym rzedzie) - naprawione
+    // 2026-07-30 (Adam: "panel sie rozjezdza jak klikam na przyciski"),
+    // wczesniej wszystkie przyciski lecialy w jeden, zbyt waski wiersz
+    // sidebaru i zawijaly sie w nieprzewidywalny sposob.
+    function fieldRow(valueClassName) {
+        const row = document.createElement("div");
+        row.className = "pending-orders-list__field-row";
+        const valueEl = document.createElement("span");
+        valueEl.className = valueClassName;
+        row.appendChild(valueEl);
+        div.appendChild(row);
+        return { row, valueEl };
+    }
+
+    function nudgeBtn(row, label) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pending-orders-list__nudge-btn";
+        btn.textContent = label;
+        row.appendChild(btn);
+        return btn;
+    }
+
+    const { valueEl: priceEl, row: priceRow } = fieldRow("pending-orders-list__price");
+    priceEl.textContent = originalPrice.toFixed(4);
+    const priceMinusBtn = nudgeBtn(priceRow, "−");
+    const pricePlusBtn = nudgeBtn(priceRow, "+");
+
+    const { valueEl: qtyEl, row: qtyRow } = fieldRow("pending-orders-list__price");
+    qtyEl.textContent = `${originalQuantity} szt.`;
+    const qtyMinusBtn = nudgeBtn(qtyRow, "−");
+    const qtyPlusBtn = nudgeBtn(qtyRow, "+");
+
+    const controlsEl = document.createElement("div");
+    controlsEl.className = "pending-orders-list__controls";
+    div.appendChild(controlsEl);
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "pending-orders-list__action-btn pending-orders-list__action-btn--cancel";
+    cancelBtn.textContent = "Skasuj";
+    controlsEl.appendChild(cancelBtn);
+
+    let confirmBtn = null;
+    let revertBtn = null;
+
+    function isStaged() {
+        return Math.abs(stagedPrice - originalPrice) > 1e-9 || Math.abs(stagedQuantity - originalQuantity) > 1e-9;
+    }
+
+    function renderStaged() {
+        // Pokazujemy TYLKO jedną, aktualną liczbę (nie "stara -> nowa") -
+        // naprawione 2026-07-30 (Adam: "cena/ilość ma się po prostu zmieniać,
+        // a nie tańczyć po ekranie") - dwuliczbowy zapis zmieniał szerokość
+        // wiersza przy każdym kliknięciu, przesuwając przyciski. Niezapisana
+        // zmiana sygnalizowana samym kolorem (klasa --staged na wartości),
+        // bez zmiany długości tekstu ani układu.
+        const priceChanged = Math.abs(stagedPrice - originalPrice) > 1e-9;
+        priceEl.textContent = stagedPrice.toFixed(4);
+        priceEl.classList.toggle("pending-orders-list__price--staged", priceChanged);
+
+        const qtyChanged = Math.abs(stagedQuantity - originalQuantity) > 1e-9;
+        qtyEl.textContent = `${stagedQuantity.toFixed(4)} szt.`;
+        qtyEl.classList.toggle("pending-orders-list__price--staged", qtyChanged);
+
+        if (!isStaged()) {
+            if (confirmBtn) { confirmBtn.remove(); confirmBtn = null; }
+            if (revertBtn) { revertBtn.remove(); revertBtn = null; }
+            return;
+        }
+
+        if (!confirmBtn) {
+            confirmBtn = document.createElement("button");
+            confirmBtn.type = "button";
+            confirmBtn.className = "pending-orders-list__action-btn pending-orders-list__action-btn--confirm";
+            confirmBtn.textContent = "Zatwierdź";
+            confirmBtn.addEventListener("click", async () => {
+                div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+                const ok = await sendReprice(orderId, stagedPrice, stagedQuantity);
+                if (ok) {
+                    loadPendingOrders(); // odswiez cala liste - nowy order_id po anuluj+zloz-nowe
+                } else {
+                    div.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+                }
+            });
+            controlsEl.appendChild(confirmBtn);
+        }
+        if (!revertBtn) {
+            revertBtn = document.createElement("button");
+            revertBtn.type = "button";
+            revertBtn.className = "pending-orders-list__action-btn";
+            revertBtn.textContent = "Anuluj";
+            revertBtn.addEventListener("click", () => {
+                stagedPrice = originalPrice;
+                stagedQuantity = originalQuantity;
+                renderStaged();
+            });
+            controlsEl.appendChild(revertBtn);
+        }
+    }
+
+    priceMinusBtn.addEventListener("click", () => {
+        stagedPrice = Math.max(0.0001, stagedPrice - priceStep);
+        renderStaged();
+    });
+    pricePlusBtn.addEventListener("click", () => {
+        stagedPrice += priceStep;
+        renderStaged();
+    });
+    qtyMinusBtn.addEventListener("click", () => {
+        stagedQuantity = Math.max(0.0001, stagedQuantity - qtyStep);
+        renderStaged();
+    });
+    qtyPlusBtn.addEventListener("click", () => {
+        stagedQuantity += qtyStep;
+        renderStaged();
+    });
+    // Skasuj = JEDEN klik, bez potwierdzenia (Adam, 2026-07-30: "kasuje i
+    // nic się nie dzieje kumasz?" - najpierw natywny confirm() mylil sie
+    // z przyciskiem "Anuluj" obok, potem podwojne-kliknicie-do-potwierdzenia
+    // bylo kolejnym zrodlem "nic sie nie dzieje" - user nie zauwazal zmiany
+    // tekstu po pierwszym kliknieciu. Niskie ryzyko pomylki - w najgorszym
+    // razie trzeba zlozyc zlecenie ponownie).
+    cancelBtn.addEventListener("click", async () => {
+        cancelBtn.disabled = true;
+        const ok = await sendCancelOrder(orderId);
+        if (ok) {
+            loadPendingOrders();
+        } else {
+            cancelBtn.disabled = false;
+        }
+    });
+}
+
+async function sendReprice(orderId, newPrice, newQuantity) {
+    try {
+        const resp = await fetch(`/warp/order/${encodeURIComponent(orderId)}/reprice`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ new_price: newPrice, new_quantity: newQuantity }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert(data.error || data.reason || "Nie udało się zmienić zlecenia.");
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error("Błąd repricingu zlecenia:", err);
+        alert("Błąd połączenia przy zmianie ceny zlecenia.");
+        return false;
+    }
+}
+
+async function sendCancelOrder(orderId) {
+    try {
+        const resp = await fetch(`/warp/order/${encodeURIComponent(orderId)}/cancel`, { method: "POST" });
+        const data = await resp.json();
+        if (!data.ok) {
+            alert(data.error || "Nie udało się skasować zlecenia.");
+            return false;
+        }
+        return true;
+    } catch (err) {
+        console.error("Błąd kasowania zlecenia:", err);
+        alert("Błąd połączenia przy kasowaniu zlecenia.");
+        return false;
     }
 }
 

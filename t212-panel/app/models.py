@@ -702,6 +702,13 @@ class SignalTrade(db.Model):
     # wcześniejszej pozycji tego samego tickera jako "swojej".
     baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
     buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
+    # Gonienie ceny LIMIT BUY (dodane 2026-07-30, patrz bot_engine.py::
+    # _retry_pending_buys/ActiveTrade.buy_retry_count - ten sam wzorzec, ten
+    # sam powod: znaleziony na zywo IFXd_EQ, ktore utknelo na 9+ godzin bo
+    # cena uciekla od limitu, a Sygnal do tej pory nie mial ZADNEGO
+    # mechanizmu ponawiania).
+    buy_retry_count = db.Column(db.Integer, nullable=False, default=0)
+    next_buy_retry_at = db.Column(db.DateTime, nullable=True)
 
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
     quantity = db.Column(db.Numeric(12, 4), nullable=False)
@@ -833,6 +840,10 @@ class EODTrade(db.Model):
     buy_order_id = db.Column(db.String(64), nullable=False)
     baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
     buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
+    # Gonienie ceny LIMIT BUY (dodane 2026-07-30) - patrz identyczny komentarz
+    # przy SignalTrade.buy_retry_count wyzej, ten sam powod/wzorzec.
+    buy_retry_count = db.Column(db.Integer, nullable=False, default=0)
+    next_buy_retry_at = db.Column(db.DateTime, nullable=True)
 
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
     quantity = db.Column(db.Numeric(12, 4), nullable=False)
