@@ -610,10 +610,13 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     display: flex;
     flex-direction: column;
     gap: 10px;
-    height: 280px; /* STAŁA wysokość - bez tego długie komunikaty błędów
+    height: 340px; /* STAŁA wysokość - bez tego długie komunikaty błędów
                        rozciągały cały kafelek (i cały wiersz siatki razem
                        z sąsiednimi kafelkami), przez co layout "skakał"
-                       przy każdym kliknięciu. */
+                       przy każdym kliknięciu. Podniesione z 280px na 340px
+                       (2026-07-30, patrz screen ss3.png) - dodanie wiersza
+                       LIMIT KUP/SPRZEDAJ przekroczylo stara wysokosc, wiec
+                       przycisk LIMIT znikal pod nastepnym wierszem siatki. */
 }
 
 /* Sygnaturowy element: narożniki celownicze, jak w wizjerze HUD -
