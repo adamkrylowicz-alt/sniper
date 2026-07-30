@@ -128,6 +128,18 @@ niezależne przyczyny):
    backoffu co _retry_pending_sells, kolumny buy_retry_count/
    next_buy_retry_at) anuluje takie zlecenie i wystawia nowe po aktualnej
    cenie - "gonienie" ceny, dokładnie to co wcześniej robiono ręcznie.
+
+5. Znalezione na żywo 2026-07-30 (DTEd_EQ): "gonienie" ceny z punktu 4
+   wystawiało nowe LIMIT BUY przez surowe client.place_limit_order(...),
+   pomijając _place_buy_with_precision_fallback() z punktu 4 sekcji
+   "Pętla DCA" - w przeciwieństwie do _enter_position()/_trigger_dca_buys(),
+   które już go używały. Efekt na żywo: stare zlecenie anulowane, nowe
+   odrzucone przez quantity-precision-mismatch, ŻADNE zlecenie kupna nie
+   zostawało złożone - pozycja utykała trwale w buy_confirmed=False (retry
+   co 30 min w nieskończoność, bo _confirm_buy_fill nie odróżnia "czeka na
+   fill" od "nigdy nie złożono zlecenia"). Fix: _retry_pending_buys() woła
+   teraz _place_buy_with_precision_fallback() jak pozostałe trzy miejsca
+   składania zleceń.
 """
 
 from __future__ import annotations
@@ -747,7 +759,9 @@ def _retry_pending_buys(
             continue
 
         try:
-            new_result = client.place_limit_order(trade.ticker, new_quantity, current_price)
+            new_result, new_quantity = _place_buy_with_precision_fallback(
+                client, trade.ticker, new_quantity, current_price,
+            )
         except T212APIError as exc:
             _bump_buy_retry(
                 user_id, trade,

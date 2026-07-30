@@ -248,6 +248,19 @@ class T212Client:
 
         Cache'uje TAKŻE błąd (re-raise tego samego wyjątku kolejnym
         callerom w oknie TTL), nie tylko sukces.
+
+        Znalezione na żywo 2026-07-30 (IFXd_EQ, 429 nieprzerwanie przez
+        godziny mimo tego cache'a): lock był trzymany TYLKO przy sprawdzeniu
+        cache'a i TYLKO przy zapisie wyniku, NIE przez cały czas trwania
+        samego _request() - trzy silniki (Micro-Grid/Sygnał/EOD) wołające to
+        niemal jednocześnie (np. wszystkie trzy przy starcie appki/autostart)
+        każde widziały "cache pusty/przeterminowany" PRZED tym, jak
+        którekolwiek zdążyło zapisać świeży wynik, więc wszystkie trzy i tak
+        strzelały osobnym, realnym requestem - efektywnie zerując sens tego
+        cache'a właśnie w chwilach największego obciążenia ciasnego limitu
+        demo. Fix: lock trzymany przez CAŁY check-then-fetch-then-store -
+        tylko PIERWSZY caller robi realny request, reszta czeka na ten sam
+        lock i dostaje to, co on właśnie zapisał, zamiast dublować zapytanie.
         """
         with _shared_cache_lock:
             cached = cache.get(self._cache_key)
@@ -255,14 +268,13 @@ class T212Client:
                 _, cached_result, cached_error = cached
                 return cached_result, cached_error, False
 
-        result: list[dict] | None = None
-        error: Exception | None = None
-        try:
-            result = self._request("GET", path) or []
-        except T212APIError as exc:
-            error = exc
+            result: list[dict] | None = None
+            error: Exception | None = None
+            try:
+                result = self._request("GET", path) or []
+            except T212APIError as exc:
+                error = exc
 
-        with _shared_cache_lock:
             cache[self._cache_key] = (time.monotonic(), result, error)
 
         return result, error, True
