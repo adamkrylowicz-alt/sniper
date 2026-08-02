@@ -805,3 +805,66 @@ powtarza ostatni mnożnik (1) dla poziomów poza listą, sprawdzone w kodzie.
 z grid searchem: +11.09%/6.71%dd train, +2.83%/3.87%dd test). **Prod NIE
 dotknięty** - czeka na decyzję Adama, biorąc pod uwagę zwiększoną
 ekspozycję kapitałową względem realnego salda konta demo.
+
+## ZROBIONE (2026-08-02, ciąg dalszy): max_dca_levels=8 zastosowane na prod + commit do gita
+
+Adam: "zastosuj max_dca_levels=8 też na prod commituj na gity itd a potem
+dalej szukaj co by tu ulepszyc". `risk_settings.max_dca_levels` zmienione
+na PROD (user_id=1, bot aktywny) z 5 na 8, bezpośrednio w bazie - BEZ
+restartu procesu (`RiskSettings` czytane świeżo co tick, ten sam mechanizm
+co przy wcześniejszej zmianie `dca_trigger_pct`). Log diagnostyczny czysty
+po zmianie. Dwa commity do gita (`code-server/workspace/sniper`, gałąź
+master): (1) przełącznik trybu zlecenia RYNEK/LIMIT per-kafelek
+Focus/Warp/Instrument (zaległa, przetestowana praca z 30-31.07, nigdy
+niecommitowana), (2) walk-forward split + filtry Hurst/Shock + money
+management √equity (dzisiejsza/31.07 praca opisana w sekcjach wyżej).
+Pliki cache `backtest/data/*.json` (świeżo pobrane 400d/1300d dla 38
+tickerów) świadomie NIE commitowane - to regenerowalny cache, nie kod.
+
+## ZROBIONE (2026-08-02, finał): take_profit_step_pct=0.002 na dev - drugi solidny kandydat
+
+Kontynuacja poszukiwań (Adam: "dalej szukaj co by tu ulepszyc") po
+zastosowaniu `max_dca_levels=8`. Grid `take_profit_step_pct` (0.0015-0.004)
+NA NOWO przy `max_dca_levels=8` (interakcja między parametrami mogła się
+zmienić od poprzedniego grid searchu z 31.07, robionego jeszcze przy
+`max_dca_levels=5`):
+
+| tp_step | TRAIN ret | TRAIN dd | TEST ret | TEST dd |
+|---|---|---|---|---|
+| 0.0015 | +10.20% | 6.76% | +3.50% | 3.14% |
+| **0.002** | **+11.25%** | 6.69% | **+3.69%** | **3.30%** |
+| 0.0025 (było) | +11.09% | 6.71% | +2.83% | 3.87% |
+| 0.003 | +10.43% | 6.72% | +1.84% | 4.08% |
+| 0.0035 | +10.25% | 6.74% | +1.21% | 4.93% |
+| 0.004 | +10.10% | 6.75% | +1.87% | 4.85% |
+
+Czysty, monotoniczny sygnał (train i test się ZGADZAJĄ, ta sama jakość co
+przy `max_dca_levels`) - `0.002` bije `0.0025` na OBU oknach RÓWNOCZEŚNIE:
+lepszy zwrot treningowy (+11.25% vs +11.09%), wyraźnie lepszy testowy
+(+3.69% vs +2.83%, +30% relatywnie), NIŻSZY drawdown na obu oknach - bez
+kompromisu. Zastosowane na dev (`risk_settings.take_profit_step_pct=0.002`),
+backtest po zmianie reprodukowalny (identyczne liczby: +11.25%/6.69%dd
+train, +3.69%/3.30%dd test).
+
+**Dodatkowo sprawdzony kształt `dca_scenario`** (płaski vs rosnący
+"ramp_up" 1→2.4 vs malejący "ramp_down" 2.4→1, przy `max_dca_levels=8`,
+`tp_step=0.0025`): `ramp_down` odrzucony (train +14.52% świetny, ale test
++1.73%/dd=7.66% - klasyczne przeuczenie/odwrócenie). `ramp_up` daje więcej
+zwrotu na obu oknach (+14.31%/+3.93%) niż płaski, ALE proporcjonalnie
+więcej ryzyka (zwrot/drawdown gorszy niż płaski: 0.68 vs 0.73 na teście) -
+w odróżnieniu od `max_dca_levels=8` (które dało IDENTYCZNY zwrot/drawdown co
+baza) to nie jest darmowa poprawa, tylko przesunięcie suwaka ryzyka, słabiej
+przebadane (1 kształt, nie siatka). **Nie rekomendowane teraz** - `dca_scenario`
+zostaje płaski.
+
+Prod NIE dotknięty dla `take_profit_step_pct` - czeka na decyzję Adama.
+
+## ZROBIONE (2026-08-02, finał sesji): take_profit_step_pct=0.002 zastosowane na prod
+
+Adam wybrał (AskUserQuestion): "Zastosuj też na prod". `risk_settings.
+take_profit_step_pct` zmienione na PROD (user_id=1, bot aktywny) z 0.0025
+na 0.002, bezpośrednio w bazie, BEZ restartu. Log diagnostyczny czysty po
+zmianie. Prod ma teraz OBA dzisiejsze zweryfikowane usprawnienia razem:
+`max_dca_levels=8` + `take_profit_step_pct=0.002` (obok wcześniej
+zastosowanego `dca_trigger_pct=0.02` z 31.07) - wszystkie trzy zweryfikowane
+walk-forwardem na 5-letniej historii akcji, wszystkie ze zgodnym train/test.
