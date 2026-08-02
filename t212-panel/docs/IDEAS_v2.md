@@ -868,3 +868,41 @@ zmianie. Prod ma teraz OBA dzisiejsze zweryfikowane usprawnienia razem:
 `max_dca_levels=8` + `take_profit_step_pct=0.002` (obok wcześniej
 zastosowanego `dca_trigger_pct=0.02` z 31.07) - wszystkie trzy zweryfikowane
 walk-forwardem na 5-letniej historii akcji, wszystkie ze zgodnym train/test.
+
+## ZROBIONE (2026-08-02, finał): weryfikacja _score() ranking kandydatów
+
+Adam: "sprawdź _score() ranking kandydatów" - po trzech zastosowanych dziś
+usprawnieniach (dca_trigger_pct, max_dca_levels, take_profit_step_pct).
+`_score()` (`bot_entry_filters.py`) to ważona suma 4 składników:
+range_position (W=1.0), trend_calm (W=0.6), fx_penalty (W=0.8, stała kara
+0.24 dla USD), spread (W=0.5, w backteście zawsze neutralny - brak danych
+bid/ask). Backtest UŻYWA prawdziwego `rank_candidates`/`_score()`
+(`microgrid_runner.py` linia 334, jeden zwycięzca level-0/dzień = `scored[0]`)
+- test robiony przez monkeypatch `_score`/wag, twarde filtry nietknięte.
+
+**1. Scoring vs losowy wybór zwycięzcy** (te same twarde filtry, 3 seedy,
+5 lat akcji, walk-forward): obecny scoring TRAIN +11.25%/dd=6.69% bije
+losowy na WSZYSTKICH 3 seedach (+8.54%/dd8.28%, **-0.47%/dd14.52%**,
++5.20%/dd7.38%) - losowy ma ogromną wariancję wyniku i znacznie wyższy,
+niestabilny drawdown. **Potwierdzone: scoring realnie redukuje
+ryzyko/niepewność, to nie "teatr"** - pierwszy raz w całej sesji
+zweryfikowane head-to-head, nie zakładane.
+
+**2. Ablacja wag (zero-out pojedynczego składnika):**
+- Bez `range_position`: gorzej na OBU oknach (train +7.31%/dd9.41%, test
+  +2.05%/dd5.05%) - jednoznacznie pomaga, zostaje.
+- Bez `fx_penalty`: KATASTROFA na treningu (-1.60%/dd=14.55%!) i gorzej na
+  teście - najważniejszy pojedynczy składnik, bez dyskusji zostaje.
+- Bez `trend_calm`: TRAIN gorszy (9.56% vs 11.25%) ale TEST LEPSZY (4.86%
+  vs 3.69%, dd 2.07% vs 3.30%) - **konflikt train/test**, dokładnie ten sam
+  sygnał ostrzegawczy co przy filtrze Hurst i grid searchu dca_trigger_pct
+  wcześniej dziś. Zgodnie z ustaloną regułą (trening i test muszą się
+  zgadzać) - **NIE zmieniane na podstawie jednego okna testowego.**
+
+**Wniosek: scoring jest dobrze zaprojektowany** (2 z 3 realnych składników
+- range_position, fx_penalty - jednoznacznie pomagają na obu oknach,
+wyraźnie bije losowy wybór). `trend_calm` (W=0.6) to jedyny niepewny
+element - kandydat na dalszą weryfikację (grid wagi zamiast on/off, drugie
+niezależne okno testowe), ale NIE zmieniony teraz - za mało dowodów wg
+tego samego standardu co reszta dzisiejszej sesji. Żadna zmiana kodu ani
+bazy - czysta analiza.
