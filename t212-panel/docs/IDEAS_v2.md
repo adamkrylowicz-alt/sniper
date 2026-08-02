@@ -1080,3 +1080,27 @@ się w ciągu kilku minut**.
   +0.35%) → 3.0 (train +1.73%/test +0.49%, LEPSZE na obu oknach ORAZ lepszy
   zwrot/drawdown niż 2.5: test 0.70 vs 0.58). Rozszerzony grid w toku (3.5-5.0)
   żeby sprawdzić czy to szeroka górka czy trzeba iść jeszcze wyżej.
+
+## ZROBIONE (2026-08-02, finał nocy): stop_loss_atr_mult=3.0 zastosowane na prod dla Sygnału
+
+**Potwierdzone: WSZYSTKIE 568 transakcji train zamknięte przez `exit_reason=
+'stop-loss'`, ZERO przez take-profit** - `take_profit_atr_mult` jest w
+praktyce martwym parametrem (trailing stop zawsze łapie pozycję pierwszy,
+target zysku nigdy nie jest osiągany) - ten sam wzorzec co martwy
+`stop_loss_pct` w Micro-Gridzie. Warte odnotowania jako realne ograniczenie
+strategii Sygnał, nie tylko ciekawostka - oznacza że cała logika
+"take-profit" obecnie nigdy się nie uruchamia.
+
+**Rozszerzony grid stop_loss_atr_mult (2.5-5.0)**: trend z poprzedniego
+testu (1.0→2.5→3.0, czysto rosnący na obu oknach) **spłaszcza się po 3.0**
+(test: 0.49%→0.50%→0.43%→0.45%→0.49%, w granicach szumu), drawdown dalej
+rośnie (0.70%→0.89%). Zwrot/drawdown testowy: 3.0=0.700 (najlepszy), 3.5=0.676,
+reszta wyraźnie gorzej. **Prawdziwa górka, nie ucieczka w nieskończoność -
+3.0 potwierdzone jako najlepszy wybór, nie artefakt granicy przeszukiwania.**
+
+**Zastosowane na prod** (dev nie ma żywego wiersza `signal_settings` - baza
+dev nigdy nie miała działającej instancji Sygnału, tylko narzędzia
+backtestowe które i tak omijają bazę) - `signal_settings.stop_loss_atr_mult`
+zmienione z 2.5 na 3.0 bezpośrednio w bazie prod (user_id=1, `is_active=1`),
+BEZ restartu (te same ustawienia czytane świeżo co tick jak w Micro-Gridzie).
+Log diagnostyczny czysty po zmianie, bot dalej działa bez przerwy.
