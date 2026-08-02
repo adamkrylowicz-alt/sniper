@@ -43,9 +43,10 @@ backtest ma tylko świece dzienne):
   `dzienne minimum <= trigger`, ten sam princip realizmu co detekcja
   stop-lossu w signal_runner.py (sprawdzanie WYŁĄCZNIE po close
   systematycznie gubiłoby dni, gdzie cena spika przez próg i wraca).
-- Kandydaci do scoringu dostają jako "dzisiejsze świece" ostatnie
-  `TREND_LOOKBACK_DAYS`-ish wierszy okna (przybliżenie kalendarzowe->sesyjne,
-  ten sam kompromis co cała reszta backtestu - brak dat w danych źródłowych).
+- Kandydaci do scoringu dostają jako okno `CANDLES_GETTER_WINDOW_ROWS` wierszy
+  (patrz stała niżej) - `evaluate_candidate` sam przycina do `RECENT_WINDOW_ROWS`
+  dla filtrów krótkoterminowych (trend/zakres dnia), pełne okno idzie do
+  filtra regime'u (Hurst) gdy włączony.
 - Kolejność w ramach jednego dnia: najpierw exit (trailing STOP) dla
   WSZYSTKICH otwartych pozycji, potem DCA dla tych co przeżyły, na końcu
   JEDNO nowe wejście do wolnego slotu - dokładnie kolejność z bot_engine.py
@@ -88,6 +89,7 @@ class SettingsStub:
     take_profit_step_pct: Decimal
     stop_loss_pct: Decimal
     max_spread_pct: Decimal = Decimal("0")  # bez znaczenia - quote_getter=None -> fail-open i tak
+    equity_sizing_enabled: bool = False
 
 
 @dataclass
@@ -194,7 +196,14 @@ class GridPortfolio:
         return self._equity_curve[-1]
 
 
-TREND_LOOKBACK_ROWS = 7  # przyblizenie bot_entry_filters.TREND_LOOKBACK_DAYS=10 dni kalendarzowych na sesje
+# Okno przekazywane do candles_getter - HURST_LOOKBACK_DAYS (120) zamiast
+# dawnego przyblizenia TREND_LOOKBACK_DAYS~7 sesji, dodane 2026-07-31 przy
+# filtrze regime'u (Hurst Exponent, patrz bot_entry_filters.py). ZERO KOSZTU
+# w backteście - windows[ticker] to i tak PEŁNA historia już wczytana do
+# pamięci, evaluate_candidate sam przycina do RECENT_WINDOW_ROWS dla
+# _range_position/_trend_metrics (no-op względem starego zachowania), a
+# Hurst dostaje pełne dłuższe okno gdy HURST_FILTER_ENABLED.
+CANDLES_GETTER_WINDOW_ROWS = bot_entry_filters.HURST_LOOKBACK_DAYS
 
 
 def run_microgrid_backtest(
@@ -290,10 +299,26 @@ def run_microgrid_backtest(
             trigger_price = pos.grid_anchor_price * (Decimal("1") - settings.dca_trigger_pct * next_level)
             if trigger_price <= 0 or day_lows[ticker] > trigger_price:
                 continue
+
+            # Detektor "szoku" (microgrid_strategy.is_shock) - domyślnie
+            # WYŁĄCZONY (patrz docstring modułu), zero kosztu tutaj (ATR
+            # liczony z windows[ticker] już w pamięci).
+            if microgrid_strategy.SHOCK_FILTER_ENABLED:
+                atr = _compute_atr(windows[ticker], ATR_PERIOD)
+                atr_pct = (atr / trigger_price) if atr is not None and trigger_price > 0 else None
+                max_drop = microgrid_strategy.compute_max_recent_single_day_drop_pct(windows[ticker])
+                if microgrid_strategy.is_shock(max_drop, atr_pct):
+                    continue
+
             multipliers = _parse_dca_scenario(settings.dca_scenario)
             multiplier = _dca_multiplier(multipliers, next_level)
             asset = asset_by_ticker[ticker]
-            portfolio.add_dca_leg(ticker, trigger_price, asset.entry_amount * multiplier)
+            effective_entry_amount = asset.entry_amount
+            if settings.equity_sizing_enabled:
+                effective_entry_amount = microgrid_strategy.compute_equity_scaled_amount(
+                    asset.entry_amount, portfolio.final_equity, portfolio.starting_cash,
+                )
+            portfolio.add_dca_leg(ticker, trigger_price, effective_entry_amount * multiplier)
 
         # --- 3. Jedno nowe wejscie level-0 do wolnego slotu ---
         if len(portfolio.open_positions) < MAX_CONCURRENT_POSITIONS:
@@ -304,14 +329,19 @@ def run_microgrid_backtest(
             if eligible:
                 def candles_getter(ticker: str, _windows=windows) -> list[dict]:
                     w = _windows[ticker]
-                    return w[-TREND_LOOKBACK_ROWS:]
+                    return w[-CANDLES_GETTER_WINDOW_ROWS:]
 
                 scored, _stats = bot_entry_filters.rank_candidates(eligible, settings, candles_getter=candles_getter)
                 if scored:
                     winner = scored[0][0]
                     price = day_prices[winner.ticker]
+                    effective_entry_amount = winner.entry_amount
+                    if settings.equity_sizing_enabled:
+                        effective_entry_amount = microgrid_strategy.compute_equity_scaled_amount(
+                            winner.entry_amount, portfolio.final_equity, portfolio.starting_cash,
+                        )
                     try:
-                        decision = microgrid_strategy.compute_entry_quantity(winner.entry_amount, price)
+                        decision = microgrid_strategy.compute_entry_quantity(effective_entry_amount, price)
                     except microgrid_strategy.EntryValidationError:
                         decision = None
                     if decision is not None:

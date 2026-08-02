@@ -417,6 +417,24 @@ class RiskSettings(db.Model):
     # Reczna adopcja przyciskiem "Przekaz botowi" NIE jest tym dotknieta.
     manage_all_positions = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Money management: skalowanie efektywnej kwoty wejscia/DCA wzgledem
+    # BIEZACEGO equity kontra equity ODNIESIENIA (baseline), metoda
+    # PIERWIASTKOWA (nie liniowa) - patrz microgrid_strategy.compute_equity_
+    # scaled_amount. Wybor Adama po lekturze "Build Better Strategies" czesc 3
+    # (2026-07-31): liniowe skalowanie %equity to WPROST opisany tam anti-pattern
+    # (drawdown rosnie jak √T), Kelly/OptimalF odrzucone (za mala/zaszumiona
+    # proba: 41 zamknietych transakcji z 9 dni historii, 56% bez znanego
+    # close_price). DOMYSLNIE WYLACZONE - zero zmiany zachowania (effective_
+    # amount == entry_amount) dopoki Adam swiadomie nie zaznaczy checkboxa w UI.
+    equity_sizing_enabled = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Equity konta W MOMENCIE wlaczenia powyzszego checkboxa - AUTO-CAPTURE przez
+    # serwer (T212Client.get_cash()), NIE reczne wpisywanie liczby (patrz
+    # routes/bot.py::update_settings) - punkt odniesienia dla ktorego mnoznik=1.
+    # Nullable (brak sensu zanim ktokolwiek pierwszy raz wlaczy flage) -
+    # traktowane jak "brak" w compute_equity_scaled_amount, gdy None/<=0.
+    equity_sizing_baseline = db.Column(db.Numeric(12, 2), nullable=True, default=None)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<RiskSettings user_id={self.user_id} active={self.is_bot_active}>"
 

@@ -23,11 +23,27 @@ a nie trailing/ATR/DCA. A do 23.07 moment wejscia byl w praktyce losowy:
 ZERO NOWYCH ZAPYTAN DO API: wszystko liczone ze swiec ktore bot i tak juz
 pobiera (price_feed.get_mini_chart_ohlc ma wlasny cache 30 min, uzywany juz
 przez filtr trendu i ATR w bot_engine).
+
+--- Filtr regime'u (Hurst Exponent), dodany 2026-07-31 --------------------
+Po lekturze serii "Build Better Strategies" (financial-hacker.com, cz.2):
+_trend_ok wyzej odpowiada na pytanie "czy TERAZ jest dobry moment wejscia"
+(krotkie okno, lapanie spadajacego noza/wystrzalu). Hurst Exponent odpowiada
+na INNE pytanie - "czy ten instrument W OGOLE zachowuje sie jak kandydat do
+mean-reversion" (Hurst<0.5) czy raczej trenduje (Hurst>0.5, gridowanie w dol
+trendu regularnie przegrywa). To DODATKOWY filtr, nie zastepstwo - dwie rozne
+skale czasowe, obie potrzebne. Wymaga duzo dluzszego okna (~120 dni) niz
+TREND_LOOKBACK_DAYS (10) - Hurst na garstce punktow to szum, nie sygnal.
+DOMYSLNIE WYLACZONY (HURST_FILTER_ENABLED=False) - nowy filtr wplywajacy na
+realne wejscia bota wymaga backtestu PRZED wlaczeniem na produkcji (patrz
+run_microgrid_backtest.py --hurst-filter), zgodnie z zasada "nigdy nie zgaduj
+nowego parametru ryzyka".
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import math
+import statistics
 from decimal import Decimal
 
 from flask import current_app
@@ -65,6 +81,22 @@ MAX_TREND_DRAWDOWN_PCT = Decimal("0.08")
 # UWAGA na dni kalendarzowe vs sesyjne: days=6 to realnie ~4 sesje
 # (weekendy). Bierzemy 10 dni kalendarzowych zeby miec ~7 sesji probki.
 TREND_LOOKBACK_DAYS = 10
+
+# Gorny limit ile z otrzymanej listy swiec liczy sie jako "okno niedawne" dla
+# _range_position/_trend_metrics. USTAWIONE NA WARTOSC >= max mozliwej dlugosci
+# dzisiejszego fetchu (days=TREND_LOOKBACK_DAYS=10 kalendarzowych daje NAJWYZEJ
+# 10 wierszy, patrz price_feed.py `candles[-days:]`) - dzieki temu
+# candles[-RECENT_WINDOW_ROWS:] jest NO-OPEM przy dzisiejszym rozmiarze fetchu,
+# a dopiero gdy HURST_FILTER_ENABLED podniesie fetch do HURST_LOOKBACK_DAYS
+# (znacznie dluzszy), realnie przycina do ostatnich dni - patrz sekcja Hurst
+# nizej po pelne wyjasnienie.
+RECENT_WINDOW_ROWS = 10
+
+# --- Filtr 4: regime (Hurst Exponent) - patrz docstring modulu ------------
+HURST_FILTER_ENABLED = False  # patrz docstring modulu - domyslnie WYLACZONY
+HURST_LOOKBACK_DAYS = 120     # potrzeba duzo dluzszego okna niz TREND_LOOKBACK_DAYS
+HURST_MIN_SAMPLES = 40        # ponizej tego wynik to szum - fail-open (jak inne filtry)
+HURST_MAX_FOR_ENTRY = Decimal("0.5")  # >=0.5 = trenduje, zle dla gridu - odrzucamy
 
 # --- Filtr 3: spread ------------------------------------------------------
 # Przy celu +0.3% netto (JUZ po round-tripie FX) spread 0.2% zjada dwie
@@ -109,8 +141,10 @@ class EntryStats:
         self.rejected_range = 0
         self.rejected_trend = 0
         self.rejected_spread = 0
+        self.rejected_regime = 0
         self.skipped_no_candles = 0
         self.skipped_no_spread_data = 0
+        self.skipped_no_regime_data = 0
         self.passed = 0
 
     def summary(self) -> str:
@@ -124,10 +158,14 @@ class EntryStats:
             parts.append(f"odrzuconych (trend) {self.rejected_trend}")
         if self.rejected_spread:
             parts.append(f"odrzuconych (spread) {self.rejected_spread}")
+        if self.rejected_regime:
+            parts.append(f"odrzuconych (regime/Hurst) {self.rejected_regime}")
         if self.skipped_no_candles:
             parts.append(f"BEZ OCENY trendu/zakresu (brak swiec) {self.skipped_no_candles}")
         if self.skipped_no_spread_data:
             parts.append(f"bez oceny spreadu (brak bid/ask) {self.skipped_no_spread_data}")
+        if self.skipped_no_regime_data:
+            parts.append(f"bez oceny regime'u (za krotka historia) {self.skipped_no_regime_data}")
         return ", ".join(parts)
 
 
@@ -212,6 +250,74 @@ def _trend_ok(metrics: dict | None) -> bool:
     if metrics["drawdown_pct"] > MAX_TREND_DRAWDOWN_PCT:
         return False  # plaski wynik netto, ale po drodze duza amplituda
     return True
+
+
+def _linear_regression_slope(xs: list[float], ys: list[float]) -> float:
+    """Nachylenie prostej najmniejszych kwadratow (metoda momentow) - bez
+    numpy (nie ma go w requirements.txt, Python 3.8 na NAS), n zawsze male
+    (<= HURST_LOOKBACK_DAYS/2), wiec czysta petla Pythona wystarcza."""
+    n = len(xs)
+    xbar = sum(xs) / n
+    ybar = sum(ys) / n
+    denominator = sum((x - xbar) ** 2 for x in xs)
+    if denominator == 0:
+        return 0.0
+    numerator = sum((x - xbar) * (y - ybar) for x, y in zip(xs, ys))
+    return numerator / denominator
+
+
+def compute_hurst_exponent(closes: list[Decimal]) -> Decimal | None:
+    """
+    Szacuje wykladnik Hursta metoda skalowania wariancji roznic cenowych po
+    logu (klasyczne podejscie, patrz bibliografia Ernie Chan w Czesci 2
+    "Build Better Strategies"): dla lagow n=2..HURST_MAX_LAG liczymy
+    odchylenie standardowe roznic cen oddalonych o n dni. Z DEFINICJI
+    ulamkowego ruchu Browna Var(roznica o lag n) ~ n^(2H), czyli
+    odchylenie_std ~ n^H - nachylenie regresji log(odchylenie) ~ log(n) TO
+    JUZ JEST szacowany Hurst wprost, BEZ dodatkowego mnozenia (zlapane w
+    teście 2026-07-31: pierwsza wersja mylnie mnożyła nachylenie razy 2,
+    myląc to ze skalowaniem samej wariancji zamiast odchylenia std).
+    H<0.5 = mean-reversion (dobre dla gridu), H>0.5 = trend (zle - grid
+    DCA-uje w dol calego trendu). H~0.5 = random walk (przyrosty iid,
+    NIEZALEZNIE od tego czy cena ma deterministyczny dryf w gore/dol -
+    Hurst mierzy autokorelacje PRZYROSTOW, nie sam kierunek ceny).
+
+    Zwraca None gdy za malo probek (< HURST_MIN_SAMPLES) - TRAKTOWANE JAKO
+    BRAK DANYCH przez wywolujacego (fail-open, jak inne filtry w tym module
+    przy awarii Finnhub/Yahoo), NIE jako "odrzuc kandydata".
+    """
+    if len(closes) < HURST_MIN_SAMPLES:
+        return None
+
+    prices = [float(c) for c in closes]
+    max_lag = min(20, len(prices) // 2)
+    if max_lag < 2:
+        return None
+
+    log_lags: list[float] = []
+    log_std: list[float] = []
+    for lag in range(2, max_lag):
+        diffs = [prices[i + lag] - prices[i] for i in range(len(prices) - lag)]
+        if len(diffs) < 2:
+            continue
+        std = statistics.pstdev(diffs)
+        if std <= 0:
+            continue  # plaska cena na tym lagu - logarytm niezdefiniowany, pomijamy punkt
+        log_lags.append(math.log(lag))
+        log_std.append(math.log(std))
+
+    if len(log_lags) < 2:
+        return None
+
+    hurst = _linear_regression_slope(log_lags, log_std)
+    return Decimal(str(round(hurst, 4)))
+
+
+def _regime_ok(hurst: Decimal | None) -> bool:
+    """None (brak wystarczajacych danych) -> True, fail-open jak inne filtry."""
+    if hurst is None:
+        return True
+    return hurst < HURST_MAX_FOR_ENTRY
 
 
 def _spread_pct(quote: dict | None) -> Decimal | None:
@@ -310,7 +416,10 @@ def evaluate_candidate(
     tak jest wskaznikiem zgrubnym ("gora czy dol dzisiejszej sesji"), nie
     wymaga precyzji co do ticku.
 
-    `candles` - z price_feed.get_mini_chart_ohlc.
+    `candles` - z price_feed.get_mini_chart_ohlc. Gdy HURST_FILTER_ENABLED,
+    wywolujacy przekazuje DLUZSZE okno (HURST_LOOKBACK_DAYS) - _range_position
+    i _trend_metrics licza sie WYLACZNIE z ostatnich RECENT_WINDOW_ROWS z tej
+    listy (no-op przy dzisiejszym krotszym fetchu), a Hurst z calej listy.
     `quote` - opcjonalny dict z bid/ask; None gdy zrodlo niedostepne.
     """
     stats.considered += 1
@@ -323,17 +432,29 @@ def evaluate_candidate(
     if current_price is None:
         current_price = Decimal("0")
 
+    recent_candles = candles[-RECENT_WINDOW_ROWS:] if candles else candles
+
     # --- Twardy filtr: pozycja w zakresie dnia ---
-    range_position = _range_position(candles, current_price)
+    range_position = _range_position(recent_candles, current_price)
     if range_position is not None and range_position > MAX_ENTRY_RANGE_POSITION:
         stats.rejected_range += 1
         return None
 
     # --- Twardy filtr: trend dwustronny ---
-    trend = _trend_metrics(candles)
+    trend = _trend_metrics(recent_candles)
     if not _trend_ok(trend):
         stats.rejected_trend += 1
         return None
+
+    # --- Twardy filtr: regime (Hurst Exponent), patrz docstring modulu ---
+    if HURST_FILTER_ENABLED:
+        closes = [_d(c.get("c", 0)) for c in candles if _d(c.get("c", 0)) > 0]
+        hurst = compute_hurst_exponent(closes)
+        if hurst is None:
+            stats.skipped_no_regime_data += 1
+        elif not _regime_ok(hurst):
+            stats.rejected_regime += 1
+            return None
 
     # --- Twardy filtr: spread ---
     spread_pct = _spread_pct(quote)

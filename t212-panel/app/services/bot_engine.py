@@ -483,6 +483,48 @@ def _get_client_for_user(user_id: int, settings: RiskSettings) -> T212Client | N
     )
 
 
+def _get_current_equity(
+    user_id: int, settings: RiskSettings, client: T212Client | None = None,
+) -> Decimal | None:
+    """
+    Equity CAŁEGO konta T212 (gotówka+pozycje) - get_cash() to zawsze odczyt
+    REALNEGO konta demo, NIEZALEŻNIE od trybu paper trading (to read-only
+    zapytanie, bezpieczne niezależnie od trybu). Gdy `client` już istnieje
+    (np. z tick()/reconcile(), gdzie jest budowany niezależnie od paper
+    tradingu) - używamy go (zero dodatkowego odczytu poświadczeń). `client`
+    bywa None dla paper trading (patrz _get_client_for_user), więc wtedy
+    budujemy WŁASNY, dedykowany klient tylko do odczytu equity.
+
+    Wołane RAZ na cały tick()/reconcile() (patrz equity_sizing_enabled tam) -
+    budżet rate limitu /equity/account/summary (1 req/5.5s, dzielony między
+    silnikami Micro-Grid/Sygnał/EOD) starcza z ogromnym zapasem przy jednym
+    wywołaniu na 60s tick.
+
+    None gdy: brak poświadczeń albo błąd T212/parsowania - wywołujący
+    (compute_equity_scaled_amount) traktuje to jak "brak danych", zwracając
+    bazową kwotę bez zmian (fail-safe, jak inne filtry w tym silniku).
+    """
+    if client is None:
+        master_key = bot_credentials.get_master_key(user_id)
+        if master_key is None:
+            return None
+        creds = get_decrypted_credentials(user_id, master_key, BOT_ENVIRONMENT)
+        if creds is None:
+            return None
+        client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+            engine="bot", user_id=user_id,
+        )
+    try:
+        raw = client.get_cash()
+        return Decimal(str(raw["total"]))
+    except (T212APIError, InvalidOperation, TypeError, KeyError) as exc:
+        diagnostics.log_diag(
+            user_id, "bot", f"equity sizing: nie udało się pobrać equity ({exc}) - baza bez skalowania.",
+        )
+        return None
+
+
 def _portfolio_quantities(client: T212Client) -> dict[str, Decimal]:
     """
     Jedno zapytanie /equity/portfolio, zamienione na {ticker: owned_quantity}.
@@ -1262,7 +1304,9 @@ def _dca_multiplier(multipliers: list[Decimal], level: int) -> Decimal:
     return multipliers[-1]
 
 
-def _trigger_dca_buys(user_id: int, client: T212Client, settings: RiskSettings) -> None:
+def _trigger_dca_buys(
+    user_id: int, client: T212Client, settings: RiskSettings, current_equity: Decimal | None = None,
+) -> None:
     """
     Micro-Grid: dla każdej pozycji z potwierdzonym kupnem (buy_confirmed=True
     - poziom 0 w pełni rozliczony, NIEZALEŻNE od tego czy trailing exit zdążył
@@ -1300,12 +1344,43 @@ def _trigger_dca_buys(user_id: int, client: T212Client, settings: RiskSettings) 
         if current_price is None or current_price <= 0 or current_price > trigger_price:
             continue  # cena jeszcze nie spadła dość nisko (albo brak danych) - nic do zrobienia
 
+        # Detektor "szoku" (patrz microgrid_strategy.is_shock) - domyślnie
+        # WYŁĄCZONY, patrz docstring tamtego modułu. Gdy włączony: candles
+        # żądane z days=ATR_LOOKBACK_DAYS - TA SAMA długość co fetch ATR w
+        # _manage_trailing_exit (ten sam tick, wcześniejsza faza) więc to
+        # zwykle trafienie w ciepły 30-min cache price_feed, nie nowe
+        # zapytanie sieciowe.
+        if microgrid_strategy.SHOCK_FILTER_ENABLED:
+            shock_candles = price_feed.get_mini_chart_ohlc(
+                current_app.config.get("FINNHUB_API_KEY"), trade.ticker, days=ATR_LOOKBACK_DAYS,
+                alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
+                alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
+            )
+            atr = _compute_atr(shock_candles, ATR_PERIOD)
+            atr_pct = (atr / current_price) if atr is not None and current_price > 0 else None
+            max_drop = microgrid_strategy.compute_max_recent_single_day_drop_pct(shock_candles)
+            if microgrid_strategy.is_shock(max_drop, atr_pct):
+                _log(
+                    user_id, "WARN",
+                    f"{trade.ticker}: DCA poziom {next_level} POMINIĘTY - wykryty gwałtowny "
+                    f"niedawny ruch (spadek {max_drop:.2%} vs ATR {atr_pct:.2%}), czeka na "
+                    "trailing-stop/exhausted-DCA-floor zamiast dalszego dokupowania.",
+                    trade.position_group_id,
+                )
+                continue
+
         asset = BotAsset.query.get(trade.bot_asset_id)
         if asset is None:
             continue  # aktywo usunięte z listy bota od czasu wejścia - nie dokupuj
 
+        effective_entry_amount = asset.entry_amount
+        if settings.equity_sizing_enabled and current_equity is not None:
+            effective_entry_amount = microgrid_strategy.compute_equity_scaled_amount(
+                asset.entry_amount, current_equity, settings.equity_sizing_baseline or Decimal("0"),
+            )
+
         multiplier = _dca_multiplier(multipliers, next_level)
-        dca_amount = asset.entry_amount * multiplier
+        dca_amount = effective_entry_amount * multiplier
         dca_quantity = (dca_amount / current_price).quantize(Decimal("0.0001"))
         if dca_quantity <= 0:
             continue
@@ -1726,7 +1801,8 @@ def reconcile(user_id: int) -> None:
     if settings is not None:
         _retry_pending_buys(user_id, client, settings, pending=pending)
         _retry_pending_sells(user_id, client, settings, pending=pending)
-        _trigger_dca_buys(user_id, client, settings)
+        current_equity = _get_current_equity(user_id, settings, client) if settings.equity_sizing_enabled else None
+        _trigger_dca_buys(user_id, client, settings, current_equity)
 
 
 def tick(app) -> None:
@@ -1785,6 +1861,17 @@ def tick(app) -> None:
             skip_new_entries = False
 
             client = _get_client_for_user(user_id, settings)
+
+            # Equity RAZ na caly tick (nie per-kandydat) - patrz
+            # _get_current_equity. ZERO nowego kosztu API gdy
+            # equity_sizing_enabled=False (nie wolamy w ogole). Liczone PRZED
+            # `if client is not None:` bo _get_current_equity buduje WLASNY
+            # klient gdy trzeba (dziala tez dla paper trading, gdzie `client`
+            # tutaj jest None).
+            current_equity: Decimal | None = None
+            if settings.equity_sizing_enabled:
+                current_equity = _get_current_equity(user_id, settings, client)
+
             if client is not None:
                 # _manage_trailing_exit (ochrona JUŻ zarobionego zysku) CELOWO
                 # ODDZIELONA od backoffu ponizej (Adam, 2026-07-27: "musisz
@@ -1829,15 +1916,15 @@ def tick(app) -> None:
                         _retry_pending_buys(user_id, client, settings, pending=pending)
                         _retry_pending_sells(user_id, client, settings, pending=pending)
                         _auto_adopt_foreign_positions(user_id, client, settings)
-                        _trigger_dca_buys(user_id, client, settings)
+                        _trigger_dca_buys(user_id, client, settings, current_equity)
 
             if skip_new_entries:
                 continue
 
-            _process_entries(user_id, settings)
+            _process_entries(user_id, settings, current_equity)
 
 
-def _process_entries(user_id: int, settings: RiskSettings) -> None:
+def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decimal | None = None) -> None:
     """
     Strategia wejścia (dca_level=0) - PRD sekcja 3.1. Dla każdego BotAsset
     usera (WŁASNA lista bota, patrz models.py::BotAsset - niezależna od
@@ -1906,17 +1993,26 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     # order_by) - przy 38 kandydatach i limicie 10 pozycji to była największa
     # strata potencjału w całym silniku. Teraz bot wchodzi w NAJLEPSZEGO.
     #
-    # Koszt API: ZERO dodatkowych zapytań. candles_getter korzysta z tego
-    # samego 30-minutowego cache co filtr trendu i ATR, a scoring celowo NIE
-    # potrzebuje żywej ceny (używa ceny zamknięcia ostatniej świecy) - żywa
-    # cena jest pobierana dopiero w _enter_position, dla zwycięzcy.
+    # Koszt API: ZERO dodatkowych zapytań w domyślnym stanie. candles_getter
+    # korzysta z tego samego 30-minutowego cache co filtr trendu i ATR, a
+    # scoring celowo NIE potrzebuje żywej ceny (używa ceny zamknięcia
+    # ostatniej świecy) - żywa cena jest pobierana dopiero w _enter_position,
+    # dla zwycięzcy. Gdy bot_entry_filters.HURST_FILTER_ENABLED (domyślnie
+    # WYŁĄCZONY, patrz docstring tamtego modułu) - fetch rośnie do
+    # HURST_LOOKBACK_DAYS (ten sam pojedynczy request, większe okno, dalej
+    # ZERO dodatkowych zapytań - tylko przy włączonym filtrze dłuższa
+    # odpowiedź z tego samego źródła/cache).
+    scoring_days = (
+        bot_entry_filters.HURST_LOOKBACK_DAYS if bot_entry_filters.HURST_FILTER_ENABLED
+        else bot_entry_filters.TREND_LOOKBACK_DAYS
+    )
     scored, stats = bot_entry_filters.rank_candidates(
         eligible,
         settings,
         candles_getter=lambda ticker: price_feed.get_mini_chart_ohlc(
             current_app.config.get("FINNHUB_API_KEY"),
             ticker,
-            days=bot_entry_filters.TREND_LOOKBACK_DAYS,
+            days=scoring_days,
             alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
             alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
         ),
@@ -1937,7 +2033,7 @@ def _process_entries(user_id: int, settings: RiskSettings) -> None:
     # tylko jeśli faktycznie dotarło do T212 (return dopiero gdy
     # _enter_position zwróci True) - patrz docstring tej funkcji.
     for asset, _score in scored:
-        if _enter_position(user_id, asset, settings):
+        if _enter_position(user_id, asset, settings, current_equity):
             return
 
 
@@ -1966,7 +2062,9 @@ def _entry_trend_ok(ticker: str) -> bool:
     return drop_pct <= ENTRY_TREND_MAX_DROP_PCT
 
 
-def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> bool:
+def _enter_position(
+    user_id: int, asset: BotAsset, settings: RiskSettings, current_equity: Decimal | None = None,
+) -> bool:
     """
     Zwraca True gdy dotarliśmy do faktycznego kontaktu z T212 (zlecenie
     wysłane, niezależnie od sukcesu) albo do zapisu pozycji papierowej -
@@ -1994,8 +2092,14 @@ def _enter_position(user_id: int, asset: BotAsset, settings: RiskSettings) -> bo
         _log(user_id, "ERROR", f"{asset.ticker}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
         return False
 
+    effective_entry_amount = asset.entry_amount
+    if settings.equity_sizing_enabled and current_equity is not None:
+        effective_entry_amount = microgrid_strategy.compute_equity_scaled_amount(
+            asset.entry_amount, current_equity, settings.equity_sizing_baseline or Decimal("0"),
+        )
+
     try:
-        entry_decision = microgrid_strategy.compute_entry_quantity(asset.entry_amount, price)
+        entry_decision = microgrid_strategy.compute_entry_quantity(effective_entry_amount, price)
     except microgrid_strategy.EntryValidationError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
         return False

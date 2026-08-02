@@ -295,6 +295,141 @@ zaprojektowany ani nie zaimplementowany:
 Żadne z powyższych NIE zmienia domyślnego zachowania (bot dalej ignoruje
 nieznane mu pozycje) - to opt-in, per pozycja albo per switch czasowy.
 
+## Pomysły z serii "Build Better Strategies" (financial-hacker.com, 2026-07-31)
+
+Adam przeczytał 4-częściową serię o rozwoju strategii algorytmicznych i poprosił
+o ocenę zastosowania do Snajpera. Nic z tego NIE jest zaimplementowane, same
+pomysły do dalszej oceny:
+
+1. **ZROBIONE (2026-07-31), na dev. Detektor "szoku" przed kolejną nogą DCA.**
+   Micro-Grid to strukturalnie Grid Trader (Część 1 serii) - zakłada powrót
+   ceny do średniej. `compute_exhausted_dca_floor` (`microgrid_strategy.py`)
+   to dobra ostatnia linia obrony PO wyczerpaniu wszystkich poziomów DCA, ale
+   brakowało PROAKTYWNEGO filtra "to nie zwykły dołek, to zmiana reżimu" (np.
+   crash po wynikach finansowych) który zatrzymałby dalsze DCA ZANIM spalimy
+   wszystkie poziomy. Dodane: `compute_max_recent_single_day_drop_pct()` +
+   `is_shock()` w `microgrid_strategy.py` - odrzuca kolejną nogę DCA gdy
+   największy JEDNODNIOWY spadek w ostatnich 3 sesjach przekracza
+   `SHOCK_ATR_MULTIPLIER=3` razy ATR instrumentu (odróżnia gwałtowny,
+   nieciągły ruch od zwykłego, stopniowego dryfu w dół dla którego grid
+   jest zaprojektowany). Flaga `SHOCK_FILTER_ENABLED` (moduł
+   `microgrid_strategy.py`) **domyślnie WYŁĄCZONA**. `run_microgrid_backtest.py`
+   dostał `--shock-filter`.
+
+   **Zweryfikowane na danych syntetycznych** przed jakimkolwiek uruchomieniem
+   na realnych danych: stopniowy dryf -1%/dzień NIE oznaczony jako szok,
+   nagły -15% w jednym dniu OZNACZONY poprawnie.
+
+   **Wynik backtestu na realnych parametrach produkcyjnych**: detektor
+   zweryfikowany jako AKTYWNY (29 dni-tickerów z realnym szokiem w całym
+   400-dniowym/38-tickerowym zbiorze, w tym realny -20.3% w jeden dzień przy
+   ATR ~4.7% - poprawnie wykryty), i wywołany 224 razy w realnych momentach
+   decyzji o DCA (potwierdzone instrumentacją, nie zgadywane) - ale ANI RAZU
+   nie zbiegł się w czasie z otwartą pozycją akurat czekającą na kolejny
+   poziom siatki, więc efekt na wynik portfela w tym backteście wyniósł
+   dokładnie zero (identyczne liczby z i bez filtra). **To nie błąd - rzadkie
+   zdarzenie (szok) x rzadkie zdarzenie (akurat otwarta pozycja na granicy
+   DCA) w tym konkretnym oknie historycznym.** Zostaje wyłączony domyślnie;
+   to z natury "ubezpieczenie na czarnego łabędzia" (jak historia CHF/SNB z
+   Części 1) - brak efektu w zwykłym backteście nie dowodzi że jest
+   bezużyteczny, tylko że tego typu zdarzenie nie wystąpiło w tej konkretnej
+   próbce. Nie ma dowodów ani za, ani przeciw włączeniu na produkcji.
+
+2. **ZROBIONE (2026-07-31), na dev. Hurst Exponent jako DODATKOWY filtr
+   regime'u w `bot_entry_filters.py`.** Po głębszej analizie: Hurst nie
+   ZASTĘPUJE `_trend_ok()` (jak pierwotnie sformułowano wyżej) - to dwie różne
+   skale czasowe/pytania: `_trend_ok` = "czy TERAZ jest dobry moment
+   wejścia" (krótkie okno), Hurst = "czy ten instrument W OGÓLE zachowuje się
+   jak kandydat do mean-reversion" (długie okno, ~120 dni - na 7-10 punktach
+   Hurst to czysty szum, stąd potrzeba znacznie dłuższego okna niż
+   TREND_LOOKBACK_DAYS). Nowe: `compute_hurst_exponent()` (metoda skalowania
+   odchylenia std różnic cenowych po logu, bez numpy - go nie ma w
+   requirements.txt), `_regime_ok()`, flaga `HURST_FILTER_ENABLED` (moduł
+   `bot_entry_filters.py`, **domyślnie WYŁĄCZONA** - zero zmiany zachowania
+   produkcji/dev dopóki ktoś świadomie nie włączy). `run_microgrid_backtest.py`
+   dostał `--hurst-filter` do porównania A/B.
+
+   **Znaleziony i naprawiony bug podczas testowania na danych syntetycznych**
+   (random walk/mean-reversion/trend AR(1)): pierwsza wersja mnożyła
+   nachylenie regresji razy 2 (pomylenie skalowania wariancji ze
+   skalowaniem odchylenia standardowego) - dawało to Hurst~0.88 dla
+   CZYSTEGO random walk (powinno być ~0.5). Po poprawce: random walk ~0.45,
+   mean-reversion ~0.23, trend/momentum ~0.55 - poprawny porządek.
+
+   **Wynik backtestu A/B na realnych parametrach produkcyjnych** (400 dni,
+   38 tickerów, `dca_trigger_pct=0.03`/`take_profit_step_pct=0.0025`,
+   `--test-days 60`): filtr REALNIE działa (1084 z 14262 ocenionych
+   kandydatów odrzucone jako "trenduje", 7.6%), ale efekt na wynik portfela
+   jest marginalny (in-sample: 314→304 transakcji, +1.46%→+0.84% return;
+   out-of-sample: praktycznie bez zmian, 44 transakcje w obu wariantach) -
+   bo przy 38 tickerach i jednym wolnym slocie dziennie odrzucenie
+   kandydata zwykle oddaje miejsce następnemu w kolejności, nie blokuje
+   wejścia całkowicie. **Wniosek: na tym uniwersum tickerów i z tym progiem
+   (0.5) filtr nie szkodzi, ale też wyraźnie nie pomaga** - zostaje
+   wyłączony domyślnie, brak podstaw żeby go włączać bez dalszych testów
+   (np. innego okna/progu - ale to wymagałoby OSOBNEGO eksperymentu
+   backtestowego, nie zgadywania, patrz [[feedback_snajper_backtest_before_tuning]]).
+
+3. **ZROBIONE (2026-07-31), zsynchronizowane do prod. Walk-forward /
+   out-of-sample split w `run_microgrid_backtest.py`.** Dodana flaga
+   `--test-days N` - tnie ostatnie N dni jako out-of-sample test, uruchamiany
+   osobno od treningu (świeży portfel), raporty osobno oznaczone
+   "IN-SAMPLE"/"OUT-OF-SAMPLE (NIE używać do strojenia)". Bez flagi
+   zachowanie identyczne jak wcześniej (tylko kosmetyczny nagłówek + kolumna
+   `segment=full` w CSV). Pełny opis w CLAUDE.md z 2026-07-31. Pasuje do już
+   istniejącej zasady [[feedback_snajper_backtest_before_tuning]].
+
+   **Realnie się przydało tego samego dnia**: grid search
+   `dca_trigger_pct`/`take_profit_step_pct` (siatka 7x7 + rozszerzenie w dół)
+   złapał realny curve-fitting - kombinacja najlepsza in-sample wypadła
+   out-of-sample gorzej niż "nudniejszy" kandydat. Znaleziony `dca_trigger_pct
+   =0.02` (obecne prod: 0.03) - lepszy na OBU oknach i OBU wymiarach
+   (return+drawdown). **Zastosowane na dev** (`risk_settings.dca_trigger_pct`),
+   backtest po zmianie potwierdził identyczne liczby. Prod NIE dotknięty -
+   czeka na dalszą obserwację/decyzję Adama. Pełne liczby w CLAUDE.md.
+
+4. **ZROBIONE (2026-07-31), na dev. Money management - skalowanie √equity,
+   OPT-IN.** Adam odwrócił wcześniejszą decyzję z tej listy ("bez zmian") i
+   wybrał wprost skalowanie PIERWIASTKOWE (nie liniowe %equity - to
+   dokładnie anti-pattern z Części 3; nie Kelly/OptimalF - odrzucone, baza
+   ma tylko 41 zamkniętych transakcji z 9 dni historii, 56% bez znanego
+   `close_price`, za mało/za zaszumione). **To NIE jest odwrócenie
+   pierwotnej decyzji** - stały `BotAsset.entry_amount` zostaje BAZĄ, nowa
+   funkcja to nieliniowa NAKŁADKA nad nim, domyślnie WYŁĄCZONA.
+
+   Nowe: `RiskSettings.equity_sizing_enabled`/`equity_sizing_baseline`
+   (migracja `migrate_add_equity_sizing.py`, baseline AUTO-CAPTURE przy
+   włączeniu checkboxa w UI - `T212Client.get_cash()`, nie ręczne
+   wpisywanie), `microgrid_strategy.compute_equity_scaled_amount()`
+   (`effective_amount = base_amount * sqrt(current_equity/baseline_equity)`,
+   z klamrą bezpieczeństwa 0.5x-3x przeciw glitchowi odczytu equity - ARBITRALNA,
+   nie strojona). Equity liczone RAZ na tick (nie per-kandydat) - zero
+   nowego kosztu API gdy flaga wyłączona. Checkbox w UI (`/bot/`) obok
+   "zarządzaj wszystkim". Backtest: `run_microgrid_backtest.py` dostał
+   `--equity-scaling` (baseline = `--starting-cash` przebiegu).
+
+   **Zweryfikowane syntetycznie** przed jakimkolwiek backtestem: equal
+   equity→brak zmiany, equity 4x→2x kwoty, equity 0.25x→dotyka klamry
+   min=0.5x, equity 9x→dotyka klamry max=3x, equity 100x (glitch)→ograniczone
+   do 3x zamiast 100x.
+
+   **Backtest A/B na realnych parametrach produkcyjnych**: efekt marginalny
+   (in-sample 1.46%→1.44%, out-of-sample 1.04%→1.05%) - **oczekiwane, nie
+   błąd**: w krótkim 400-dniowym oknie equity portfela nie oddala się
+   znacząco od kapitału startowego, więc mnożnik √(equity/baseline) zostaje
+   bliski 1.0 przez cały backtest. Mechanizm celuje w horyzont wieloletni/
+   duże zmiany kapitału, nie w pojedynczy krótki backtest - małe, niezerowe
+   różnice potwierdzają że liczy poprawnie, po prostu nie ma tu jeszcze czego
+   przeskalować. Zostaje WYŁĄCZONY domyślnie na obu środowiskach po sync -
+   włączenie checkboxa to świadoma, osobna decyzja Adama.
+
+5. **ML na `_score()` - niski priorytet, na później.** Obecny scoring to już
+   strukturalnie regresja liniowa (ręcznie ważona suma cech). Mogłaby zostać
+   dopasowaną regresją logistyczną na realnych wynikach transakcji, ale
+   Część 4 serii ostrzega przed niestacjonarnością danych finansowych i
+   przeuczeniem - robić dopiero przy dużej próbce zamkniętych transakcji I
+   koniecznie z walidacją walk-forward (patrz punkt 3).
+
 ## ZROBIONE (2026-07-27): sortowanie w tabelach + panele przestawialne strzałkami
 
 - **Aktywa** (`/warp/portfolio`): kolumna "Waluta" + sortowanie klikane w
@@ -311,3 +446,362 @@ nieznane mu pozycje) - to opt-in, per pozycja albo per switch czasowy.
   przyciskami ▲/▼, kolejność ustawia sam user, zapamiętywana per strona w
   `localStorage` - patrz `common.js::initReorderablePanels`. Pełny opis
   mechaniki w CLAUDE.md, wpisy z 27.07.2026.
+
+## Pomysły z podręcznika Zorro (`pliki/zorro.chm`, przejrzany 2026-07-31)
+
+Adam poprosił o przejrzenie podręcznika platformy Zorro (ten sam autor co seria
+"Build Better Strategies") pod kątem czegoś do zaadoptowania. Znalezione, NIE
+zaimplementowane:
+
+1. **DO ZROBIENIA W PRZYSZŁOŚCI: Monte Carlo confidence analysis w backteście.**
+   Zorro zamiast liczyć drawdown/return z JEDNEJ historycznej kolejności
+   transakcji, tasuje kolejność zamkniętych transakcji setki razy (Monte
+   Carlo) i pokazuje rozkład ("przy 95% pewności drawdown wynosi X") zamiast
+   pojedynczej liczby z jednej konkretnej sekwencji zdarzeń. To dokładnie
+   "Montecarlo reality check" z Części 3 serii "Build Better Strategies" -
+   czego NIE zrobiliśmy przy okazji walk-forward split (`--test-days`,
+   punkt 3 wyżej). Nasz obecny `max_drawdown_pct` to tylko jedna, konkretna
+   kolejność zdarzeń z historii - moglibyśmy trafić akurat na łagodną albo
+   akurat na złośliwą sekwencję. Do zrobienia: nowa funkcja w
+   `backtest/microgrid_runner.py`/`portfolio.py` - wziąć listę
+   `closed_trades` z gotowego backtestu, tasować kolejność N razy (Zorro
+   domyślnie N=200), przeliczać equity curve/max drawdown dla każdego
+   tasowania, pokazać rozkład (np. percentyle 10/50/90/95). Adam: "zapisz nr
+   2 na przyszłość" (2026-07-31) - świadomie odłożone, nie teraz.
+
+2. **Znaleziona, NIE naprawiona luka: `is_shock()` nie odróżnia splitu akcji
+   od realnego szoku.** Zorro ma osobny mechanizm (`Outlier`/`PriceJump`)
+   rozróżniający "prawdziwy szok" od zwykłego splitu 2:1/4:1 (który wygląda
+   jak nagły -50%/-75% w jeden dzień, ale to nie krach, tylko techniczna
+   korekta ceny). Nasz `microgrid_strategy.is_shock()`
+   (dodany 2026-07-31, patrz punkt 1 wyżej) tego NIE rozróżnia - split akcji
+   (NVDA/TSLA robiły split w ostatnich latach) wyglądałby identycznie jak
+   realny krach i błędnie zablokowałby DCA. Nieszkodliwe DOPÓKI
+   `SHOCK_FILTER_ENABLED=False` (obecny stan), ale do naprawienia PRZED
+   ewentualnym włączeniem tego filtra na produkcji.
+
+## ZROBIONE (2026-08-02): walidacja logiki wejścia na danych spoza akcji (Forex/indeksy/metale/BTC)
+
+Adam: "chodzi mi o trenowanie momentow wejscia glownie wiec bez znaczenia na
+jakie instrumenty" - w folderze `pliki/historical data` (dane Zorro, 235
+plików binarnych `.t6`, 2.3GB) znaleziono 14 instrumentów (AUDUSD, BTCUSD,
+EURCHF, GBPUSD, GER30, NAS100, SPX500, UK100, US30, USDCAD, USDCHF, USDJPY,
+XAGUSD, XAUUSD) ze świecami 1-minutowymi 2010-2026 - ZERO pokrycia z 38
+akcjami US/EU które bot faktycznie handluje, ale idealny materiał do
+sprawdzenia czy REGUŁY WEJŚCIA (dca_trigger_pct, filtr Hurst, detektor
+szoku) to realny wzorzec cenowy, czy dopasowanie do naszej wąskiej, mocno
+skorelowanej próbki dużych spółek (dokładnie ryzyko curve-fittingu z cz.3
+serii "Build Better Strategies").
+
+Metoda (skrypty w scratchpadzie, nie w repo - narzędzia jednorazowe, dane
+źródłowe dostępne tylko lokalnie w `pliki/`, nie są częścią aplikacji):
+`decode_zorro_t6.py` dekoduje binarny format T6 Zorro (struct: DATE double +
+6x float High/Low/Open/Close/Val/Vol, potwierdzone ręcznie na
+AUDUSD_2010/XAUUSD_2010 - ceny się zgadzają) i agreguje 1-min świece do
+DZIENNYCH w formacie `{"o","h","l","c"}` identycznym jak
+`price_feed.get_mini_chart_ohlc()`. `zorro_entry_validation.py` odpala
+ISTNIEJĄCY silnik (`backtest/microgrid_runner.run_microgrid_backtest`,
+`_split_candles` z walk-forward) na każdym z 14 instrumentów osobno, z
+DOKŁADNIE produkcyjnymi parametrami (dca_trigger_pct=0.02,
+take_profit_step_pct=0.0025, max_dca_levels=5, stop_loss_pct=0.02,
+zweryfikowane w bazie 2026-08-02), test_days=250 (~rok out-of-sample, ~15 lat
+trening), w trzech wariantach: BASE (jak dziś), +HURST, +SHOCK.
+
+**Wyniki (14 instrumentów × 3 warianty, pełne dane w
+`zorro_validation_results.csv` w scratchpadzie):**
+
+- **Win rate konsekwentnie wysoki (85-97%) na WSZYSTKICH instrumentach**,
+  nie tylko akcjach - potwierdza że profil "dużo małych wygranych + rzadkie
+  duże straty" to cecha STRUKTURALNA samej architektury grid-DCA + ciasny
+  take-profit, a nie coś specyficznego dla naszych 38 spółek.
+- **Indeksy (GER30/NAS100/SPX500/UK100/US30) zyskowne in-sample** (+1.0% do
+  +3.4%) - spójne z ich długim trendem wzrostowym 2010-2024 (bull market),
+  "kupuj dołek + DCA w dół + trailing take-profit" naturalnie zarabia w
+  trendzie wzrostowym z korektami.
+- **Forex mieszany/lekko ujemny** (-0.03% do -1.94%), **metale i BTC wyraźnie
+  ujemne in-sample** (XAGUSD -3.69%, BTCUSD -8.49%) - te instrumenty miały
+  wieloletnie silne trendy SPADKOWE (srebro 2011-2015, AUD 2011-2015) albo
+  ekstremalną zmienność (BTC -70/-80% w 2018/2022) które grid-DCA bez
+  twardego stopu przegrywa.
+- **Filtr Hurst: konsekwentnie ZMNIEJSZA liczbę wejść** (3115 vs 3842 w
+  agregacie, -19%) na każdym instrumencie. Efekt na wynik MIESZANY - wyraźnie
+  POMAGA tam gdzie in-sample wynik był najgorszy (XAGUSD -3.69%→-1.30%,
+  BTCUSD -8.49%→-7.77%), ale wyraźnie SZKODZI na zyskownych indeksach
+  (NAS100 +3.40%→+2.74%, SPX500 +2.26%→+1.41%, GER30 +1.78%→+0.58%) - bo
+  filtr blokuje TRENDUJĄCE instrumenty niezależnie od kierunku, a tu
+  najbardziej zyskowną "cechą" był akurat trwały trend WZROSTOWY z korektami
+  (idealne środowisko dla dip-buyingu, błędnie odrzucane przez Hurst jako
+  "nie mean-reversion").
+- **Detektor szoku: efekt w agregacie bliski zeru** (avg_ret -0.54%→-0.56%
+  in-sample), tak jak wcześniej na akcjach - ale na BTCUSD (najbardziej
+  zmienny instrument w zestawie) wyraźnie POGARSZA wynik (-8.49%→-10.09%)
+  zamiast chronić, więc "ochrona przed szokiem" na razie nie ma pokrycia w
+  danych na ŻADNYM przetestowanym instrumencie.
+- **Agregat 14 instrumentów (nierówna waga, FX/indeksy silnie skorelowane
+  wewnątrz grupy, to nie 14 niezależnych prób):** BASE train avg_ret=-0.54%,
+  test avg_ret=+0.09%; +HURST train=-0.52%/test=+0.06%; +SHOCK
+  train=-0.56%/test=+0.09%. **Żaden filtr nie daje jasnej, spójnej korzyści
+  w agregacie** - to POTWIERDZA (na dużo większej, całkowicie niezależnej od
+  akcji próbce) wcześniejszy wniosek z 2026-07-31 ("zero usprawnień") - obie
+  flagi zostają domyślnie WYŁĄCZONE, to nie był przypadek dopasowania do
+  wąskiej próbki 38 spółek.
+
+**Ważne zastrzeżenie:** to test generalizacji REGUŁ WEJŚCIA (progi/filtry),
+NIE dowód że Snajper mógłby bezpiecznie handlować Forex/metalami/BTC -
+symulacja tu NIE modeluje realnej dźwigni CFD na tych instrumentach (tylko
+naiwne $100/nogę jak przy akcjach), więc rzeczywisty profil ryzyka na Forex
+byłby inny (zwykle wyższa dźwignia w praktyce). Wniosek dotyczy tylko: "czy
+dca_trigger_pct/Hurst/Shock to uniwersalny wzorzec cenowy" - odpowiedź: DCA
+i wysoki win-rate tak, Hurst i Shock filter nie (w obecnej postaci).
+
+## ZROBIONE (2026-08-02, ciąg dalszy): "czy Snajper mógłby grać na forex zamiast akcji?" - odpowiedź: NIE
+
+Adam: "spróbuj to samo z całą historią (bez test_days, pełne 16 lat) to moze
+grac na forex zamiast na akcjach?" - dwa dodatkowe przebiegi (skrypty w
+scratchpadzie, `zorro_full_history.py` i `zorro_shared_portfolio.py`),
+DOKŁADNIE produkcyjne parametry, bez podziału train/test (cała dostępna
+historia na raz).
+
+1. **14 instrumentów osobno (własny $10k portfel każdy, ~13-16 lat)**:
+   tylko indeksy (GER30/NAS100/SPX500/UK100/US30) zyskowne, ale marginalnie
+   - najlepszy NAS100 CAGR=+0.21%/rok. Forex prawie zero (USDCAD 0.00%,
+   USDJPY +0.04%), metale/BTC/AUD/EUR wyraźnie ujemne (BTCUSD -0.69%/rok,
+   XAGUSD -0.20%/rok). Średnia po 14 instrumentach: **CAGR=-0.04%/rok**.
+
+2. **Uczciwsze porównanie - te same 14 instrumentów jako JEDEN wspólny
+   portfel $10k** (mechanicznie identyczny test do backtestu akcji: kandydaci
+   konkurują o sloty, nie 14 osobnych pul kapitału) vs analogiczny wspólny
+   portfel 38 akcji (`run_microgrid_backtest.py --days 400`, też dokładnie
+   produkcyjne parametry): **akcje: +4.71% za ~400 dni (CAGR≈+4.2%/rok),
+   max_dd=3.28%. Forex/indeksy/metale/BTC razem: -8.17% za ~16 lat
+   (CAGR≈-0.4%/rok), max_dd=13.46%** - 4x gorszy drawdown, ujemny zwrot.
+   Rozbicie per instrument: straty skoncentrowane w XAGUSD (-541 USD sumy
+   pnl), BTCUSD (-621), EURCHF (-216), AUDUSD (-182), XAUUSD (-136),
+   GBPUSD/USDCHF (lekko ujemne) - TYLKO indeksy (GER30/NAS100/SPX500/UK100/
+   US30) i USDCAD/USDJPY dodatnie, ale zbyt mało żeby przebić straty reszty.
+
+**Wniosek: obecna logika Micro-Gridu (dip-buy + DCA + ciasny trailing
+take-profit) NIE nadaje się do Forex/metali/krypto** - te instrumenty albo
+są zbyt zmienne bez trwałego trendu (BTC, srebro), albo zbyt płaskie/
+zakresowe (większość par FX - strategia projektowana pod "kupowanie dołków w
+trendzie wzrostowym", a FX z natury nie ma takiego trwałego dryfu jak akcje/
+indeksy). JEDYNA grupa która zachowuje się podobnie do akcji (i mogłaby
+teoretycznie być kandydatem na rozszerzenie, NIE zamiennik) to indeksy CFD
+(GER30/NAS100/SPX500/UK100/US30) - dodatnie w obu testach, ale wciąż dużo
+słabsze niż akcje same w sobie. Zastrzeżenie jak poprzednio: symulacja nie
+modeluje realnej dźwigni CFD, więc rzeczywisty profil ryzyka na koncie live
+byłby inny (prawdopodobnie gorszy niż tu pokazane). Żadna zmiana kodu -
+czysta analiza.
+
+## KOREKTA (2026-08-02, ciąg dalszy): poprzednie porównanie forex vs akcje NIE było na tym samym oknie czasowym
+
+Adam słusznie zapytał: "sprawdź czy backtest indeksów CFD ma pokrycie z
+historią akcji" - odkryte: NIE miał. Poprzedni wniosek ("Forex/metale/BTC
+razem -8.17% za ~16 lat" vs "akcje +4.71% za ~400 dni") porównywał 16 lat
+danych Zorro (2010-2026, obejmujące realnie złe reżimy - krach BTC 2018/2022,
+bessę srebra 2011-2015, deprecjację AUD 2011-2015) z zaledwie ~400 dniami
+akcji (cache fetchowany 2026-07-30, czyli luty 2025 - lipiec 2026 - łagodny,
+niedawny okres). To mieszało RÓŻNE reżimy rynkowe, nie tylko różne
+instrumenty - metodologicznie nieuczciwe.
+
+**Poprawka - ostatnie 400 dostępnych dni danych Zorro** (kończą się
+2026-05-29 - akcje fetchowane 2026-07-30, więc ~2 miesiące na końcu się nie
+pokrywają, ale poza tym ta sama "epoka" zamiast 16 lat), te same
+produkcyjne parametry, wspólny portfel 14 instrumentów:
+
+- **Akcje (38 tickerów, --days 400)**: +4.71%, max_dd=3.28%, 383 transakcji, winrate 97.1%
+- **Forex/indeksy/metale/BTC (14 instr., ostatnie 400 dni)**: **+1.51%**,
+  max_dd=**1.50%**, 248 transakcji, winrate 98.0%
+
+**Wniosek skorygowany:** w TYM SAMYM, niedawnym oknie forex/indeksy/metale/
+BTC też są zyskowne - mniej niż akcje (+1.51% vs +4.71%, ok. 1/3), ale przy
+O POŁOWĘ mniejszym obsunięciu (1.50% vs 3.28%). Poprzedni mocno negatywny
+wniosek był w dużej mierze artefaktem porównania różnych okresów - forex/
+metale/BTC MIAŁY naprawdę złe wieloletnie reżimy w swojej 16-letniej
+historii (to nadal prawda i wciąż ważne dla oceny długoterminowego ryzyka -
+patrz sekcja wyżej z 2026-08-02), ale w aktualnym środowisku rynkowym
+wypadają rozsądnie, tylko słabiej niż akcje. Właściwy wniosek: **akcje
+pozostają lepszym wyborem w obecnym środowisku, ale twierdzenie "forex
+zdecydowanie nie działa" było zbyt mocne** - poprzednia sekcja z tego samego
+dnia pozostaje ważna jako ostrzeżenie o długoterminowej zmienności tych
+instrumentów, nie jako ostateczny wyrok o ich nieprzydatności.
+
+## ZROBIONE (2026-08-02, ciąg dalszy): filtr Hurst i detektor szoku na tym samym, dopasowanym oknie (ostatnie 400 dni)
+
+Adam: "sprawdź to samo z filtrem Hurst i Shock na tym oknie" - te same 14
+instrumentów, ostatnie 400 dni (dopasowane do okna akcji z sekcji wyżej),
+wspólny portfel $10k, trzy warianty BASE/+HURST/+SHOCK.
+
+**Wynik (wspólny portfel 14 instrumentów):**
+- BASE: +1.51%, max_dd=1.50%, 248 transakcji, winrate 98.0%
+- +HURST: +1.62%, max_dd=1.51%, 224 transakcji (-24, -10%), winrate 98.2%
+- +SHOCK: +1.89%, max_dd=1.49%, 248 transakcji, winrate 98.4%
+
+W TYM konkretnym, krótkim (400-dniowym) oknie oba filtry delikatnie
+POPRAWIAJĄ wynik. **Ale - ważne zastrzeżenie**: poprawa jest skoncentrowana
+głównie w JEDNYM instrumencie (UK100: BASE pnl_sum=-4.39 -> +HURST +39.94 /
++SHOCK +33.96 - to praktycznie cała różnica), reszta instrumentów miesza się
+w obie strony (Hurst pogarsza BTCUSD -43.53->-51.08 i GER30 52.78->31.16,
+poprawia NAS100 40.17->44.67; Shock nie zmienia liczby transakcji wcale poza
+UK100). To wygląda na pojedynczy uniknięty/zmieniony wynik jednej transakcji
+na jednym instrumencie w krótkim oknie, NIE systematyczną przewagę - dokładnie
+ten rodzaj szumu małej próby przed którym ostrzega seria "Build Better
+Strategies" (efekt znika/odwraca się gdy poszerzyć okno, patrz sekcja wyżej
+z tego samego dnia - 14 instrumentów x 16 lat walk-forward NIE pokazało
+spójnej korzyści z żadnego filtra).
+
+**Wniosek: nie zmienia to wcześniejszej decyzji.** Duża próbka (16 lat,
+14 instrumentów, walk-forward) pozostaje dużo mocniejszym dowodem niż jedno
+krótkie, niedawne okno zdominowane przez wynik jednego instrumentu. Obie
+flagi (`HURST_FILTER_ENABLED`, `SHOCK_FILTER_ENABLED`) zostają domyślnie
+WYŁĄCZONE - to nowe, krótkoterminowe odkrycie jest ciekawostką do
+zanotowania, nie podstawą do zmiany.
+
+## ZROBIONE (2026-08-02, ciąg dalszy): to samo na dłuższym oknie (1000 dni)
+
+Adam: "sprawdź to samo na dłuższym oknie, np. 1000 dni" - te same 14
+instrumentów, wspólny portfel, ostatnie 1000 dostępnych dni Zorro (kończą
+się 2026-05-29, więc to ~2023-2026).
+
+**Wynik:**
+- BASE: +2.67%, max_dd=1.95%, 605 transakcji, winrate 97.0%
+- +HURST: **+3.30%**, max_dd=**1.63%** (wyraźnie niżej), 549 transakcji
+  (-9.3%), winrate 97.3%
+- +SHOCK: +2.98%, max_dd=1.95% (bez zmiany), 603 transakcji, winrate 97.2%
+
+W odróżnieniu od okna 400-dniowego (gdzie poprawa Hurst była praktycznie
+w całości zasługą JEDNEGO instrumentu, UK100), tu poprawa jest SZERSZA -
+AUDUSD (23->47), UK100 (9->50), XAGUSD (55->107) i BTCUSD (strata
+zmniejszona -118->-88) wszystkie się poprawiają, kosztem GER30 (100->58) i
+kilku mniejszych pogorszeń. Zwrot wyżej ORAZ drawdown wyraźnie niżej -
+bardziej przekonujący obraz niż okno 400-dniowe. Detektor szoku nadal w
+większości efektu skupiony na UK100 (9->48), reszta bez zmian.
+
+**Ważne zastrzeżenie metodologiczne**: to pojedynczy przebieg BEZ podziału
+train/test (in-sample na całym oknie 1000 dni) - słabszy dowód niż
+walk-forward. Duży test z tego samego dnia wyżej (14 instrumentów x PEŁNE
+~16 lat, Z walk-forwardem train/test) pokazał praktycznie ZEROWY efekt
+Hurst w agregacie (test avg_ret 0.09%->0.06%). Trzy okna razem (400d/1000d/
+16 lat) układają się w wzorzec: **im nowsze/krótsze okno, tym silniejszy
+pozorny efekt Hurst** - to klasyczny sygnał albo zależności od reżimu
+(np. inne zachowanie FX/metali w erze zerowych stóp 2010-2021 vs
+podwyżek 2022-2026), albo zwykłego przeuczenia do niedawnej historii - te
+dwie hipotezy NIE są tu rozróżnione, wymagałoby to walk-forwardu
+SPECYFICZNIE na oknie 1000-dniowym (osobny podział train/test wewnątrz tych
+1000 dni), nie zrobione jeszcze.
+
+**Wniosek: nadal za mało żeby zmienić decyzję.** Ciekawy, warty
+odnotowania sygnał, ale bez walk-forwardu na tym oknie i bez rozstrzygnięcia
+hipotezy reżimu vs przeuczenia obie flagi zostają domyślnie WYŁĄCZONE -
+zgodnie z zasadą "nigdy nie zgaduj nowego parametru ryzyka, dowód > intuicja".
+
+## ZROBIONE (2026-08-02, finał sesji): walk-forward na 1000 dniach + pełna weryfikacja na 5-letniej historii akcji
+
+Adam: "zrób walk-forward split na oknie 1000 dni ogolnie testuj jak chcesz
+byleś coś polepszył w strategii i zyskach" - seria końcowych testów,
+podsumowanie całej dzisiejszej pracy.
+
+**1. Walk-forward na forex/indeksy/metale/BTC, okno 1000 dni (train 750/test
+250)** - domyka pytanie zostawione otwarte wcześniej tego dnia (in-sample na
+1000 dniach wyglądał obiecująco dla Hurst). Wynik: **Hurst TRAIN +2.82%
+(lepszy niż BASE +1.85%) ale TEST +0.53% (GORSZY niż BASE +0.68%)** -
+podręcznikowy przykład przeuczenia z Części 3 serii "Build Better
+Strategies". Shock: identyczny wynik jak BASE na teście (+0.68% oba) - zero
+efektu. **To DRUGI niezależny walk-forward (obok testu na pełnych 16
+latach) który odrzuca oba filtry - decyzja WYŁĄCZONE jest teraz oparta na
+dwóch, nie jednym, rygorystycznym dowodzie.**
+
+**2. Prawdziwa 5-letnia historia akcji (Yahoo, 1300 dni zamiast
+dotychczasowych 400) z walk-forward (test_days=300)** - dużo większa próbka
+niż dotychczasowe testy tego samego dnia. `dca_trigger_pct=0.02` (obecna
+produkcja): TRAIN +3.43%/max_dd=**6.81%**, TEST +1.82%/max_dd=2.49%,
+winrate 96.5%. **Ważne: prawdziwy historyczny drawdown (6.81%) jest ok. 2x
+wyższy niż sugerował wcześniejszy krótki test (3.28% na 400 dniach)** - 5
+lat łapie ostrzejsze okresy rynkowe (prawdopodobnie 2022) których krótkie
+okno nie widziało. Realniejsza, mniej optymistyczna ocena ryzyka - nie błąd,
+tylko krótkie okno miało mniej pecha.
+
+**3. Grid search dca_trigger_pct (0.015-0.03) na tych samych 5 latach** -
+sprawdzenie czy 0.02 nadal jest najlepszym/najbardziej odpornym wyborem na
+dużo większej próbce. Wynik: **niemonotoniczny i szumiący** - train nie
+koreluje sensownie z test (np. `0.025` miało NAJGORSZY train (+0.50%) ale
+NAJLEPSZY test (+2.68%); `0.03` miało najlepszy train (+8.09%) ale środkowy
+test). Brak czystej, szerokiej "górki" jak w poprzednim, krótszym grid
+searchu (31.07, 400 dni) - na dłuższym, bardziej zaszumionym oknie sygnał
+się rozmywa. **Świadomie NIE zmieniamy parametru na podstawie tego wyniku**
+- wybór na podstawie samego testu (np. przeskoczenie na 0.025 bo miało
+najlepszy TEST) byłby dokładnie błędem przed którym ostrzega Część 3 (dobór
+po out-of-sample zamiast tylko potwierdzenie nim) - `dca_trigger_pct=0.02`
+zostaje, potwierdzone jako rozsądny wybór, nie odrzucone.
+
+**4. Equity scaling (√equity) na tych samych 5 latach** - efekt nadal
+marginalny (train +3.32% vs +3.43% bez, test identyczny +1.82%) - equity w
+tym oknie urosło tylko ~3.3% (10000->10332), za mało żeby mnożnik
+odchylił się zauważalnie od 1.0. Potwierdza wcześniejszy wniosek: mechanizm
+śpi dopóki nie będzie dużo większych zmian kapitału, to oczekiwane
+zachowanie, nie błąd.
+
+**PODSUMOWANIE CAŁEJ SESJI (2026-08-02): żadna NOWA zmiana parametru nie
+jest uzasadniona dzisiejszymi testami** ponad to co już wdrożono
+(`dca_trigger_pct=0.02`, już live). Wartość dzisiejszej pracy to NIE nowy
+parametr, tylko dużo WYŻSZA PEWNOŚĆ istniejących decyzji: Hurst i Shock
+odrzucone dwoma niezależnymi walk-forwardami zamiast jednym; obecny
+`dca_trigger_pct=0.02` zweryfikowany na 5 latach realnych danych zamiast
+400 dni; prawdziwy poziom ryzyka (drawdown ~6.8%, nie ~3.3%) lepiej
+poznany; forex/indeksy/metale/BTC dokładnie sprawdzone i odrzucone jako
+alternatywne uniwersum dla obecnej logiki. Wszystko udokumentowane, zero
+zmian w kodzie produkcyjnym.
+
+## ZROBIONE (2026-08-02, ciąg dalszy): sprawdzenie pozostałych parametrów (stop_loss_pct, max_dca_levels) na 5-letniej historii akcji
+
+Adam: "spr inne parametry mowilem ci juz" - dotąd sprawdzone tylko
+`dca_trigger_pct`/`take_profit_step_pct`. Grid na tych samych 5 latach akcji
+z walk-forward (test_days=300), reszta parametrów = produkcyjne.
+
+**1. `stop_loss_pct` (0.015-0.04): ZERO efektu, identyczne liczby dla każdej
+wartości.** Znalezione wyjaśnienie w kodzie (`microgrid_strategy.py::
+compute_trailing_stop`/`compute_exhausted_dca_floor`) - `stop_loss_pct` to
+tylko FALLBACK używany gdy ATR jest niedostępny; w tym backteście (i
+praktycznie zawsze w normalnej pracy bota, gdzie tickery mają już
+wystarczającą historię) ATR jest zawsze policzalny, więc floor liczony jest
+z ATR*1.8, nigdy z `stop_loss_pct`. **Wniosek: `stop_loss_pct` jest w
+praktyce parametrem martwym/wegetatywnym** dla dojrzałych tickerów - realną
+ochronę daje ATR. Ma znaczenie tylko dla świeżo dodanych tickerów bez
+wystarczającej historii do policzenia ATR (rzadki przypadek). Nie
+zmieniany - nie ma czego stroić.
+
+**2. `max_dca_levels` (3-10): REALNY, POWTARZALNY sygnał.** W odróżnieniu od
+`dca_trigger_pct` (train/test się kłóciły), tu train i test się ZGADZAJĄ:
+
+| max_dca | TRAIN ret | TRAIN dd | TEST ret | TEST dd |
+|---|---|---|---|---|
+| 5 (było) | +3.43% | 6.81% | +1.82% | 2.49% |
+| 6 | +0.96% | 8.62% | +1.32% | 3.49% |
+| 7 | +9.00% | 5.14% | +2.15% | 4.02% |
+| **8** | **+11.09%** | 6.71% | **+2.83%** | 3.87% |
+| 9 | +13.16% | 6.20% | +1.93% | 4.76% |
+| 10 | +11.21% | 6.86% | +1.27% | 5.27% |
+
+Prawdziwa "górka" (nie ucieczka w nieskończoność) - test rośnie do poziomu
+8, potem ODWRACA SIĘ (9→10: +1.93%→+1.27%, dd dalej rośnie) - dokładnie
+kształt wzorca opisanego w Części 3 jako oznaka realnego efektu, nie
+przypadku. Poziom 8 najlepszy całościowo: zwrot/drawdown (miara
+ryzyko-skorygowana) = 0.73 - IDENTYCZNIE jak obecne 5 (1.82/2.49=0.73) -
+czyli to przeskalowanie w górę przy tej samej jakości, nie "więcej zysku
+kosztem gorszej jakości". Otwarte pozycje na koniec okna bez zmian (6
+train/1 test) na każdym poziomie - nie artefakt utkniętych niezamkniętych
+strat.
+
+**Koszt: 60% więcej kapitału zamrożonego w najgorszym scenariuszu**
+(8×100$=800$ vs 5×100$=500$ na ticker, ×38 tickerów = teoretyczne max
+$30400 vs $19000) - musi być zestawione z realnym saldem konta przed
+włączeniem na produkcji. `dca_scenario="1,1,1,1,1"` NIE wymaga zmiany przy
+`max_dca_levels=8` - `_dca_multiplier()` (`bot_engine.py`) automatycznie
+powtarza ostatni mnożnik (1) dla poziomów poza listą, sprawdzone w kodzie.
+
+**Zastosowane NA RAZIE TYLKO NA DEV** (Adam wybrał przez AskUserQuestion:
+"Zastosuj 8 na dev") - `risk_settings.max_dca_levels` zmienione w bazie dev
+(user_id=1) z 5 na 8. Backtest po zmianie reprodukowalny (identyczne liczby
+z grid searchem: +11.09%/6.71%dd train, +2.83%/3.87%dd test). **Prod NIE
+dotknięty** - czeka na decyzję Adama, biorąc pod uwagę zwiększoną
+ekspozycję kapitałową względem realnego salda konta demo.

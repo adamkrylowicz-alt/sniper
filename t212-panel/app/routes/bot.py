@@ -400,6 +400,35 @@ def update_settings():
     # niemu (patrz _release_auto_adopted_positions nizej).
     switch_turned_off = settings.manage_all_positions and not manage_all_positions
 
+    # Money management √equity - baseline AUTO-CAPTURE przy przejsciu OFF->ON
+    # (NIE recznie wpisywana liczba), zeby uniknac pomylek - patrz
+    # microgrid_strategy.compute_equity_scaled_amount. Przy ON->ON (user tylko
+    # edytuje inne pola przy juz wlaczonej fladze) baseline zostaje BEZ ZMIAN -
+    # nie odswiezamy go przy kazdym zapisie ustawien.
+    equity_sizing_enabled = bool(payload.get("equity_sizing_enabled", settings.equity_sizing_enabled))
+    equity_sizing_turned_on = equity_sizing_enabled and not settings.equity_sizing_enabled
+    equity_sizing_baseline = settings.equity_sizing_baseline
+
+    if equity_sizing_turned_on:
+        creds = get_decrypted_credentials(current_user_id(), current_master_key(), bot_engine.BOT_ENVIRONMENT)
+        if creds is None:
+            return jsonify(
+                ok=False,
+                error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API) - potrzebny do "
+                      "odczytania bieżącego equity jako punktu odniesienia dla skalowania.",
+            ), 400
+        client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=bot_engine.BOT_ENVIRONMENT,
+            engine="bot", user_id=current_user_id(),
+        )
+        try:
+            cash = client.get_cash()
+            equity_sizing_baseline = Decimal(str(cash["total"]))
+        except (T212APIError, InvalidOperation, TypeError, KeyError) as exc:
+            return jsonify(ok=False, error=f"Nie udało się odczytać equity z T212: {exc}"), 502
+        if equity_sizing_baseline is None or equity_sizing_baseline <= 0:
+            return jsonify(ok=False, error="Odczytane equity <= 0 - nie mogę ustawić punktu odniesienia."), 400
+
     settings.dca_scenario = dca_scenario
     settings.max_dca_levels = max_dca_levels
     settings.dca_trigger_pct = dca_trigger_pct
@@ -409,11 +438,16 @@ def update_settings():
     settings.max_daily_loss = max_daily_loss
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
     settings.manage_all_positions = manage_all_positions
+    settings.equity_sizing_enabled = equity_sizing_enabled
+    settings.equity_sizing_baseline = equity_sizing_baseline
     db.session.commit()
 
     released_count = _release_auto_adopted_positions(current_user_id()) if switch_turned_off else 0
 
-    return jsonify(ok=True, released_count=released_count)
+    return jsonify(
+        ok=True, released_count=released_count,
+        equity_sizing_baseline=str(equity_sizing_baseline) if equity_sizing_baseline is not None else None,
+    )
 
 
 def _release_auto_adopted_positions(user_id: int) -> int:

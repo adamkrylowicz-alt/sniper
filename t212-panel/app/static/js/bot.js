@@ -96,6 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
             max_daily_loss: document.getElementById("bot-max-daily-loss").value,
             is_paper_trading: document.getElementById("bot-paper-trading").checked,
             manage_all_positions: document.getElementById("bot-manage-all").checked,
+            equity_sizing_enabled: document.getElementById("bot-equity-sizing").checked,
         };
 
         try {
@@ -110,6 +111,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 settingsStatus.textContent = data.released_count
                     ? `Zapisano. Zwolniono ${data.released_count} pozycji przejętych przez "zarządzaj wszystkim".`
                     : "Zapisano.";
+                if (data.equity_sizing_baseline !== undefined) {
+                    document.getElementById("bot-equity-sizing-baseline").textContent = data.equity_sizing_baseline || "—";
+                }
             } else {
                 playError();
                 settingsStatus.textContent = data.error || "Błąd zapisu.";
