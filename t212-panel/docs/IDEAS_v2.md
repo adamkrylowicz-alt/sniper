@@ -1104,3 +1104,48 @@ backtestowe które i tak omijają bazę) - `signal_settings.stop_loss_atr_mult`
 zmienione z 2.5 na 3.0 bezpośrednio w bazie prod (user_id=1, `is_active=1`),
 BEZ restartu (te same ustawienia czytane świeżo co tick jak w Micro-Gridzie).
 Log diagnostyczny czysty po zmianie, bot dalej działa bez przerwy.
+
+## ZROBIONE (2026-08-02, noc, kluczowe): multi-window walk-forward - realny kompromis ryzyko/zysk znaleziony i świadomie zaakceptowany
+
+Adam: "dalem ci dane z kilkunastu lat plus dociagnales z 5lat akcji czego
+jeszcze ci malo?" - słuszna uwaga po tym jak stwierdziłem że "jedno okno
+testowe" to metodologiczna dziura. Dane już były (5 lat/1300 dni akcji, już
+scachowane) - wystarczyło je lepiej wykorzystać: podział na 4 NIEZALEŻNE,
+NIENACHODZĄCE okna po ~325 dni zamiast jednego train/test splitu.
+
+**Wynik na obecnych parametrach produkcyjnych (dca_trigger_pct=0.02,
+max_dca_levels=8, take_profit_step_pct=0.002):**
+- Okno 1 (najstarsze, prawdopodobnie bessa 2022 - cykl podwyżek stóp):
+  **-3.03% / max_dd=7.91%** - jedyne ujemne okno, wyraźnie gorsze niż reszta.
+- Okno 2: +4.81% / dd=2.06%
+- Okno 3: +3.71% / dd=2.70%
+- Okno 4 (najnowsze): +3.72% / dd=3.30%
+
+**Porównanie STARE (dca_trigger_pct=0.03/max_dca_levels=5/tp=0.0025, sprzed
+dzisiejszej sesji) vs NOWE (0.02/8/0.002) na tych samych 4 oknach:**
+
+| Okno | STARE | NOWE |
+|---|---|---|
+| 1 (bessa) | -0.93% / dd=5.13% | **-3.03% / dd=7.91%** |
+| 2 | +4.25% / dd=1.60% | +4.81% / dd=2.06% |
+| 3 | +3.18% / dd=3.77% | +3.71% / dd=2.70% |
+| 4 | +2.56% / dd=2.92% | +3.72% / dd=3.30% |
+
+**Znaleziony realny kompromis: nowe parametry są lepsze w 3 z 4 okien
+(normalne/wzrostowe rynki), ale WYRAŹNIE GORSZE w oknie bessy** - strata
+ponad 3x większa (-3.03% vs -0.93%) i drawdown o 54% wyższy (7.91% vs
+5.13%). Mechanizm: `max_dca_levels=5→8` daje więcej miejsca na uśrednianie
+w dół - pomaga gdy spadek się odwraca (3 z 4 okien), szkodzi gdy spadek
+trwa dalej (prawdziwa, długotrwała bessa) - bot uśrednia głębiej w papier
+który nie odbija, zamiast zatrzymać się wcześniej jak przy starych 5
+poziomach. To dokładnie ryzyko przeuczenia do niedawnego, spokojniejszego
+okresu rynkowego, przed którym ostrzega cała seria "Build Better Strategies".
+
+**Decyzja Adama (przez AskUserQuestion): "Zostaw jak jest"** - świadomie
+zaakceptowany większy potencjalny drawdown w scenariuszu bessy w zamian za
+lepszy zwrot w normalnych warunkach rynkowych (3 z 4 okien). Parametry
+zostają bez zmian: `dca_trigger_pct=0.02`, `max_dca_levels=8`,
+`take_profit_step_pct=0.002` na prod. **To NIE jest "problem do naprawienia"
+- to świadomie zaakceptowany kompromis ryzyko/zysk, udokumentowany na
+przyszłość** (gdyby ktoś pytał czemu drawdown jest większy niż w 07.2026,
+odpowiedź jest tutaj).
