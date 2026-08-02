@@ -906,3 +906,35 @@ element - kandydat na dalszą weryfikację (grid wagi zamiast on/off, drugie
 niezależne okno testowe), ale NIE zmieniony teraz - za mało dowodów wg
 tego samego standardu co reszta dzisiejszej sesji. Żadna zmiana kodu ani
 bazy - czysta analiza.
+
+## ZROBIONE (2026-08-02, finał): ATR_STOP_MULTIPLIER i MAX_CONCURRENT_POSITIONS - sprawdzone, bez zmian
+
+Adam: "myśl co jeszcze podtuningować". Dwa nietestowane dotąd parametry
+(monkeypatch `backtest.microgrid_runner.ATR_STOP_MULTIPLIER`/
+`MAX_CONCURRENT_POSITIONS` - importowane w tym module przez "from X import
+Y", kopia wartości, nie live referencja do `bot_engine.py`), 5 lat akcji,
+walk-forward, PROD parametry (dca_trigger_pct=0.02, max_dca_levels=8,
+take_profit_step_pct=0.002).
+
+**1. `ATR_STOP_MULTIPLIER` (obecnie 1.8 w `bot_engine.py`) - PRAWDZIWY
+mechanizm ochronny** (odkryty dziś wcześniej: `stop_loss_pct` to tylko
+martwy fallback, to ATR*multiplier faktycznie wyznacza floor/trailing
+stop). Grid 1.2-3.0: TRAIN rośnie monotonicznie z szerszym stopem (5.19%→
+13.60%) - mechaniczny efekt (szerszy stop = mniej realizowanych strat w
+danym oknie, nie prawdziwa przewaga). TEST szczytuje przy **1.5** (+3.90%/
+dd=3.09%), potem systematycznie się pogarsza (2.2: +3.41%, 3.0: +2.85%,
+dd rośnie do 4.11%). **Konflikt train/test** (trening chce więcej, test
+chce mniej) - ten sam sygnał ostrzegawczy co przy `trend_calm` w `_score()`
+wcześniej dziś. **NIE zmieniane** - nie spełnia kryterium "oba okna się
+zgadzają". Obecne 1.8 jest blisko szczytu testowego (2. miejsce po 1.5) -
+niekoniecznie idealne, ale rozsądnie dobrane, nie błąd.
+
+**2. `MAX_CONCURRENT_POSITIONS` (obecnie 10)** - grid 6-20: powyżej 10
+wynik DOSŁOWNIE identyczny (11.28%/+3.69% dla 13/16/20, praktycznie to samo
+co 10: 11.25%/+3.69%) - limit rzadko jest wąskim gardłem przy 38 tickerach/
+$10k kapitału w tym backteście, podnoszenie go nic nie daje. Poniżej 10
+wyraźnie gorzej (6: 9.61%/+3.20%, 8: 9.68%/+3.69%). **Wniosek: 10 jest już
+dobrze dobrane, potwierdzone jako rozsądny wybór, NIE zmieniane.**
+
+Żadna zmiana kodu ani bazy - czysta analiza, dwa kolejne parametry
+potwierdzone jako już rozsądnie ustawione.
