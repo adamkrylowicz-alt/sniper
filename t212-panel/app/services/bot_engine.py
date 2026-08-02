@@ -272,7 +272,20 @@ ENTRY_TREND_MAX_DROP_PCT = Decimal("0.03")
 # bota). Limit dotyczy TYLKO liczby otwartych pozycji, NIE liczby
 # kandydatów na liście BotAsset - można mieć dowolnie dużo tickerów do
 # wyboru, bot i tak nie otworzy więcej niż to jednocześnie.
-MAX_CONCURRENT_POSITIONS = 10
+#
+# ZMIENIONE 2026-08-03 z 10 na 6 (Adam: realny budżet ~1000€ - pierwsza
+# propozycja "1-2 pozycje" dała w backteście dużo wyższy drawdown (do 15% w
+# porównaniu do 5-8% przy większej dywersyfikacji) z powodu koncentracji
+# kapitału w niewielu pozycjach - Adam wybrał "zwiększ do 5-6 i sprawdź";
+# 6 dało nieco niższy zwrot ORAZ niższy drawdown niż 5 (12.86%/5.15%dd vs
+# 15.43%/6.15%dd na treningu), więc wybrane jako spokojniejsze) - przy
+# max_dca_levels=7 i entry_amount=100 stare 10 dawało teoretyczne maksimum
+# 10*7*100=7000€ jednocześnie zaangażowanego kapitału, wielokrotnie więcej
+# niż realny budżet. Przy 6 pozycjach i entry_amount PRZELICZONYM na
+# ~16.67€/nogę (patrz UPDATE BotAsset.entry_amount tego dnia) worst-case =
+# 6*7*16.67≈700€, dokładnie budżet przypisany temu silnikowi (700€ z 1000€
+# całości, reszta 300€ na Sygnał).
+MAX_CONCURRENT_POSITIONS = 6
 
 # Stop-loss oparty o realna zmiennosc instrumentu (ATR - Average True Range)
 # ZAMIAST sztywnego % (RiskSettings.stop_loss_pct) - dodane 2026-07-22 na

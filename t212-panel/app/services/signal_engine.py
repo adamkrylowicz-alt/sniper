@@ -94,6 +94,17 @@ ATR_PERIOD = 14
 # price_feed._yahoo_range_for_days) zostawia margines dla RSI(14) na ogonie.
 SIGNAL_LOOKBACK_DAYS = 250
 
+# DODANE 2026-08-03 (Adam: realny budżet ~1000€, "ogranicz do 1-2 otwartych
+# pozycji na bota, nie pięć/dziesięć") - do tej pory `_process_entries` NIE
+# MIAŁO ŻADNEGO limitu (w odróżnieniu od bot_engine.py::MAX_CONCURRENT_
+# POSITIONS) - iterowało WSZYSTKIE 58 tickerów z listy i otwierało pozycję
+# na KAŻDYM który akurat spełnił RSI<próg+cena>SMA200, bez ograniczenia
+# liczby ani nawet jednego-wejścia-na-tick jak ma Micro-Grid. Przy szerokim
+# spadku rynku (wiele tickerów jednocześnie "oversold") mogło to teoretycznie
+# otworzyć dziesiątki pozycji naraz - przy małym budżecie realne ryzyko
+# przekroczenia dostępnego kapitału.
+MAX_CONCURRENT_POSITIONS = 2
+
 # Godziny wejścia - PRD: "Normalny tryb handlu (10:00-15:45/16:00)". Wyjścia
 # (stop-loss/take-profit) NIE są ograniczone do tego okna, tylko do
 # market_hours.is_market_open() - pozycja ma być chroniona przez CAŁĄ sesję,
@@ -307,6 +318,8 @@ def _process_entries(user_id: int, client: T212Client | None, settings: SignalSe
         t.ticker for t in
         SignalTrade.query.filter_by(user_id=user_id, status="OPEN").all()
     }
+    if len(open_tickers) >= MAX_CONCURRENT_POSITIONS:
+        return  # limit otwartych pozycji osiągnięty (patrz MAX_CONCURRENT_POSITIONS) - nic nowego dziś
 
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
@@ -350,6 +363,11 @@ def _process_entries(user_id: int, client: T212Client | None, settings: SignalSe
 
         if rsi < settings.rsi_threshold and price > sma:
             _enter_position(user_id, client, asset, settings, price, atr)
+            return  # NAJWYŻEJ JEDNO nowe wejście na tick - ten sam powód co
+            # bot_engine.py::_process_entries (rate limit T212 na demo, patrz
+            # docstring MAX_CONCURRENT_POSITIONS wyżej) - kolejny kandydat
+            # dostanie szansę w następnym ticku zamiast walczyć o ten sam
+            # ciasny limit /equity/orders w tej samej sekundzie.
 
 
 def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalSettings, pending_order_ids: set[str]) -> None:

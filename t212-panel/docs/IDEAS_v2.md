@@ -1240,3 +1240,62 @@ sumy zwrotu, więcej drawdown) - NIE dominujący zwycięzca jak przy
 `max_dca_levels=7`. Wartości bezwzględnie bardzo małe (ułamki procenta) -
 nie warto mikrooptymalizować. **`stop_loss_atr_mult=3.0` zostaje bez
 zmian** - rozsądny środek, wcześniejsza decyzja potwierdzona.
+
+## ZROBIONE (2026-08-03, noc, KLUCZOWE): dopasowanie sizingu do realnego budżetu ~1000€
+
+Adam ujawnił realne ograniczenie: budżet na oba silniki to max ~1000€ (nie
+konceptualne $10k/$1k używane dotąd w backtestach do wygodnego liczenia %).
+Sprawdzenie stanu na żywo (prod, 2026-08-02 wieczorem, przed zmianą):
+Micro-Grid 10 otwartych pozycji (~1101€ zaangażowane, limit 10 pozycji, ale
+BEZ limitu wartości - przy max_dca_levels=7/entry_amount=100 teoretyczne
+maksimum to 10*7*100=7000€), Sygnał 6 otwartych pozycji (~715€, **ZERO
+limitu liczby pozycji w kodzie** - `_process_entries` iterowało wszystkie
+58 tickerów bez ograniczenia, teoretyczne maksimum 58*100=5800€), EOD 0
+otwartych (limit też brak w kodzie, 30 tickerów). **Razem już ~1816€
+zaangażowane, powyżej deklarowanego budżetu, mimo że żaden silnik jeszcze
+się "nie rozjechał".**
+
+**Decyzja Adama**: nie martwić się obecnymi (demo/testowymi) pozycjami,
+podział budżetu 700€ Micro-Grid / 300€ Sygnał (Micro-Grid dał dziś ~16x
+więcej zwrotu w testach), ograniczyć liczbę jednoczesnych pozycji per bot
+(pierwsza propozycja "1-2" dała w backteście dużo wyższy drawdown - do 15%
+zamiast 5-8% - z powodu koncentracji kapitału w niewielu pozycjach,
+Adam wybrał "zwiększ do 5-6 i sprawdź").
+
+**Micro-Grid**: `MAX_CONCURRENT_POSITIONS` (stała modułowa `bot_engine.py`,
+NIE kolumna bazy) zmieniona z 10 na **6**. Test monkeypatchem (poprawiony po
+tym jak wcześniejsza próba przez `sed` NIE zmieniała wartości w pliku -
+złapane bo różne "koncentracje" dawały identyczną liczbę transakcji, czyli
+faktycznie wciąż liczyły przy starej wartości):
+
+| Pozycje | Kwota/noga | TRAIN | TEST |
+|---|---|---|---|
+| 2 | 50.00€ | +38.57% / dd=14.76% | +4.66% / dd=10.82% |
+| 4 | 25.00€ | +27.65% / dd=9.94% | +4.58% / dd=10.37% |
+| 5 | 20.00€ | +23.43% / dd=10.51% | +4.22% / dd=10.16% |
+| **6** | 16.67€ | +22.61% / dd=12.12% | **+4.70%** / dd=**8.06%** |
+| 8 | 12.50€ | +18.14% / dd=9.72% | +4.46% / dd=6.04% |
+
+6 wybrane - lepszy zwrot testowy i wyraźnie niższy drawdown testowy niż 5,
+mieści się w preferowanym przez Adama zakresie 5-6. `entry_amount`
+przeliczone na wszystkich 38 `BotAsset` (prod) z 100€ na **16.67€**
+(6*7*16.67≈700€ = dokładnie budżet tego silnika).
+
+**Sygnał**: `_process_entries` w `signal_engine.py` NIE MIAŁO ŻADNEGO
+limitu (realna luka, nie tylko kwestia strojenia) - dodany nowy moduł-stała
+`MAX_CONCURRENT_POSITIONS=2` + twardy check na początku funkcji + **NAJWYŻEJ
+JEDNO wejście na tick** (ten sam wzorzec bezpieczeństwa rate-limitu co
+Micro-Grid, którego Sygnał też nie miał). Sygnał nie ma DCA (jedna noga,
+bez uśredniania) więc koncentracja NIE mnoży ryzyka x7 jak w Micro-Gridzie
+- 2 pozycje uznane za strukturalnie bezpieczne przy 300€. `entry_amount`
+przeliczone na wszystkich 58 `SignalAsset` z 100€ na **150€**
+(2*150=300€ = budżet tego silnika).
+
+**Wdrożone TYLKO na prod** (dev ma nieaktualną/inną listę `BotAsset`, 4
+wiersze zamiast 38, i pustą `SignalAsset` - nigdy nie była żywą instancją,
+ten sam wzorzec co wcześniej dziś z `signal_settings`). Kod zmirrorowany
+(`bot_engine.py`, `signal_engine.py`), `run.py` zrestartowany (nowy PID),
+log czysty. **Istniejące otwarte pozycje NIETKNIĘTE** (Adam: "nie
+przejmuj się, to demo/testy") - nowe limity blokują tylko NOWE wejścia,
+dopóki liczba otwartych pozycji nie spadnie naturalnie poniżej nowych
+progów (10→6 dla Micro-Gridu, 6→2 dla Sygnału).
