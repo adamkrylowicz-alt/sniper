@@ -1183,3 +1183,34 @@ znalazło 8 jako najlepsze, ale dopiero test na WIELU niezależnych oknach
 ujawnił że 7 jest lepszym, bardziej odpornym wyborem - dokładnie przykład
 dlaczego walk-forward na jednym oknie to za mało, seria "Build Better
 Strategies" miała rację od początku.
+
+## ZROBIONE (2026-08-02, noc, ciąg dalszy): dca_trigger_pct i take_profit_step_pct sprawdzone multi-window - dca_trigger_pct mocno potwierdzone, tp_step bez zmian
+
+Kontynuacja po zmianie max_dca_levels na 7. Sprawdzenie pozostałych dwóch
+dzisiejszych zmian (dca_trigger_pct, take_profit_step_pct) na tych samych
+4 niezależnych oknach, przy nowym max_dca_levels=7.
+
+**`dca_trigger_pct` (0.015-0.025)**: **0.02 mocno potwierdzone** - jedyna
+wartość dodatnia we WSZYSTKICH 4 oknach (min=+1.19%), najwyższa suma
+(12.08%), najniższy najgorszy drawdown (5.64%). Reszta wartości wyraźnie
+gorsza na każdym froncie (np. 0.015: suma tylko 3.93%, min=-3.35%). Czysty,
+jednoznaczny sygnał identyczny w jakości do `max_dca_levels`. **Zostaje
+0.02, bez zmian.**
+
+**`take_profit_step_pct` (0.0015-0.003)**: bardzo płaskie plateau (suma
+11.33-12.60% dla całego zakresu) - 0.003 wygrywa nieznacznie na agregacie 4
+okien (suma 12.60% vs 12.08% dla obecnego 0.002, ~0.5pp różnicy), ALE
+**pojedyncze, najnowsze okno (ten sam test co reszta dzisiejszej sesji)
+wyraźnie faworyzuje 0.002** (train +11.68% vs +9.46% dla 0.003, test
+dd=3.45% vs 4.24%) - najnowsze okno i agregat 4 okien się NIE ZGADZAJĄ.
+Różnica w agregacie (~0.5pp) jest zbyt mała żeby uznać ją za solidny sygnał
+biorąc pod uwagę że podobnej wielkości różnice były dziś wcześniej uznawane
+za szum (np. RECENT_WINDOW_ROWS). **Świadomie NIE zmieniane** - w
+odróżnieniu od `max_dca_levels` (gdzie 7 dominowało jednoznacznie na
+wszystkich oknach naraz), tu sygnał jest za słaby i sprzeczny między
+metodami. `take_profit_step_pct` zostaje **0.002**.
+
+**Podsumowanie multi-window przeglądu**: `max_dca_levels=7` (zmienione z 8,
+mocny sygnał), `dca_trigger_pct=0.02` (potwierdzone, mocny sygnał),
+`take_profit_step_pct=0.002` (potwierdzone, słaby/mieszany sygnał na
+alternatywę - zostaje ostrożnie przy już zweryfikowanej wartości).
