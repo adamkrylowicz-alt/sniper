@@ -1214,3 +1214,29 @@ metodami. `take_profit_step_pct` zostaje **0.002**.
 mocny sygnał), `dca_trigger_pct=0.02` (potwierdzone, mocny sygnał),
 `take_profit_step_pct=0.002` (potwierdzone, słaby/mieszany sygnał na
 alternatywę - zostaje ostrożnie przy już zweryfikowanej wartości).
+
+## ZROBIONE (2026-08-02, noc, ciąg dalszy): multi-window test Sygnału - stop_loss_atr_mult=3.0 potwierdzone, brak ukrytej słabości do bessy
+
+Ten sam test 4 niezależnych okien co dla Micro-Gridu, teraz na strategii
+Sygnał (58 tickerów, `stop_loss_atr_mult` 1.8-4.0):
+
+| sl_mult | Okno1 | Okno2 | Okno3 | Okno4 | Suma | Min | Max DD |
+|---|---|---|---|---|---|---|---|
+| 1.8 | 0.00% | 0.18% | -0.03% | 0.20% | 0.36% | -0.03% | 0.67% |
+| 2.0 | -0.02% | 0.24% | 0.03% | 0.19% | 0.43% | -0.02% | 0.71% |
+| 3.0 (prod) | -0.06% | 0.43% | 0.05% | 0.31% | 0.74% | -0.06% | 0.89% |
+| 4.0 | -0.07% | 0.66% | -0.03% | 0.33% | 0.89% | -0.07% | 1.03% |
+
+**Kluczowa różnica względem Micro-Gridu: okno 1 (potencjalna bessa)
+pozostaje PRAKTYCZNIE PŁASKIE/blisko zera przy KAŻDEJ wartości** (0.00% do
+-0.09%), zamiast dramatycznie się załamywać jak `max_dca_levels=8` w
+Micro-Gridzie. Wyjaśnienie strukturalne: Sygnał nie uśrednia w dół jak
+DCA - trzyma JEDNĄ pozycję z przesuwanym stopem, więc brak mechanizmu
+"kupuj więcej w spadający rynek" który powodował fragilność Micro-Gridu.
+**Sygnał strukturalnie odporniejszy na bessę niż Micro-Grid.**
+
+Jest tu łagodny, prawdziwy kompromis zwrot/ryzyko (szerszy stop = więcej
+sumy zwrotu, więcej drawdown) - NIE dominujący zwycięzca jak przy
+`max_dca_levels=7`. Wartości bezwzględnie bardzo małe (ułamki procenta) -
+nie warto mikrooptymalizować. **`stop_loss_atr_mult=3.0` zostaje bez
+zmian** - rozsądny środek, wcześniejsza decyzja potwierdzona.
