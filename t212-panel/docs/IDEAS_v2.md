@@ -938,3 +938,53 @@ dobrze dobrane, potwierdzone jako rozsądny wybór, NIE zmieniane.**
 
 Żadna zmiana kodu ani bazy - czysta analiza, dwa kolejne parametry
 potwierdzone jako już rozsądnie ustawione.
+
+## ZROBIONE (2026-08-02, finał): gęsty grid W_TREND_CALM + inne parametry sprawdzone
+
+Kontynuacja tuningu (Adam: "robimy dalej", "jak wynik to zastosuj i leć
+dalej"). Domknięcie wątku `W_TREND_CALM` (waga trend_calm w `_score()`,
+wcześniejsza ablacja on/off pokazała konflikt train/test) - gęsty grid
+0.0-1.0 (9 punktów): środek (0.1-0.5) skacze chaotycznie (szum), ale
+skrajności pouczające - **w=0.0 daje najlepszy TEST ze wszystkich
+(+4.86%/dd=2.07%)**, podczas gdy **w=0.8/1.0 zapadają się na teście**
+(+0.88%/dd=4.17% i **-1.79%/dd=5.92%!**) mimo dobrego treningu - wyraźny
+klif przeuczenia powyżej obecnej wartości. Środek (0.0 vs obecne 0.6) to
+wciąż konflikt train/test (0.0 wygrywa test, 0.6 wygrywa trening) - nie
+spełnia kryterium "oba okna się zgadzają". **W_TREND_CALM zostaje 0.6** -
+potwierdzone jako bezpieczna strefa, wyraźnie z dala od klifu przy 0.8+.
+
+**Dodatkowo sprawdzone i odrzucone dziś jako już dobre/zbyt niepewne:**
+`MAX_ENTRY_RANGE_POSITION` (0.6, już w dobrej strefie - powyżej 0.7 test
+spada z 3.7% na 2.56% i tam zostaje płasko), `RECENT_WINDOW_ROWS` (10,
+POTWIERDZONY CZYSTY SZUM po dokładniejszym gridzie 3-12 - sąsiednie
+wartości skaczą chaotycznie w obie strony, żadna stabilna górka), skala
+progów trendu DROP/SPIKE/DRAWDOWN (test płaski 3.70-3.75% od 0.8x do 2.0x -
+za słaby sygnał), `ATR_PERIOD` (14, gładka krzywa ale prawdziwy kompromis
+zwrot/ryzyko bez dominującej wartości - zostaje).
+
+**Podsumowanie całego przeglądu parametrów Micro-Gridu (2026-08-02):**
+Sprawdzone: dca_trigger_pct, take_profit_step_pct, max_dca_levels,
+stop_loss_pct, dca_scenario (kształt), wagi _score() (4 składniki +
+dokładny grid trend_calm), ATR_STOP_MULTIPLIER, MAX_CONCURRENT_POSITIONS,
+MAX_ENTRY_RANGE_POSITION, RECENT_WINDOW_ROWS, progi trendu, ATR_PERIOD.
+Trzy zmiany zastosowane na prod (dca_trigger_pct=0.02, max_dca_levels=8,
+take_profit_step_pct=0.002), reszta potwierdzona jako już rozsądnie
+ustawiona albo zbyt niepewna żeby ruszać wg dzisiejszego standardu
+(train i test muszą się zgadzać na return I drawdown).
+
+## ZROBIONE (2026-08-02, finał): interakcja 2D dca_trigger_pct x take_profit_step_pct przy max_dca_levels=8 - potwierdzona bez zmian
+
+Sprawdzenie czy dwie dzisiejsze zmiany nadal się wzajemnie wzmacniają po
+zmianie max_dca_levels (poprzedni podobny grid z 31.07 był robiony przy
+starym max_dca_levels=5). Siatka 5x3 (dca_trigger_pct 0.015-0.025 x
+take_profit_step_pct 0.0015-0.0025), 5 lat akcji, walk-forward.
+
+**Wynik: obecna kombinacja (0.02/0.002) jest NAJLEPSZA na teście ze
+wszystkich 15 par** (+3.69%, wyraźny margines nad drugim miejscem +3.50%
+i trzecim +2.83% - oba też przy trig=0.02, tylko inne tp - czyli 0.02
+dominuje niezależnie od take_profit_step_pct). Ciekawy przykład
+przeuczenia złapany po drodze: `trig=0.0175/tp=0.002` miał najlepszy
+TRENING ze wszystkich (+14.43%!) ale test tylko +2.06% - dokładnie ten typ
+pułapki, przed którą chroni walk-forward. **Potwierdzone bez zmian** -
+dwie dzisiejsze zmiany (dca_trigger_pct=0.02, take_profit_step_pct=0.002)
+nadal tworzą najlepszą znalezioną parę po zmianie max_dca_levels na 8.
