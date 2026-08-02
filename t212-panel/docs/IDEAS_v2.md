@@ -1149,3 +1149,37 @@ zostają bez zmian: `dca_trigger_pct=0.02`, `max_dca_levels=8`,
 - to świadomie zaakceptowany kompromis ryzyko/zysk, udokumentowany na
 przyszłość** (gdyby ktoś pytał czemu drawdown jest większy niż w 07.2026,
 odpowiedź jest tutaj).
+
+## ZROBIONE (2026-08-02, noc, KLUCZOWE): max_dca_levels=7 zastępuje 8 - znaleziony przez multi-window metodę lepszy kompromis
+
+Kontynuacja (Adam: "kontynuuj wprowadzanie zmian polepszajacych wynik na
+plus") po odkryciu kompromisu ryzyko/zysk poprzednim testem. Grid
+`max_dca_levels` (5-9) na TYCH SAMYCH 4 niezależnych oknach:
+
+| max_dca | Okno1 (bessa) | Okno2 | Okno3 | Okno4 | Suma | Min | Max DD |
+|---|---|---|---|---|---|---|---|
+| 5 | -3.84% | +2.48% | +3.51% | +3.13% | 5.29% | -3.84% | 8.19% |
+| 6 | -2.93% | +2.11% | +4.23% | +2.55% | 5.96% | -2.93% | 7.33% |
+| **7** | **+1.19%** | +4.54% | +3.82% | +2.53% | **12.08%** | **+1.19%** | **5.64%** |
+| 8 (było) | -3.03% | +4.81% | +3.71% | +3.72% | 9.21% | -3.03% | 7.91% |
+| 9 | -0.57% | +5.10% | +2.94% | +2.90% | 10.37% | -0.57% | 8.56% |
+
+**`max_dca_levels=7` dominuje na KAŻDEJ metryce naraz** - jedyna wartość z
+dodatnim zwrotem we WSZYSTKICH 4 oknach (w tym bessa: +1.19%, jedyny dodatni
+wynik w tym oknie ze wszystkich testowanych wartości), najwyższa suma
+zwrotów (12.08%, bije nawet 8 z 9.21%), najniższy najgorszy drawdown
+(5.64% vs 7.91% dla 8). To NIE jest kompromis między zyskiem a
+odpornością - 7 bije 8 na obu frontach jednocześnie. Potwierdzone też
+pojedynczym oknem (walk-forward test_days=300): train +11.68%/dd=5.12%,
+test +2.50%/dd=3.45% - wyraźnie niższy drawdown na obu oknach niż przy 8
+(dd 6.71%/3.87%), kosztem marginalnie niższego zwrotu testowego (2.50% vs
+2.83%).
+
+**Zastosowane na dev i prod** - `risk_settings.max_dca_levels` zmienione z
+8 na 7 (user_id=1, bot aktywny), BEZ restartu, log czysty. **To
+podsumowuje dobrze cały dzisiejszy łuk**: pojedyncze okno testowe (rano)
+znalazło 8 jako najlepsze, ale dopiero test na WIELU niezależnych oknach
+(wieczorem, na prośbę Adama żeby lepiej wykorzystać już posiadane dane)
+ujawnił że 7 jest lepszym, bardziej odpornym wyborem - dokładnie przykład
+dlaczego walk-forward na jednym oknie to za mało, seria "Build Better
+Strategies" miała rację od początku.
