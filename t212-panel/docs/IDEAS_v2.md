@@ -994,3 +994,39 @@ TRENING ze wszystkich (+14.43%!) ale test tylko +2.06% - dokładnie ten typ
 pułapki, przed którą chroni walk-forward. **Potwierdzone bez zmian** -
 dwie dzisiejsze zmiany (dca_trigger_pct=0.02, take_profit_step_pct=0.002)
 nadal tworzą najlepszą znalezioną parę po zmianie max_dca_levels na 8.
+
+## ZROBIONE (2026-08-02, finał sesji): próba testu strategii Sygnał (RSI/MA/ATR) - wniosek: narzędzie za wolne dla pełnej skali
+
+Po wyczerpaniu prostych testów Micro-Gridu, Adam wybrał kontynuację w
+kierunku Sygnał/EOD. Po drodze poprawiony nieaktualny wpis o mechanice OCO
+w T212 (punkt 4 wyżej - okazał się już rozwiązany 21-28.07, nie "NIE
+zrobione jeszcze" jak sugerował stary zapis).
+
+**Próba 1 (58 tickerów Sygnału, 5 lat, walk-forward, baseline + 3 grid
+searche naraz - rsi_threshold/stop_loss_atr_mult/take_profit_atr_mult):
+ZABITA po 23 minutach czystego CPU bez postępu.** `backtest/signal_runner.py`
+ma komentarz z 30.07 sugerujący optymalizację pod grid search (O(n) zamiast
+O(n^2)), ale przy skali 58 tickerów × 36 konfiguracji × ~200-dniowe okna
+RSI/SMA/ATR liczone w Pythonie na `Decimal` to i tak setki milionów
+operacji - fundamentalnie za wolne bez dalszej optymalizacji (np. numpy,
+którego brak w `requirements.txt`, albo cache'owania SMA/RSI między
+konfiguracjami zamiast przeliczania od zera dla każdej).
+
+**Próba 2 (12 tickerów, TYLKO grid rsi_threshold, 5 punktów)**: skończyła
+się szybko (~kilka minut), ale wynik jest **niewystarczająco liczny żeby
+cokolwiek wywnioskować** - baseline (rsi=35, prod): TRAIN +1.88%/dd=2.14%,
+TEST +0.09%/dd=0.66%, **tylko 16 transakcji testowych na 12 tickerach/300
+dniach**. Grid rsi 25-45: kształt litery U na teście (najgorzej przy
+obecnym 35/40, lepiej na obu skrajach 25/45), ale przy 7-23 transakcjach
+testowych to czysty szum, nie sygnał - o rząd wielkości mniej danych niż
+Micro-Grid (setki transakcji).
+
+**Wniosek: strategia Sygnał wymaga NAJPIERW optymalizacji wydajności
+narzędzia backtestowego** (żeby dało się przetestować pełne 58 tickerów w
+rozsądnym czasie) zanim jakikolwiek grid search na jej parametrach (RSI
+threshold, ATR mnożniki stop/take-profit) da wiarygodny wynik - obecna
+próbka (12 tickerów, kilkanaście transakcji) jest za mała. Nie zmieniano
+żadnego parametru produkcyjnego Sygnału. Do zrobienia w przyszłości (nie
+dziś, sesja i tak bardzo długa): profilowanie `signal_runner.py`/`_compute_rsi`/
+`_compute_sma`/`_compute_atr` pod kątem prawdziwego wąskiego gardła, rozważenie
+numpy albo redukcji liczby przeliczanych konfiguracji na raz.
