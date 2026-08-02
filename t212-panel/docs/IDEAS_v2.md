@@ -160,23 +160,29 @@ odbicie, nie jazda z trendem). Przetestowane na sucho przed wdrożeniem
    - Adam szuka tańszej alternatywy z realnym dostępem do świec (nie chce
      płacić "kokosów" za Finnhub premium ani Polygon).
 
-4. **T212 nie pozwala na ręczne OCO z dwoma jednoczesnymi resting-orderami**
-   (potwierdzone na żywo 2026-07-21, konto user1, SAPd_EQ) - trailing exit
-   (`_manage_trailing_exit` w `bot_engine.py`) próbował trzymać RÓWNOCZEŚNIE
-   LIMIT SELL (take-profit) i STOP (stop-loss) na te same udziały. Próba
-   wystawienia STOP-a po tym jak LIMIT SELL już rezerwuje akcje kończy się
-   błędem T212 `400 selling-equity-not-owned` - broker traktuje akcje jako
-   już "zaklepane" przez pierwsze zlecenie, więc drugie resting-sell na tę
-   samą ilość jest odrzucane. Backoff na tę ścieżkę dodany (żeby nie
-   spamować logu co tick), ale sama mechanika wymaga przeprojektowania.
-   Do przegadania (NIE zrobione jeszcze):
-   - Syntetyczny stop-loss (bot sam pilnuje ceny, Market Sell przy przebiciu)
-     - wada: nie chroni gdy bot offline (dokładnie problem który miał
-       rozwiązać prawdziwy STOP).
-   - Odwrócić mechanikę: trzymać TYLKO STOP, ale przesuwany w górę (klasyczny
-     trailing stop od dołu) zamiast rosnącego LIMIT SELL od góry - jedno
-     resting zlecenie, chroni zawsze, ale zamyka na cofnięciu ceny, nie na
-     sztywnym +krok jak w pierwotnym pomyśle Adama.
+4. **ROZSTRZYGNIĘTE I ZAIMPLEMENTOWANE (2026-07-21, dopracowane 22.07/27.07/
+   28.07) - T212 nie pozwala na ręczne OCO z dwoma jednoczesnymi resting-
+   orderami.** (potwierdzone na żywo 21.07, konto user1, SAPd_EQ) - trailing
+   exit (`_manage_trailing_exit` w `bot_engine.py`) próbował trzymać
+   RÓWNOCZEŚNIE LIMIT SELL (take-profit) i STOP (stop-loss) na te same
+   udziały, T212 odrzucał drugie zlecenie `400 selling-equity-not-owned`.
+   **UWAGA (2026-08-02): ten wpis przez tydzień nieaktualnie sugerował
+   "NIE zrobione jeszcze" - w rzeczywistości wybrano i wdrożono drugą z
+   dwóch opcji tego samego dnia (21.07):** JEDNO zlecenie - pojedynczy,
+   ciągle przesuwany w górę STOP (trailing od dołu), zamiast rosnącego
+   LIMIT SELL. Dopracowane kolejnymi iteracjami: 22.07 - ciągły trailing
+   (goni szczyt ceny, nie tylko przy pełnym minięciu progu) + floor oparty
+   o ATR(14)*1.8 zamiast sztywnego %; 27.07 - pierwsze uzbrojenie liczy
+   `max(floor, ciasny_target)` jednym strzałem (Adam:
+   [[feedback_snajper_profit_protection_priority]] - ochrona zysku
+   priorytetem); 28.07 - wyjątek dla pozycji bez amunicji do DCA (natychmiastowy
+   STOP zakotwiczony w aktualnej cenie, nie czeka na 2 progi zysku). Migracja
+   ze starego dwunożnego OCO (anulowanie zalegăłego `sell_order_id`) też
+   w kodzie. Pełny opis mechaniki w docstringu `_manage_trailing_exit()` i
+   CLAUDE.md z tych dat. **Kompromis świadomie zaakceptowany**: zamyka na
+   cofnięciu ceny (klasyczny trailing stop), nie na sztywnym +krok jak w
+   pierwotnym pomyśle Adama - ale to i tak było jego wyborem po 27.07
+   (ochrona zysku > sztywny target).
 
 ## Otwarte pytania (do rozstrzygnięcia przed kodowaniem)
 - **ROZSTRZYGNIĘTE (2026-07-24), źródło świec 1-min dla EOD:** sprawdzone
