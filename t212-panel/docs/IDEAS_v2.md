@@ -1030,3 +1030,53 @@ próbka (12 tickerów, kilkanaście transakcji) jest za mała. Nie zmieniano
 dziś, sesja i tak bardzo długa): profilowanie `signal_runner.py`/`_compute_rsi`/
 `_compute_sma`/`_compute_atr` pod kątem prawdziwego wąskiego gardła, rozważenie
 numpy albo redukcji liczby przeliczanych konfiguracji na raz.
+
+## ZROBIONE (2026-08-02, kontynuacja nocna): naprawiona wydajność _compute_atr - test na 58 tickerach Sygnału w końcu możliwy
+
+Adam: "napraw wydajność signal_runner.py, potem test na 58". Znaleziony
+realny bug wydajnościowy (nie tylko "za dużo policzone dla tej skali"):
+`_compute_atr()` w OBU miejscach (`bot_engine.py` i `signal_engine.py`,
+"kopia celowa") liczyło True Range dla CAŁEGO przekazanego okna świec, a
+dopiero na końcu brało ostatnie `period` (14) wartości - w Sygnale okno to
+~205 świec (bounded przez `lookback` w `signal_runner.py`), więc **14x
+niepotrzebnej pracy na każde wywołanie**, wołane codziennie dla każdej
+otwartej pozycji. W Micro-Gridzie efekt był jeszcze gorszy - `windows[ticker]`
+przekazywane do `_compute_atr` to CAŁA historia do bieżącego dnia (rosnąca,
+nie bounded), czyli realny O(n²) na ticker, tylko zamaskowany bo ATR liczone
+tam jest tylko przy PIERWSZYM uzbrojeniu pozycji (rzadziej niż codziennie).
+
+**Naprawa**: przycięcie `candles`/`window` do `[-(period+1):]` PRZED pętlą w
+obu kopiach `_compute_atr` - identyczny wynik (TR[i] zależy tylko od świec
+i/i-1, ostatnie `period` TR nie zależą od tego ile świec jest przed nimi),
+zweryfikowane 200 losowymi testami + przypadkami brzegowymi PRZED zmianą w
+kodzie. Potwierdzone też na żywym kodzie: backtest Micro-Gridu (produkcyjne
+parametry, 5 lat, walk-forward) dał BIT-FOR-BIT identyczne liczby przed i po
+zmianie (+11.25%/6.69%dd train, +3.69%/3.30%dd test). Zsynchronizowane do
+prod (`bot_engine.py`, `signal_engine.py`), `run.py` zrestartowany (nowy PID),
+log czysty.
+
+**Efekt**: test na 58 tickerach Sygnału (baseline + 3 grid searche = 36
+konfiguracji), wcześniej ZABITY po 23 minutach bez postępu, teraz **skończył
+się w ciągu kilku minut**.
+
+**Wyniki (58 tickerów, 5 lat, walk-forward, test_days=300):**
+- **BASELINE (prod: rsi=35, sl_atr=2.5, tp_atr=3)**: TRAIN avg_ret=1.29%/
+  avg_dd=1.97%/568 transakcji, TEST avg_ret=0.35%/avg_dd=0.60%/65 transakcji
+  (57-58 tickerów z wystarczającą historią) - dużo solidniejsza próbka niż
+  wcześniejszy mały test (12 tickerów, 7-23 transakcji).
+- **rsi_threshold (25-45)**: train rośnie monotonicznie z luźniejszym progiem
+  (mechaniczny efekt), test niemonotoniczny ale 35 i 45 blisko siebie na
+  szczycie (0.35% vs 0.37%) - 45 kosztem wyraźnie wyższego drawdown (0.83%
+  vs 0.60%). Brak jasnego zwycięzcy - **rsi_threshold zostaje 35**.
+- **take_profit_atr_mult (1.5-5.0)**: **IDENTYCZNY wynik dla KAŻDEJ
+  wartości** (1.29%/1.97%/568 train, 0.35%/0.60%/65 test, wszystkie
+  identyczne) - dokładnie ten sam wzorzec co martwy `stop_loss_pct` w
+  Micro-Gridzie: take-profit software'owy prawdopodobnie NIGDY się nie
+  wykonuje, bo trailing STOP zawsze łapie pozycję pierwszy. Do
+  zweryfikowania rozbiciem `exit_reason` (w toku).
+- **stop_loss_atr_mult (1.0-3.0+)**: **CZYSTY, SPÓJNY SYGNAŁ - train i test
+  zgadzają się na CAŁEJ osi.** Monotonicznie rośnie z szerszym stopem: 1.0
+  (train -0.18%/test -0.14%, OBA UJEMNE) → 2.5 obecne (train +1.29%/test
+  +0.35%) → 3.0 (train +1.73%/test +0.49%, LEPSZE na obu oknach ORAZ lepszy
+  zwrot/drawdown niż 2.5: test 0.70 vs 0.58). Rozszerzony grid w toku (3.5-5.0)
+  żeby sprawdzić czy to szeroka górka czy trzeba iść jeszcze wyżej.

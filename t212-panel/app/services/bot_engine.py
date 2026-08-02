@@ -295,19 +295,29 @@ def _compute_atr(candles: list[dict] | None, period: int = ATR_PERIOD) -> Decima
     ATR = prosta srednia (nie wygladzanie Wildera, dla prostoty) ostatnich
     `period` wartosci TR. Wymaga co najmniej period+1 swiec (potrzebny
     poprzedni close pierwszej liczonej swiecy) - None gdy za malo danych.
+
+    PERF (2026-08-02, znalezione przy próbie grid searchu Sygnału na 58
+    tickerach - zabite po 23 min bez postępu): stara wersja liczyła True
+    Range dla CAŁEGO przekazanego `candles` (w backteście Micro-Gridu to
+    cała historia do bieżącego dnia, rosnąca - realny O(n^2) na ticker), a
+    dopiero na końcu brała ostatnie `period` wartości. Przycięcie do
+    `period+1` PRZED pętlą daje IDENTYCZNY wynik (TR[i] zależy tylko od
+    świec i/i-1, ostatnie `period` TR nie zależą od tego ile świec jest
+    przed nimi) - zweryfikowane 200 losowymi testami + przypadkami
+    brzegowymi przed zmianą.
     """
     if not candles or len(candles) < period + 1:
         return None
 
+    window = candles[-(period + 1):]
     true_ranges = []
-    for i in range(1, len(candles)):
-        high = Decimal(str(candles[i]["h"]))
-        low = Decimal(str(candles[i]["l"]))
-        prev_close = Decimal(str(candles[i - 1]["c"]))
+    for i in range(1, len(window)):
+        high = Decimal(str(window[i]["h"]))
+        low = Decimal(str(window[i]["l"]))
+        prev_close = Decimal(str(window[i - 1]["c"]))
         true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
 
-    last_n = true_ranges[-period:]
-    return sum(last_n) / len(last_n)
+    return sum(true_ranges) / len(true_ranges)
 
 
 def _get_atr_stop_distance(ticker: str) -> Decimal | None:

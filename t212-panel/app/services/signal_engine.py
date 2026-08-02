@@ -192,17 +192,29 @@ def _compute_sma(closes: list[Decimal], period: int = MA_PERIOD) -> Decimal | No
 
 
 def _compute_atr(candles: list[dict] | None, period: int = ATR_PERIOD) -> Decimal | None:
-    """Identyczna formuła co bot_engine.py::_compute_atr - kopia celowa (patrz docstring modułu, "osobna strategia")."""
+    """
+    Identyczna formuła co bot_engine.py::_compute_atr - kopia celowa (patrz docstring modułu, "osobna strategia").
+
+    PERF (2026-08-02, znalezione przy próbie grid searchu na 58 tickerach -
+    58 tickerów x 36 konfiguracji parametrów zabite po 23 min bez postępu):
+    stara wersja liczyła True Range dla CAŁEGO przekazanego okna (u wołających
+    w signal_runner.py/bot_engine.py to ~205 świec), a dopiero na końcu brała
+    ostatnie `period` (14) wartości - 14x niepotrzebnej pracy na wywołanie,
+    wołane co dzień dla każdej otwartej pozycji. Przycięcie do `period+1`
+    PRZED pętlą daje IDENTYCZNY wynik (TR[i] zależy tylko od świec i/i-1,
+    ostatnie `period` TR nie zależą od tego ile świec jest przed nimi) -
+    zweryfikowane 200 losowymi testami + przypadkami brzegowymi przed zmianą.
+    """
     if not candles or len(candles) < period + 1:
         return None
+    window = candles[-(period + 1):]
     true_ranges = []
-    for i in range(1, len(candles)):
-        high = Decimal(str(candles[i]["h"]))
-        low = Decimal(str(candles[i]["l"]))
-        prev_close = Decimal(str(candles[i - 1]["c"]))
+    for i in range(1, len(window)):
+        high = Decimal(str(window[i]["h"]))
+        low = Decimal(str(window[i]["l"]))
+        prev_close = Decimal(str(window[i - 1]["c"]))
         true_ranges.append(max(high - low, abs(high - prev_close), abs(low - prev_close)))
-    last_n = true_ranges[-period:]
-    return sum(last_n) / len(last_n)
+    return sum(true_ranges) / len(true_ranges)
 
 
 def _finalize_closed_trade(user_id: int, trade: SignalTrade, via: str, fill_price: Decimal) -> None:
