@@ -175,6 +175,11 @@
                     >
                 </div>
 
+                <div class="tile__mode-toggle" role="group" aria-label="Tryb zlecenia dla {{ tile.ticker }}">
+                    <button type="button" class="tile__mode-btn tile__mode-btn--active" data-mode="market">RYNEK</button>
+                    <button type="button" class="tile__mode-btn" data-mode="limit">LIMIT</button>
+                </div>
+
                 <div class="tile__flash"></div>
                 <div class="tile__status"></div>
 
@@ -189,15 +194,6 @@
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                             <path d="M12 5v14M5 12l7 7 7-7"/>
                         </svg>
-                        SPRZEDAJ
-                    </button>
-                </div>
-                <div class="tile__limit-label">LIMIT (cena z pola powyżej)</div>
-                <div class="tile__actions tile__actions--limit">
-                    <button class="tile__btn tile__btn--limit tile__btn--limit-buy" data-side="buy">
-                        KUP
-                    </button>
-                    <button class="tile__btn tile__btn--limit tile__btn--limit-sell" data-side="sell">
                         SPRZEDAJ
                     </button>
                 </div>

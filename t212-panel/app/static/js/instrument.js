@@ -804,10 +804,18 @@ async function loadLimits() {
     }
 }
 
+// Tryb zlecenia RYNEK/LIMIT - przelacznik zamiast osobnych przyciskow
+// (Adam, 2026-07-31: "zrob po prostu switch market/limit a guziki zostaw
+// te same") - poprzednia wersja z osobnym drugim rzedem "LIMIT KUP"/
+// "LIMIT SPRZEDAJ" psula layout kafelka. Teraz TE SAME Kup/Sprzedaj
+// przyciski ponizej wysylaja MARKET albo LIMIT zaleznie od orderMode.
+let orderMode = "market";
+
 async function sendOrder(side) {
     const quantity = getQuantity(side);
     const statusEl = document.getElementById("instrument-status");
     const btns = document.querySelectorAll(".focus-tile__btn");
+    const limitPriceInput = document.getElementById("instrument-limit-price");
 
     if (!quantity || Number(quantity) <= 0) {
         const active = document.querySelector(".tile__preset--active");
@@ -823,9 +831,19 @@ async function sendOrder(side) {
         return;
     }
 
-    const price = lastQuote && lastQuote.c ? Number(lastQuote.c) : null;
-    if (price && cachedMaxOrderValue) {
-        const estValue = Number(quantity) * price;
+    const marketPrice = lastQuote && lastQuote.c ? Number(lastQuote.c) : null;
+    let limitPrice = null;
+    if (orderMode === "limit") {
+        limitPrice = limitPriceInput.value;
+        if (!limitPrice || Number(limitPrice) <= 0) {
+            statusEl.textContent = "Podaj cenę LIMIT > 0";
+            limitPriceInput.focus();
+            return;
+        }
+    }
+
+    if (orderMode === "market" && marketPrice && cachedMaxOrderValue) {
+        const estValue = Number(quantity) * marketPrice;
         if (estValue >= cachedMaxOrderValue * CONFIRM_THRESHOLD_RATIO) {
             const confirmed = await confirmDialog(
                 `Duże zlecenie: ${side === "buy" ? "KUP" : "SPRZEDAJ"} ${quantity} × ${ticker.split("_")[0]} ` +
@@ -836,22 +854,29 @@ async function sendOrder(side) {
     }
 
     btns.forEach((b) => (b.disabled = true));
-    statusEl.textContent = "wysyłanie…";
+    statusEl.textContent = orderMode === "limit" ? "wysyłanie LIMIT…" : "wysyłanie…";
 
     try {
-        const resp = await fetch("/warp/order", {
+        const url = orderMode === "limit" ? "/warp/order/limit" : "/warp/order";
+        const body = orderMode === "limit"
+            ? { ticker, side, quantity, price: limitPrice }
+            : { ticker, side, quantity, estimated_price: marketPrice };
+        const resp = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ticker, side, quantity, estimated_price: price }),
+            body: JSON.stringify(body),
         });
         const data = await resp.json();
 
         if (data.ok) {
             playSuccess();
-            statusEl.textContent = `OK #${data.order_id ?? "?"}`;
+            statusEl.textContent = orderMode === "limit" ? `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}` : `OK #${data.order_id ?? "?"}`;
             const flash = document.getElementById("instrument-flash");
             flash.classList.add("focus-tile__flash--ok");
             setTimeout(() => flash.classList.remove("focus-tile__flash--ok"), 400);
+            if (orderMode === "limit") {
+                await loadTradeLevels(); // odswiez linie na wykresie - nowe zlecenie pojawi sie od razu
+            }
         } else if (data.blocked) {
             playError();
             statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
@@ -873,64 +898,15 @@ document.querySelector(".instrument-detail__actions").addEventListener("click", 
     if (btn) sendOrder(btn.dataset.side);
 });
 
-// Zlozenie NOWEGO zlecenia LIMIT (Adam, 2026-07-30: "jak wystawić order
-// limit np na cocacole?? jak kurwa??") - w odroznieniu od Kup/Sprzedaj
-// wyzej (zawsze MARKET po biezacej cenie), tu cena jest WYMAGANA (to
-// faktyczny limit, nie szacunek) - pole #instrument-limit-price, bez
-// auto-wypelniania (swiadomy wybor usera, nie podpowiedz).
-async function sendLimitOrder(side) {
-    const quantity = getQuantity(side);
-    const priceInput = document.getElementById("instrument-limit-price");
-    const price = priceInput.value;
-    const statusEl = document.getElementById("instrument-status");
-    const btns = document.querySelectorAll(".focus-tile__btn, .tile__btn--limit");
-
-    if (!quantity || Number(quantity) <= 0) {
-        statusEl.textContent = "Podaj ilość > 0";
-        return;
-    }
-    if (!price || Number(price) <= 0) {
-        statusEl.textContent = "Podaj cenę LIMIT > 0";
-        priceInput.focus();
-        return;
-    }
-
-    btns.forEach((b) => (b.disabled = true));
-    statusEl.textContent = "wysyłanie LIMIT…";
-
-    try {
-        const resp = await fetch("/warp/order/limit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ticker, side, quantity, price }),
-        });
-        const data = await resp.json();
-
-        if (data.ok) {
-            playSuccess();
-            statusEl.textContent = `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}`;
-            const flash = document.getElementById("instrument-flash");
-            flash.classList.add("focus-tile__flash--ok");
-            setTimeout(() => flash.classList.remove("focus-tile__flash--ok"), 400);
-            await loadTradeLevels(); // odswiez linie na wykresie - nowe zlecenie pojawi sie od razu
-        } else if (data.blocked) {
-            playError();
-            statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
-        } else {
-            playError();
-            statusEl.textContent = `BŁĄD: ${data.error ?? "nieznany"}`;
-        }
-    } catch (err) {
-        playError();
-        statusEl.textContent = "BŁĄD SIECI";
-        console.error(err);
-    } finally {
-        btns.forEach((b) => (b.disabled = false));
-    }
-}
-
-document.getElementById("btn-limit-buy").addEventListener("click", () => sendLimitOrder("buy"));
-document.getElementById("btn-limit-sell").addEventListener("click", () => sendLimitOrder("sell"));
+document.getElementById("instrument-mode-toggle").addEventListener("click", (e) => {
+    const btn = e.target.closest(".tile__mode-btn");
+    if (!btn) return;
+    orderMode = btn.dataset.mode;
+    document.querySelectorAll("#instrument-mode-toggle .tile__mode-btn").forEach((b) => {
+        b.classList.toggle("tile__mode-btn--active", b === btn);
+    });
+    document.getElementById("instrument-limit-price").classList.toggle("instrument-detail__limit-price--hidden", orderMode !== "limit");
+});
 
 document.getElementById("btn-instrument-back").addEventListener("click", () => {
     if (document.referrer) {

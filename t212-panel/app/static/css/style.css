@@ -817,34 +817,36 @@ img.tile__logo {
 }
 .tile__btn--sell:hover { background: rgba(229, 72, 77, 0.12); }
 
-/* Drugi rzad akcji - LIMIT KUP/SPRZEDAJ (dodane 2026-07-30, Adam: "jak
-   wystawić order limit np na cocacole", potem "zob lik limit jak sie
-   chojowo rozjecahlo wsio" - pierwsza wersja mialo tekst "LIMIT KUP"/
-   "LIMIT SPRZEDAJ" przy zmniejszonym foncie w polowie waskiego kafelka
-   (160-200px), przez co "SPRZEDAJ" sie zawijalo i psulo wysokosc calego
-   wiersza siatki 3x3. FIX: same litery co glowne KUP/SPRZEDAJ (dowiedzione
-   ze mieszcza sie w polowie kafelka przy tym samym rozmiarze), etykieta
-   "LIMIT" przeniesiona na WLASNA, pelnoszerokosciowa linijke nad
-   przyciskami (zero ryzyka zawijania - jeden ciag tekstu na cala szerokosc).
-*/
-.tile__limit-label {
+/* Przelacznik trybu zlecenia RYNEK/LIMIT (2026-07-31, Adam: "zrob po
+   prostu switch market/limit a guziki zostaw te same") - ZASTĘPUJE
+   poprzednia wersje z osobnym drugim rzedem "LIMIT KUP"/"LIMIT SPRZEDAJ"
+   (psula layout kafelka - patrz historia w git log tego pliku). Teraz
+   SAME przyciski KUP/SPRZEDAJ obsluguja oba tryby, ten przelacznik tylko
+   ustawia ktory - zero dodatkowej wysokosci kafelka. */
+.tile__mode-toggle {
+    display: flex;
+    border: 1px solid var(--hairline);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.tile__mode-btn {
+    flex: 1 1 50%;
+    font-family: inherit;
     font-size: 10px;
-    color: var(--text-muted);
-    text-align: center;
+    font-weight: 600;
     letter-spacing: 0.04em;
-    margin-top: 6px;
+    padding: 5px 0;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
 }
-.tile__actions--limit {
-    margin-top: 4px;
-    flex-direction: row;
-    gap: 6px;
+.tile__mode-btn:hover { color: var(--text-bright); }
+.tile__mode-btn--active {
+    background: var(--accent-blue);
+    color: #fff;
 }
-.tile__btn--limit {
-    color: var(--accent-blue);
-    border-color: var(--accent-blue);
-    opacity: 0.75;
-}
-.tile__btn--limit:hover { background: rgba(74, 158, 255, 0.12); opacity: 1; }
+.tile__mode-btn--active:hover { color: #fff; }
 
 .tile__btn:disabled {
     opacity: 0.35;
@@ -2043,17 +2045,17 @@ img.focus-tile__logo {
     margin-top: auto;
 }
 
-/* LIMIT KUP/SPRZEDAJ (2026-07-30) - cena na WLASNEJ linii, przyciski pod
-   nia (nie w jednym wierszu z polem ceny) - patrz analogiczny komentarz
-   przy .instrument-detail__limit-price-row (fix po "rozjecahlo wsio"). */
-.focus-tile__limit-price-row { margin-top: 6px; }
-.focus-tile__limit-price-row .tile__price { width: 100%; }
-.focus-tile__limit-row {
+/* Przelacznik RYNEK/LIMIT + pole ceny LIMIT (2026-07-31) - ZASTĘPUJE
+   poprzednia wersje z osobnym drugim rzedem "LIMIT KUP"/"LIMIT SPRZEDAJ"
+   (patrz analogiczny komentarz przy .instrument-detail__mode-row). */
+.focus-tile__mode-row {
     display: flex;
-    gap: 4px;
-    margin-top: 4px;
+    gap: 6px;
+    margin-top: 6px;
 }
-.focus-tile__limit-row .tile__btn--limit { flex: 1 1 auto; }
+.focus-tile__mode-row .tile__mode-toggle { flex: 1 1 auto; }
+.focus-tile__limit-price { flex: 1 1 auto; min-width: 0; }
+.focus-tile__limit-price--hidden { display: none; }
 
 .focus-tile__btn {
     flex: 1;
@@ -2216,23 +2218,19 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__qty-presets { grid-template-columns: repeat(5, 1fr); }
 .instrument-detail__actions { max-width: 420px; margin: 0 auto; }
 
-/* Nowy wiersz LIMIT KUP/SPRZEDAJ (2026-07-30) - pod glownymi Kup/Sprzedaj
-   (market). Cena na WLASNEJ linii nad przyciskami (nie w jednym wierszu
-   z nimi) - naprawione po zgloszeniu "zob lik limit jak sie chojowo
-   rozjecahlo wsio": trzy elementy (input+2 przyciski) w jednym wierszu
-   zbyt latwo sie zawijaly/gniotly przy waskim ekranie. */
-.instrument-detail__limit-price-row {
-    max-width: 420px;
-    margin: 8px auto 0;
-}
-.instrument-detail__limit-price-row .tile__price { width: 100%; }
-.instrument-detail__limit-row {
+/* Przelacznik RYNEK/LIMIT + pole ceny LIMIT (2026-07-31) - ZASTĘPUJE
+   poprzednia wersje z osobnym drugim rzedem "LIMIT KUP"/"LIMIT SPRZEDAJ"
+   (Adam: "zrob po prostu switch market/limit a guziki zostaw te same").
+   Pole ceny ukryte w trybie RYNEK (instrument.js toggle'uje klase). */
+.instrument-detail__mode-row {
     display: flex;
     gap: 6px;
     max-width: 420px;
-    margin: 6px auto 0;
+    margin: 8px auto 0;
 }
-.instrument-detail__limit-row .tile__btn--limit { flex: 1 1 auto; }
+.instrument-detail__mode-row .tile__mode-toggle { flex: 1 1 auto; }
+.instrument-detail__limit-price { flex: 1 1 auto; min-width: 0; }
+.instrument-detail__limit-price--hidden { display: none; }
 
 .instrument-detail__max-hints {
     display: flex;

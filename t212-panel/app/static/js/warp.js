@@ -110,21 +110,40 @@ async function loadLimits() {
     }
 }
 
+// Tryb zlecenia (RYNEK/LIMIT) - przelacznik per-kafelek (Adam, 2026-07-31:
+// "zrob po prostu switch market/limit a guziki zostaw te same" - poprzednia
+// wersja z osobnym drugim rzedem "LIMIT KUP"/"LIMIT SPRZEDAJ" psula layout
+// (kafelek za niski, przyciski wystawaly poza ramke, patrz ss3/ss4.png).
+// Teraz TE SAME przyciski KUP/SPRZEDAJ wysylaja MARKET albo LIMIT zaleznie
+// od aktywnego trybu - zero dodatkowych przyciskow, zero dodatkowej
+// wysokosci kafelka. tile.dataset.orderMode - "market" (domyslnie) albo
+// "limit", ustawiane klikiem w .tile__mode-btn.
+function getOrderMode(tile) {
+    return tile.dataset.orderMode || "market";
+}
+
 async function sendOrder(tile, side) {
+    const mode = getOrderMode(tile);
     const ticker = tile.dataset.ticker;
     const quantity = getQuantity(tile);
-    const estimatedPrice = getEstimatedPrice(tile);
+    const price = getEstimatedPrice(tile);
     const buttons = tile.querySelectorAll(".tile__btn");
 
     if (!quantity || Number(quantity) <= 0) {
         setStatus(tile, "Podaj ilość > 0");
         return;
     }
+    if (mode === "limit" && (!price || Number(price) <= 0)) {
+        setStatus(tile, "Podaj cenę LIMIT > 0 (pole ceny powyżej)");
+        return;
+    }
 
-    // Modal potwierdzenia - TYLKO gdy mamy zarówno cenę ręczną, jak i
-    // skonfigurowany Hard Cap (bez tego nie ma z czego liczyć progu 70%).
-    if (estimatedPrice && cachedMaxOrderValue) {
-        const estValue = Number(quantity) * Number(estimatedPrice);
+    // Modal potwierdzenia - TYLKO w trybie RYNEK, gdy mamy zarówno cenę
+    // ręczną, jak i skonfigurowany Hard Cap (bez tego nie ma z czego liczyć
+    // progu 70%). W trybie LIMIT cena jest już wymagana/celowa, nie
+    // szacunkowa - risk_guard po stronie serwera i tak sprawdza Hard Cap.
+    if (mode === "market" && price && cachedMaxOrderValue) {
+        const estValue = Number(quantity) * Number(price);
         if (estValue >= cachedMaxOrderValue * CONFIRM_THRESHOLD_RATIO) {
             const label = side === "buy" ? "KUP" : "SPRZEDAJ";
             const confirmed = await confirmDialog(
@@ -136,81 +155,29 @@ async function sendOrder(tile, side) {
     }
 
     buttons.forEach((b) => (b.disabled = true));
-    setStatus(tile, "wysyłanie…");
+    setStatus(tile, mode === "limit" ? "wysyłanie LIMIT…" : "wysyłanie…");
 
     try {
-        const resp = await fetch("/warp/order", {
+        const url = mode === "limit" ? "/warp/order/limit" : "/warp/order";
+        const body = mode === "limit"
+            ? { ticker, side, quantity, price }
+            : { ticker, side, quantity, estimated_price: price };
+        const resp = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                ticker,
-                side,
-                quantity,
-                estimated_price: estimatedPrice,
-            }),
+            body: JSON.stringify(body),
         });
         const data = await resp.json();
 
         if (data.ok) {
             flashTile(tile, "ok");
             playSuccess();
-            setStatus(tile, `OK #${data.order_id ?? "?"}`);
-            loadAccount();
-        } else if (data.blocked) {
-            flashTile(tile, "error");
-            playError();
-            setStatus(tile, `ZABLOKOWANE: ${data.reason ?? data.decision}`);
-        } else {
-            flashTile(tile, "error");
-            playError();
-            setStatus(tile, `BŁĄD: ${data.error ?? "nieznany"}`);
-        }
-    } catch (err) {
-        flashTile(tile, "error");
-        playError();
-        setStatus(tile, "BŁĄD SIECI");
-        console.error(err);
-    } finally {
-        buttons.forEach((b) => (b.disabled = false));
-    }
-}
-
-// Zlozenie NOWEGO zlecenia LIMIT (Adam, 2026-07-30: "jak wystawić order
-// limit np na cocacole?? jak kurwa??" - do tej pory jedynym sposobem bylo
-// zlozyc je recznie w prawdziwej apce T212 albo przez ad-hoc skrypt).
-// Reuzywa TO SAMO pole tile__price co MARKET (tam opcjonalne - tu wymagane,
-// bo to faktyczny limit, nie szacunek) i te sama ilosc/preset.
-async function sendLimitOrder(tile, side) {
-    const ticker = tile.dataset.ticker;
-    const quantity = getQuantity(tile);
-    const price = getEstimatedPrice(tile);
-    const buttons = tile.querySelectorAll(".tile__btn");
-
-    if (!quantity || Number(quantity) <= 0) {
-        setStatus(tile, "Podaj ilość > 0");
-        return;
-    }
-    if (!price || Number(price) <= 0) {
-        setStatus(tile, "Podaj cenę LIMIT > 0 (pole ceny powyżej)");
-        return;
-    }
-
-    buttons.forEach((b) => (b.disabled = true));
-    setStatus(tile, "wysyłanie LIMIT…");
-
-    try {
-        const resp = await fetch("/warp/order/limit", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ticker, side, quantity, price }),
-        });
-        const data = await resp.json();
-
-        if (data.ok) {
-            flashTile(tile, "ok");
-            playSuccess();
-            setStatus(tile, `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}`);
-            loadPendingOrders();
+            setStatus(tile, mode === "limit" ? `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}` : `OK #${data.order_id ?? "?"}`);
+            if (mode === "limit") {
+                loadPendingOrders();
+            } else {
+                loadAccount();
+            }
         } else if (data.blocked) {
             flashTile(tile, "error");
             playError();
@@ -233,10 +200,13 @@ async function sendLimitOrder(tile, side) {
 document.querySelectorAll(".tile").forEach(setupPresets);
 
 document.getElementById("warp-grid").addEventListener("click", (event) => {
-    const limitBtn = event.target.closest(".tile__btn--limit");
-    if (limitBtn) {
-        const tile = limitBtn.closest(".tile");
-        sendLimitOrder(tile, limitBtn.dataset.side);
+    const modeBtn = event.target.closest(".tile__mode-btn");
+    if (modeBtn) {
+        const tile = modeBtn.closest(".tile");
+        tile.dataset.orderMode = modeBtn.dataset.mode;
+        tile.querySelectorAll(".tile__mode-btn").forEach((b) => {
+            b.classList.toggle("tile__mode-btn--active", b === modeBtn);
+        });
         return;
     }
     const btn = event.target.closest(".tile__btn");

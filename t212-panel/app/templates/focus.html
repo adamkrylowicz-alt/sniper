@@ -71,6 +71,14 @@
                     <input type="number" class="tile__qty-custom-input tile__qty-custom-input--hidden" min="0" step="0.0001">
                 </div>
 
+                <div class="focus-tile__mode-row">
+                    <div class="tile__mode-toggle" role="group" aria-label="Tryb zlecenia dla {{ ticker }}">
+                        <button type="button" class="tile__mode-btn tile__mode-btn--active" data-mode="market">RYNEK</button>
+                        <button type="button" class="tile__mode-btn" data-mode="limit">LIMIT</button>
+                    </div>
+                    <input type="number" class="tile__price focus-tile__limit-price focus-tile__limit-price--hidden" placeholder="cena LIMIT" step="0.01" min="0" aria-label="Cena LIMIT dla {{ ticker }}">
+                </div>
+
                 <div class="focus-tile__flash"></div>
                 <div class="focus-tile__status"></div>
 
@@ -87,13 +95,6 @@
                         </svg>
                         SPRZEDAJ
                     </button>
-                </div>
-                <div class="focus-tile__limit-price-row">
-                    <input type="number" class="tile__price focus-tile__limit-price" placeholder="cena LIMIT" step="0.01" min="0" aria-label="Cena LIMIT dla {{ ticker }}">
-                </div>
-                <div class="focus-tile__limit-row">
-                    <button class="tile__btn tile__btn--limit tile__btn--limit-buy" data-side="buy">LIMIT KUP</button>
-                    <button class="tile__btn tile__btn--limit tile__btn--limit-sell" data-side="sell">LIMIT SPRZEDAJ</button>
                 </div>
             </div>
             {% endfor %}

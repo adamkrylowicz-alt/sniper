@@ -116,6 +116,22 @@
         <input type="number" class="tile__qty-custom-input tile__qty-custom-input--hidden" min="0" step="0.0001" id="instrument-qty-custom">
     </div>
 
+    <div class="instrument-detail__mode-row">
+        <div class="tile__mode-toggle" id="instrument-mode-toggle" role="group" aria-label="Tryb zlecenia">
+            <button type="button" class="tile__mode-btn tile__mode-btn--active" data-mode="market">RYNEK</button>
+            <button type="button" class="tile__mode-btn" data-mode="limit">LIMIT</button>
+        </div>
+        <input
+            type="number"
+            id="instrument-limit-price"
+            class="tile__price instrument-detail__limit-price instrument-detail__limit-price--hidden"
+            placeholder="cena LIMIT"
+            step="0.01"
+            min="0"
+            aria-label="Cena LIMIT dla nowego zlecenia"
+        >
+    </div>
+
     <div class="focus-tile__flash" id="instrument-flash"></div>
     <div class="focus-tile__status" id="instrument-status"></div>
 
@@ -131,26 +147,6 @@
                 <path d="M12 5v14M5 12l7 7 7-7"/>
             </svg>
             SPRZEDAJ
-        </button>
-    </div>
-
-    <div class="instrument-detail__limit-price-row">
-        <input
-            type="number"
-            id="instrument-limit-price"
-            class="tile__price"
-            placeholder="cena LIMIT"
-            step="0.01"
-            min="0"
-            aria-label="Cena LIMIT dla nowego zlecenia"
-        >
-    </div>
-    <div class="instrument-detail__limit-row">
-        <button type="button" class="tile__btn tile__btn--limit tile__btn--limit-buy" id="btn-limit-buy" data-side="buy">
-            LIMIT KUP
-        </button>
-        <button type="button" class="tile__btn tile__btn--limit tile__btn--limit-sell" id="btn-limit-sell" data-side="sell">
-            LIMIT SPRZEDAJ
         </button>
     </div>
 
