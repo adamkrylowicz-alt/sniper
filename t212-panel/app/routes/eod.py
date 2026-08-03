@@ -214,7 +214,8 @@ def update_settings():
         stop_loss_pct = Decimal(str(payload.get("stop_loss_pct", settings.stop_loss_pct)))
         take_profit_pct = Decimal(str(payload.get("take_profit_pct", settings.take_profit_pct)))
         max_concurrent_positions = int(payload.get("max_concurrent_positions", settings.max_concurrent_positions))
-        if stop_loss_pct <= 0 or take_profit_pct <= 0 or max_concurrent_positions <= 0:
+        fx_fee_pct = Decimal(str(payload.get("fx_fee_pct", settings.fx_fee_pct)))
+        if stop_loss_pct <= 0 or take_profit_pct <= 0 or max_concurrent_positions <= 0 or fx_fee_pct < 0:
             raise ValueError("Wartości muszą być dodatnie.")
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Nieprawidłowe dane w ustawieniach ryzyka."), 400
@@ -224,6 +225,8 @@ def update_settings():
     settings.max_concurrent_positions = max_concurrent_positions
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
     settings.force_close_enabled = bool(payload.get("force_close_enabled", settings.force_close_enabled))
+    settings.fx_cost_adjustment_enabled = bool(payload.get("fx_cost_adjustment_enabled", settings.fx_cost_adjustment_enabled))
+    settings.fx_fee_pct = fx_fee_pct
 
     # Money management √equity - ten sam wzorzec auto-capture co routes/bot.py
     # (2026-07-31), dodany tutaj 2026-08-03 (Adam: "dodaj do obu").

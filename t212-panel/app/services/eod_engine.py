@@ -288,10 +288,18 @@ def _enter_position(
         effective_entry_amount = compute_equity_scaled_amount(
             asset.entry_amount, current_equity, settings.equity_sizing_baseline or Decimal("0"),
         )
+    # Koszt przewalutowania (FX) dla tickerów USD na koncie EUR (patrz
+    # EODSettings.fx_cost_adjustment_enabled) - PODBIJA próg stop-loss,
+    # NIE dotyka ceny użytej do wyliczenia quantity.
+    fx_reference_price = None
+    if asset.currency == "USD" and settings.fx_cost_adjustment_enabled:
+        fx_reference_price = price * (1 + settings.fx_fee_pct * 2)
+
     try:
         decision = eod_strategy.compute_entry(
             effective_entry_amount, price, multiplier, reference_price,
             settings.stop_loss_pct, settings.take_profit_pct,
+            fx_reference_price=fx_reference_price,
         )
     except eod_strategy.EntryValidationError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: {exc}")

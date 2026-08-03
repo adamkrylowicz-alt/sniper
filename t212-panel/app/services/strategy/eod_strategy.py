@@ -41,14 +41,27 @@ def compute_entry(
     reference_price: Decimal,
     stop_loss_pct: Decimal,
     take_profit_pct: Decimal,
+    fx_reference_price: Decimal | None = None,
 ) -> EntryDecision:
-    """Wyciągnięte z `_enter_position()` w eod_engine.py."""
+    """
+    Wyciągnięte z `_enter_position()` w eod_engine.py.
+
+    `fx_reference_price` (dodane 2026-08-03, patrz EODSettings.fx_cost_
+    adjustment_enabled) - dla tickerów USD na koncie EUR, `price` podbite o
+    koszt round-trip przewalutowania. Używane WYŁĄCZNIE do `stop_loss_price`
+    (próg EOD jest ciasny - 0.4% domyślnie, tego samego rzędu wielkości co
+    koszt FX ~0.3%, więc to TU realnie ma znaczenie), NIE do `quantity`.
+    `take_profit_price` zostaje bez zmian - to recovery target (cena sprzed
+    spadku), zwykle już dużo wyższy niż próg FX z definicji triggera (spadek
+    >=2%). `None` (domyślnie, albo ticker w EUR) = użyj surowej `price`.
+    """
     amount = entry_amount * multiplier
     quantity = (amount / price).quantize(Decimal("0.0001"))
     if quantity <= 0:
         raise EntryValidationError(f"wyliczona ilość <= 0 (kwota {amount} / cena {price}).")
 
-    stop_loss_price = price * (1 - stop_loss_pct)
+    stop_loss_ref = fx_reference_price if fx_reference_price is not None else price
+    stop_loss_price = stop_loss_ref * (1 - stop_loss_pct)
     # TP = powrót do ceny SPRZED spadku (reference_price z _worst_recent_drop) -
     # fallback na sztywny % TYLKO gdyby reference_price wypadł <= cenie wejścia
     # (żeby TP nigdy nie był na/poniżej wejścia - patrz eod_engine.py).

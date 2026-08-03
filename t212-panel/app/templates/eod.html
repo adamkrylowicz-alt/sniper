@@ -228,6 +228,22 @@
     </p>
 
     <label class="auth-form__checkbox">
+        <input type="checkbox" id="eod-fx-cost-adjustment" {{ "checked" if settings.fx_cost_adjustment_enabled else "" }}>
+        Uwzględniaj koszt przewalutowania (FX) dla tickerów USD
+    </label>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="eod-fx-fee-pct">Koszt FX za jedną nogę (ułamek, np. 0.0015 = 0.15%)</label>
+        <input type="number" id="eod-fx-fee-pct" class="auth-form__input" min="0" step="0.0001" value="{{ settings.fx_fee_pct }}">
+    </div>
+    <p class="auth-box__hint">
+        Konto demo ma jedną walutę (EUR) - każdy zakup/sprzedaż tickera USD
+        kosztuje przewalutowanie w obie strony, tego samego rzędu wielkości
+        co ciasne progi % EOD. Gdy włączone, próg stop-loss dla pozycji USD
+        liczony jest względem ceny podbitej o 2x powyższy koszt. Dla
+        tickerów EUR bez zmian.
+    </p>
+
+    <label class="auth-form__checkbox">
         <input type="checkbox" id="eod-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
         Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)
     </label>

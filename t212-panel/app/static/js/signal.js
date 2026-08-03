@@ -91,6 +91,8 @@ document.addEventListener("DOMContentLoaded", () => {
             max_concurrent_positions: document.getElementById("signal-max-positions").value,
             is_paper_trading: document.getElementById("signal-paper-trading").checked,
             equity_sizing_enabled: document.getElementById("signal-equity-sizing").checked,
+            fx_cost_adjustment_enabled: document.getElementById("signal-fx-cost-adjustment").checked,
+            fx_fee_pct: document.getElementById("signal-fx-fee-pct").value,
         };
 
         try {

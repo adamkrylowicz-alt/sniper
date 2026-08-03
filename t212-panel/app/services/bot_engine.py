@@ -237,6 +237,16 @@ from .market_hours import (  # noqa: E402
 # stopem na progu, który po przewalutowaniu jest już stratą albo zerem
 # (zgłoszone przez Adama 2026-07-22, przed pierwszym dzisiejszym wejściem
 # w pozycję USD).
+#
+# PRZENIESIONE 2026-08-03 z twardej stałej do RiskSettings.fx_cost_adjustment_
+# enabled/fx_fee_pct (edytowalne w UI, ten sam mechanizm dodany też w Sygnale/
+# EOD) - _manage_trailing_exit() NIE używa już tych stałych wprost, czyta z
+# przekazanego `settings`. ZOSTAJĄ tutaj (nieużywane w tym pliku poza samą
+# definicją) WYŁĄCZNIE bo `backtest/microgrid_runner.py` importuje
+# FX_ROUND_TRIP_PCT wprost stąd (ten sam import, który dziś wcześniej już raz
+# ucierpiał przy migracji MAX_CONCURRENT_POSITIONS - nie powtarzać tego błędu)
+# - usunięcie zepsułoby backtest. Wartości = domyślne z migracji, dla
+# spójności.
 FX_FEE_PCT = Decimal("0.0015")
 FX_ROUND_TRIP_PCT = FX_FEE_PCT * 2
 
@@ -1217,13 +1227,17 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             continue  # brak ceny - spróbujemy przy kolejnym ticku, nic pilnego do zrobienia
 
         # Dla USD: liczymy progi/STOP względem ref_price (average_price
-        # podbite o round-trip FX), nie surowej average_price - patrz
-        # FX_ROUND_TRIP_PCT wyżej. Dla EUR (konto Adama jest w EUR, zero
-        # konwersji) ref_price == average_price, zero zmiany zachowania.
-        ref_price = (
-            trade.average_price * (1 + FX_ROUND_TRIP_PCT) if trade.currency == "USD"
-            else trade.average_price
-        )
+        # podbite o round-trip FX), nie surowej average_price - koszt
+        # przewalutowania na koncie EUR (konto Adama), patrz
+        # RiskSettings.fx_cost_adjustment_enabled/fx_fee_pct. PRZENIESIONE
+        # 2026-08-03 ze sztywnej stałej modułowej FX_ROUND_TRIP_PCT do
+        # ustawień per-user (ten sam mechanizm dodany też w Sygnale/EOD,
+        # gdzie tego wcześniej brakowało) - domyślnie WŁĄCZONE, więc
+        # zachowanie Micro-Gridu bez zmian. Dla EUR (konto Adama jest w EUR,
+        # zero konwersji) ref_price == average_price, zero zmiany zachowania.
+        ref_price = trade.average_price
+        if trade.currency == "USD" and settings.fx_cost_adjustment_enabled:
+            ref_price = trade.average_price * (1 + settings.fx_fee_pct * 2)
 
         milestone_steps = microgrid_strategy.compute_milestone_steps(ref_price, current_price, step)
         if milestone_steps < 2:

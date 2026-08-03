@@ -386,10 +386,11 @@ def update_settings():
         take_profit_step_pct = Decimal(str(payload.get("take_profit_step_pct", settings.take_profit_step_pct)))
         stop_loss_pct = Decimal(str(payload.get("stop_loss_pct", settings.stop_loss_pct)))
         max_daily_loss = Decimal(str(payload.get("max_daily_loss", settings.max_daily_loss)))
+        fx_fee_pct = Decimal(str(payload.get("fx_fee_pct", settings.fx_fee_pct)))
 
         if (
             max_dca_levels <= 0 or max_concurrent_positions <= 0 or dca_trigger_pct <= 0 or max_spread_pct <= 0
-            or take_profit_step_pct <= 0 or stop_loss_pct <= 0 or max_daily_loss <= 0
+            or take_profit_step_pct <= 0 or stop_loss_pct <= 0 or max_daily_loss <= 0 or fx_fee_pct < 0
         ):
             raise ValueError("Wartości muszą być dodatnie.")
     except (InvalidOperation, ValueError, TypeError):
@@ -442,6 +443,8 @@ def update_settings():
     settings.manage_all_positions = manage_all_positions
     settings.equity_sizing_enabled = equity_sizing_enabled
     settings.equity_sizing_baseline = equity_sizing_baseline
+    settings.fx_cost_adjustment_enabled = bool(payload.get("fx_cost_adjustment_enabled", settings.fx_cost_adjustment_enabled))
+    settings.fx_fee_pct = fx_fee_pct
     db.session.commit()
 
     released_count = _release_auto_adopted_positions(current_user_id()) if switch_turned_off else 0

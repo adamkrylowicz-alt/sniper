@@ -285,6 +285,23 @@
         equity z TEGO momentu.
     </p>
 
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="bot-fx-cost-adjustment" {{ "checked" if settings.fx_cost_adjustment_enabled else "" }}>
+        Uwzględniaj koszt przewalutowania (FX) dla tickerów USD
+    </label>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-fx-fee-pct">Koszt FX za jedną nogę (ułamek, np. 0.0015 = 0.15%)</label>
+        <input type="number" id="bot-fx-fee-pct" class="auth-form__input" min="0" step="0.0001" value="{{ settings.fx_fee_pct }}">
+    </div>
+    <p class="auth-box__hint">
+        Konto demo ma jedną walutę (EUR) - każdy zakup/sprzedaż tickera USD
+        kosztuje przewalutowanie w obie strony. Gdy włączone, próg
+        stop-loss/trailing dla pozycji USD liczony jest względem ceny
+        podbitej o 2x powyższy koszt, żeby bot nie "zamykał zysku" na
+        progu, który po przewalutowaniu jest już stratą albo zerem. Dla
+        tickerów EUR bez zmian.
+    </p>
+
     <button type="button" id="btn-bot-save-settings" class="auth-form__submit auth-form__submit--sticky">
         Zapisz ustawienia
     </button>

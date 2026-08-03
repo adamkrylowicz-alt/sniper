@@ -90,6 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
             is_paper_trading: document.getElementById("eod-paper-trading").checked,
             force_close_enabled: document.getElementById("eod-force-close").checked,
             equity_sizing_enabled: document.getElementById("eod-equity-sizing").checked,
+            fx_cost_adjustment_enabled: document.getElementById("eod-fx-cost-adjustment").checked,
+            fx_fee_pct: document.getElementById("eod-fx-fee-pct").value,
         };
 
         try {

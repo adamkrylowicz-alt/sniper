@@ -98,6 +98,8 @@ document.addEventListener("DOMContentLoaded", () => {
             is_paper_trading: document.getElementById("bot-paper-trading").checked,
             manage_all_positions: document.getElementById("bot-manage-all").checked,
             equity_sizing_enabled: document.getElementById("bot-equity-sizing").checked,
+            fx_cost_adjustment_enabled: document.getElementById("bot-fx-cost-adjustment").checked,
+            fx_fee_pct: document.getElementById("bot-fx-fee-pct").value,
         };
 
         try {

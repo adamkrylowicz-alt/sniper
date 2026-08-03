@@ -287,9 +287,18 @@ def _enter_position(
         effective_entry_amount = compute_equity_scaled_amount(
             asset.entry_amount, current_equity, settings.equity_sizing_baseline or Decimal("0"),
         )
+
+    # Koszt przewalutowania (FX) dla tickerów USD na koncie EUR (patrz
+    # SignalSettings.fx_cost_adjustment_enabled) - PODBIJA próg stop-loss/
+    # take-profit, NIE dotyka ceny użytej do wyliczenia quantity.
+    fx_reference_price = None
+    if asset.currency == "USD" and settings.fx_cost_adjustment_enabled:
+        fx_reference_price = price * (1 + settings.fx_fee_pct * 2)
+
     try:
         decision = signal_strategy.compute_entry(
             effective_entry_amount, price, atr, settings.stop_loss_atr_mult, settings.take_profit_atr_mult,
+            fx_reference_price=fx_reference_price,
         )
     except signal_strategy.EntryValidationError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: {exc}")

@@ -443,6 +443,22 @@ class RiskSettings(db.Model):
     # wartość ustaloną tamtego dnia (multi-window walk-forward, patrz tam).
     max_concurrent_positions = db.Column(db.Integer, nullable=False, default=6)
 
+    # Koszt przewalutowania (FX) dla tickerow USD na koncie EUR - konto demo
+    # (jedyne na ktorym dzialaja boty) ma JEDNA walute, potwierdzone przez
+    # API (2026-08-03: {"currency": "EUR", ...}, jeden zbiorczy cash, zero
+    # oddzielnego portfela USD) i oficjalna Polityke realizacji zamowien
+    # T212 (pkt 17.3: koszt przewalutowania przy zakupie w walucie innej niz
+    # depozytowa) - kazdy zakup/sprzedaz tickera USD kosztuje ~0.15% w kazda
+    # strone (~0.3% round-trip). Bez tego bot moze "zamykac zysk" trailing
+    # stopem na progu ktory po przewalutowaniu jest juz strata/zerem -
+    # DOMYSLNIE WLACZONE (enabled=True), bo Micro-Grid mial to ZAWSZE
+    # aktywne na sztywno (FX_ROUND_TRIP_PCT w bot_engine.py, od 22.07) - ta
+    # migracja tylko czyni to widoczne/przelaczalne w UI, NIE zmienia
+    # dotychczasowego zachowania. fx_fee_pct = koszt JEDNEJ nogi (nie
+    # round-trip) - kod mnozy razy 2 tam gdzie potrzebne.
+    fx_cost_adjustment_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    fx_fee_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.0015)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<RiskSettings user_id={self.user_id} active={self.is_bot_active}>"
 
@@ -713,6 +729,15 @@ class SignalSettings(db.Model):
     equity_sizing_enabled = db.Column(db.Boolean, nullable=False, default=False)
     equity_sizing_baseline = db.Column(db.Numeric(12, 2), nullable=True, default=None)
 
+    # Koszt przewalutowania (FX) dla tickerow USD - ten sam mechanizm i
+    # uzasadnienie co RiskSettings.fx_cost_adjustment_enabled (Micro-Grid
+    # mial to na sztywno od 22.07.2026, Sygnał nigdy nie miał - znalezione
+    # 2026-08-03, Adam: "dodaj w ustawieniach switch... bo inaczej możemy
+    # tracić mimo że będziemy zyskiwać"). DOMYŚLNIE WŁĄCZONE - to naprawa
+    # realnej luki, nie eksperymentalna funkcja, Adam chce to aktywne od razu.
+    fx_cost_adjustment_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    fx_fee_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.0015)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<SignalSettings user_id={self.user_id} active={self.is_active}>"
 
@@ -868,6 +893,13 @@ class EODSettings(db.Model):
     # uzasadnienie, dodane razem 2026-08-03 wieczorem).
     equity_sizing_enabled = db.Column(db.Boolean, nullable=False, default=False)
     equity_sizing_baseline = db.Column(db.Numeric(12, 2), nullable=True, default=None)
+
+    # Koszt przewalutowania (FX) dla tickerow USD - ten sam mechanizm i
+    # uzasadnienie co RiskSettings/SignalSettings.fx_cost_adjustment_enabled
+    # (EOD ma najciasniejsze progi % ze wszystkich trzech silnikow, wiec
+    # najbardziej narazony - patrz docs/IDEAS_v2.md). DOMYŚLNIE WŁĄCZONE.
+    fx_cost_adjustment_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    fx_fee_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.0015)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<EODSettings user_id={self.user_id} active={self.is_active}>"

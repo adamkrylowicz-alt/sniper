@@ -46,17 +46,27 @@ def compute_entry(
     atr: Decimal,
     stop_loss_atr_mult: Decimal,
     take_profit_atr_mult: Decimal,
+    fx_reference_price: Decimal | None = None,
 ) -> EntryDecision:
     """
     Wyciągnięte z `_enter_position()` w signal_engine.py (część PRZED
     rozgałęzieniem real/paper - tam liczone identycznie dla obu ścieżek).
+
+    `fx_reference_price` (dodane 2026-08-03, patrz SignalSettings.fx_cost_
+    adjustment_enabled) - dla tickerów USD na koncie EUR, `price` podbite o
+    koszt round-trip przewalutowania. Używane WYŁĄCZNIE do progów stop-loss/
+    take-profit, NIE do `quantity` (ilość musi wynikać z REALNEJ ceny fillu,
+    inaczej pozycja byłaby błędnie przewymiarowana/niedowymiarowana). `None`
+    (domyślnie, albo ticker w EUR) = użyj surowej `price` jak dotychczas,
+    zero zmiany zachowania.
     """
     quantity = (entry_amount / price).quantize(Decimal("0.0001"))
     if quantity <= 0:
         raise EntryValidationError(f"wyliczona ilość <= 0 (kwota {entry_amount} / cena {price}).")
 
-    stop_loss_price = price - (atr * stop_loss_atr_mult)
-    take_profit_price = price + (atr * take_profit_atr_mult)
+    ref = fx_reference_price if fx_reference_price is not None else price
+    stop_loss_price = ref - (atr * stop_loss_atr_mult)
+    take_profit_price = ref + (atr * take_profit_atr_mult)
     if stop_loss_price <= 0:
         raise EntryValidationError("wyliczony stop-loss <= 0 (ATR zbyt duże względem ceny), pomijam wejście.")
 

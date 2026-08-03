@@ -216,10 +216,11 @@ def update_settings():
         stop_loss_atr_mult = Decimal(str(payload.get("stop_loss_atr_mult", settings.stop_loss_atr_mult)))
         take_profit_atr_mult = Decimal(str(payload.get("take_profit_atr_mult", settings.take_profit_atr_mult)))
         max_concurrent_positions = int(payload.get("max_concurrent_positions", settings.max_concurrent_positions))
+        fx_fee_pct = Decimal(str(payload.get("fx_fee_pct", settings.fx_fee_pct)))
 
         if (
             rsi_threshold <= 0 or rsi_threshold >= 100 or stop_loss_atr_mult <= 0 or take_profit_atr_mult <= 0
-            or max_concurrent_positions <= 0
+            or max_concurrent_positions <= 0 or fx_fee_pct < 0
         ):
             raise ValueError("Wartości poza dozwolonym zakresem.")
     except (InvalidOperation, ValueError, TypeError):
@@ -230,6 +231,8 @@ def update_settings():
     settings.take_profit_atr_mult = take_profit_atr_mult
     settings.max_concurrent_positions = max_concurrent_positions
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
+    settings.fx_cost_adjustment_enabled = bool(payload.get("fx_cost_adjustment_enabled", settings.fx_cost_adjustment_enabled))
+    settings.fx_fee_pct = fx_fee_pct
 
     # Money management √equity - ten sam wzorzec auto-capture co routes/bot.py
     # (2026-07-31), dodany tutaj 2026-08-03 (Adam: "dodaj do obu").
