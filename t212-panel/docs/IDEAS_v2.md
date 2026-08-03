@@ -1429,3 +1429,46 @@ czymś co miało dać efekt w 20-dniowym oknie.
 Wdrożone na prod (kod + migracja), `run.py` zrestartowany, log czysty.
 `equity_sizing_enabled=False` domyślnie na obu silnikach (jak w Micro-Gridzie)
 - włączenie to świadoma decyzja Adama w UI, nie automatyczna część tej pracy.
+
+## ZROBIONE (2026-08-03, noc): 13 vs 12 aktywów - odkryta osierocona pozycja SAP + naprawiona kolejność auto-adopcji w tick()
+
+Adam: "spr dlaczego mam 13 aktywow a 12 na botach". Sprawdzone: baza pokazuje
+dokładnie 12 unikalnych tickerów zarządzanych przez boty (6 Micro-Grid + 6
+Sygnał + 0 EOD, zero nakładania). Żywy portfel T212 (`client.get_portfolio()`)
+pokazał 13 - brakująca **SAPd_EQ (SAP), 1.0 akcja**. Historia: EOD kupił i
+sprzedał SAP raz 28.07 (transakcja zamknięta w bazie), ale obecna 1.0 akcja
+to INNA pozycja - **brak dla niej JAKIEGOKOLWIEK wpisu w `order_logs`**
+(loguje KAŻDE zlecenie, także ręczne) - więc nie przeszła przez appkę wcale
+(albo kupiona bezpośrednio w T212, albo pozostałość po jednym z ręcznych
+resetów demo). SAP jest już kandydatem na liście wszystkich 3 botów, więc
+`baseline_owned_quantity` chroni ją przed przypadkową sprzedażą, ale
+`manage_all_positions` był WYŁĄCZONY, więc nikt jej nie chronił stop-lossem.
+
+**Adam: "włącz zarządzaj wszystkim niech postawi o ile się da trailing
+stopa"** - włączone (`risk_settings.manage_all_positions=1`, prod, user 1).
+SAP przejęty przez `_auto_adopt_foreign_positions` na najbliższym ticku
+(5s), ale **stop NIE uzbroił się od razu mimo że cena (164) była już
+WYRAŹNIE powyżej progu uzbrojenia (157.63, 2 kroki od wejścia 157)** - Adam:
+"to jest chujowe... zmień to jakoś".
+
+**Root cause znaleziony**: w `tick()` kolejność wywołań to
+`_manage_trailing_exit()` (linia ~1957) PRZED `_auto_adopt_foreign_positions()`
+(linia ~1993) - DOKŁADNIE ODWROTNIE niż w `reconcile()`, gdzie adopcja idzie
+PRZED trailing (poprawnie, patrz komentarz tam z 27.07). Skutek: świeżo
+adoptowana pozycja w regularnym cyklu tick() nie miała ŻADNEJ szansy na
+trailing check w TYM SAMYM cyklu - czekała pełny dodatkowy tick (do 60s),
+podczas gdy cena mogła w tym czasie odjechać jeszcze dalej bez ochrony.
+
+**Fix**: `_auto_adopt_foreign_positions()` zwraca teraz `int` (liczbę nowo
+przejętych pozycji tym wywołaniem, wcześniej `None`) zamiast tylko efektu
+ubocznego w bazie. W `tick()`, jeśli `adopted_count > 0`, wołamy
+`_manage_trailing_exit()` DRUGI RAZ, bezpośrednio po adopcji - dla pozycji
+już obsłużonych chwilę wcześniej w tym samym ticku to praktycznie zero
+kosztu (cache portfolio/cen), dla świeżo przejętej daje szansę na
+NATYCHMIASTOWE uzbrojenie stopu zamiast czekania na kolejny cykl. Kolejność
+w `reconcile()` była już poprawna, bez zmian. Zweryfikowane testem
+syntetycznym (`_auto_adopt_foreign_positions` zwraca 1 przy nowej adopcji,
+0 gdy nic nowego/switch wyłączony) - trailing na żywym SAP (już uzbrojony
+zanim fix wszedł) pozostał nietknięty, potwierdzony po restarcie: stop
+164.31/24 kroków, bez przerwy w ochronie. Zmirrorowane dev->prod, `run.py`
+zrestartowany, log czysty.

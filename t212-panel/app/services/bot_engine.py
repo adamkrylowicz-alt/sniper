@@ -866,7 +866,7 @@ def _retry_pending_buys(
         )
 
 
-def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: RiskSettings) -> None:
+def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: RiskSettings) -> int:
     """
     Switch "zarządzaj wszystkim" (RiskSettings.manage_all_positions, pomysł
     #1 z docs/IDEAS_v2.md, zaimplementowany 27.07.2026 na prośbę Adama - "idę
@@ -888,19 +888,25 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
     entry_amount = aktualna wartość pozycji (quantity*avg_price) - wartość
     czysto formalna (kolumna NOT NULL), nigdy realnie nie użyta bo DCA
     wyłączone przez grid_anchor_price=0.
+
+    Zwraca liczbę NOWO przejętych pozycji tym wywołaniem (dodane 2026-08-03,
+    patrz wywołanie w tick() - pozwala od razu doliczyć _manage_trailing_exit
+    dla świeżo przejętej pozycji W TYM SAMYM ticku, zamiast czekać na
+    następny cykl - patrz uzasadnienie tam).
     """
     if not settings.manage_all_positions:
-        return
+        return 0
 
     try:
         portfolio = client.get_portfolio()
     except T212APIError as exc:
         _log(user_id, "ERROR", f"Zarządzaj wszystkim: błąd pobierania portfolio - {exc}")
-        return
+        return 0
 
     open_tickers = {
         t.ticker for t in ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").all()
     }
+    adopted_count = 0
 
     for p in portfolio:
         ticker = p.get("ticker")
@@ -949,6 +955,7 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
         )
         db.session.add(trade)
         db.session.commit()
+        adopted_count += 1
 
         _log(
             user_id, "INFO",
@@ -956,6 +963,8 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
             f"({quantity} @ ~{avg_price}) - od teraz pilnowana trailing exitem, bez DCA.",
             position_group_id,
         )
+
+    return adopted_count
 
 
 def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettings) -> None:
@@ -1981,7 +1990,22 @@ def tick(app) -> None:
                         _confirm_dca_fills(user_id, client, settings, pending=pending)
                         _retry_pending_buys(user_id, client, settings, pending=pending)
                         _retry_pending_sells(user_id, client, settings, pending=pending)
-                        _auto_adopt_foreign_positions(user_id, client, settings)
+                        adopted_count = _auto_adopt_foreign_positions(user_id, client, settings)
+                        if adopted_count > 0:
+                            # Świeżo przejęta pozycja (patrz komentarz przy
+                            # _manage_trailing_exit wyżej) inaczej czekałaby
+                            # na SWÓJ PIERWSZY trailing check aż do NASTĘPNEGO
+                            # ticku (do 60s) - przy szybko rosnącej cenie
+                            # oznacza to okno bez ŻADNEJ ochrony zysku mimo
+                            # że cena mogła już dawno minąć próg uzbrojenia
+                            # stopu. Znalezione na żywo 2026-08-03 (SAP: cena
+                            # wejścia 157, w chwili przejęcia już 164 - stop
+                            # uzbroił się dopiero na NASTĘPNYM ticku). Drugie
+                            # wywołanie w TYM SAMYM ticku kosztuje tyle co
+                            # nic dla pozycji już obsłużonych chwilę wcześniej
+                            # (cache portfolio/ceny), a dla świeżo przejętej
+                            # daje szansę na natychmiastowe uzbrojenie stopu.
+                            _manage_trailing_exit(user_id, client, settings)
                         _trigger_dca_buys(user_id, client, settings, current_equity)
 
             if skip_new_entries:
