@@ -1409,10 +1409,22 @@ wejście/dzień):
 Micro-Grid), których w cache NIE było wcale. Adam: "masz ibkr pobierz sb
 dane" - pobrane świeżo przez `backtest/ibkr_data.py` (kontener `ib-gateway`,
 20 dni na tiker - potwierdzony stabilny sufit z 28.07, TGATE dla 15 tickerów
-EU, IEX dla 14 US) dla wszystkich 29 tickerów EOD. Nowy skrypt (globalna
-kolejka zdarzeń posortowana chronologicznie wg prawdziwego znacznika czasu
-UTC, bo 1-min świece z różnych giełd/stref czasowych nie dają się wyrównać
-po indeksie jak dzienne). Wynik dopisany osobno po zakończeniu fetche/testu.
+EU, IEX dla 14 US) dla wszystkich 29 tickerów EOD, wszystkie 30/30 pobrań
+udane. Nowy skrypt (globalna kolejka zdarzeń posortowana chronologicznie wg
+prawdziwego znacznika czasu UTC, bo 1-min świece z różnych giełd/stref
+czasowych nie dają się wyrównać po indeksie jak dzienne) - 372 040
+zdarzeń-minut przetworzonych, wspólny portfel (200€ start, limit 2 pozycje).
+
+Wynik: BEZ scalingu +2.88%/dd=0.65% (25 transakcji), Z scalingiem
++2.90%/dd=0.66% - różnica **+0.01pp, praktycznie zero**. Uczciwie: 20 dni to
+zbyt krótko żeby equity (200€->205.77€, ~1.03x) oddaliło się od punktu
+odniesienia na tyle, żeby pierwiastek zrobił zauważalną różnicę - dokładnie
+ten sam wniosek co przy Sygnale na pojedynczym ~325-dniowym oknie. IBKR
+1-min ma praktyczny sufit ~20-30 dni na zapytanie (dłuższe okna często
+zawieszają zapytanie, patrz docstring `ibkr_data.py`), więc dłuższego testu
+nie da się tanio zrobić bez wielokrotnych zapytań rozłożonych w czasie -
+świadomie odłożone, mechanizm i tak jest zabezpieczeniem wieloletnim, nie
+czymś co miało dać efekt w 20-dniowym oknie.
 
 Wdrożone na prod (kod + migracja), `run.py` zrestartowany, log czysty.
 `equity_sizing_enabled=False` domyślnie na obu silnikach (jak w Micro-Gridzie)
