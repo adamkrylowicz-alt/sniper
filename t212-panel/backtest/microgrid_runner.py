@@ -63,13 +63,20 @@ from app.services.bot_engine import (
     ATR_PERIOD,
     ATR_STOP_MULTIPLIER,
     FX_ROUND_TRIP_PCT,
-    MAX_CONCURRENT_POSITIONS,
     MIN_TRAIL_REQUOTE_FRACTION,
     _compute_atr,
     _dca_multiplier,
     _parse_dca_scenario,
 )
 from app.services.strategy import microgrid_strategy
+
+# PRZENIESIONE 2026-08-03 (wieczorem) - bot_engine.MAX_CONCURRENT_POSITIONS
+# zniknęła (przeniesiona do RiskSettings.max_concurrent_positions, kolumna
+# bazy per-user, patrz models.py), więc backtest dostaje WŁASNĄ, niezależną
+# stałą (6 = obecny prod default) zamiast importu z produkcyjnego modułu.
+# Testy chcące inny limit ustawiają to bezpośrednio (monkeypatch modułu, ten
+# sam wzorzec co reszta dzisiejszej sesji).
+MAX_CONCURRENT_POSITIONS = 6
 
 
 @dataclass

@@ -1472,3 +1472,49 @@ syntetycznym (`_auto_adopt_foreign_positions` zwraca 1 przy nowej adopcji,
 zanim fix wszedł) pozostał nietknięty, potwierdzony po restarcie: stop
 164.31/24 kroków, bez przerwy w ochronie. Zmirrorowane dev->prod, `run.py`
 zrestartowany, log czysty.
+
+## ZROBIONE (2026-08-03, noc): Lowpass i MMI z manuala Zorro przetestowane i ODRZUCONE + naprawiona regresja w microgrid_runner.py
+
+Adam przeczytał tutorial Zorro (zorro-project.com, Workshop 1/4/4a/5/6) i
+poprosił o sprawdzenie czy filtr **Lowpass** (Workshop 4a) i **Market
+Meanness Index** (Workshop 4, wzór z financial-hacker.com - ten sam autor
+co artykuł o √equity) dają się realnie zaadaptować. Obie idee zaimplementowane
+jako czyste funkcje Python, zweryfikowane testami syntetycznymi (Lowpass:
+stała cena→bez zmian, nadąża za trendem liniowym; MMI: trend~50%, biały
+szum~78% - zgodne z dokumentacją) - patrz `zorro_indicators.py` (scratchpad,
+nieprodukcyjne).
+
+**Lowpass jako zamiennik SMA(200) w Sygnale** - test 4-okienkowy (58
+tickerów, wspólny portfel, ten sam RSI/ATR co produkcja, tylko filtr trendu
+podmieniony): SMA(200) WYGRYWA z każdym testowanym okresem lowpass (50/100/
+150/200) na obu frontach - suma zwrotu (21.86% vs najlepsze 11.89% dla
+lowpass=200) I najgorsze okno (SMA200 nigdy ujemne: min=+0.91%, KAŻDY
+wariant lowpass miał choć jedno ujemne okno). **ODRZUCONE - SMA(200) zostaje
+bez zmian.**
+
+**MMI jako filtr regime w Micro-Gridzie** (reużyty ISTNIEJĄCY mechanizm
+Hurst - `bot_entry_filters.HURST_FILTER_ENABLED`/`compute_hurst_exponent`/
+`_regime_ok`, podmieniony monkeypatchem na MMI zamiast Hurst, ten sam gate,
+300-dniowy lookback per dokumentacja): testowane OBA kierunki na pełnym
+1300-dniowym oknie (prod parametry: max_dca_levels=7/entry_amount=100/
+max_pozycji=6). "Wymagaj MMI wysokie" (mean-reversion, logicznie pasujące
+do tezy DCA - kup dołek, licz na powrót) - **katastrofa**: baseline +12.32%
+(1094 transakcji) -> -1.01% do -1.80% (tylko 242-244 transakcji, blokuje
+78% wejść). "Wymagaj MMI niskie" (trend, jak w oryginalnym Zorro use-case) -
+praktycznie NO-OP (1092-1094 transakcji, ~12.31-12.32% - identyczne z
+baseline) - na surowych cenach dziennych z tak długim oknem MMI prawie
+zawsze wychodzi "trendująco" (zgodne z synteycznym testem: prawdziwe ceny
+zachowują się bliżej trendu/random walk niż czystego szumu w tej metryce).
+**ODRZUCONE** - dokumentacja sugeruje liczenie MMI na ZMIANACH ceny (nie
+surowych cenach) dla efektywnych rynków - mogłoby dać inny wynik, ale to
+osobny eksperyment, nie zrobiony teraz.
+
+**Przy okazji znaleziona i naprawiona regresja**: dzisiejsza wcześniejsza
+migracja `MAX_CONCURRENT_POSITIONS` ze stałej modułowej do kolumny bazy
+(`RiskSettings.max_concurrent_positions`) zepsuła import w
+`backtest/microgrid_runner.py` (próbował importować nieistniejącą już
+stałą z `bot_engine.py`) - złapane dopiero przy próbie uruchomienia testu
+MMI. Nie dotyczyło produkcji na żywo (tylko narzędzie backtestowe), ale
+naprawione: własna, niezależna stała `MAX_CONCURRENT_POSITIONS=6` w
+`microgrid_runner.py` zamiast importu. Zmirrorowane dev->prod (plik
+nieużywany przez żywy `run.py`, bez restartu).
