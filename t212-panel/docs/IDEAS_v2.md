@@ -1361,3 +1361,59 @@ Sygnał obniżony ze 150€ (wczorajsza wartość) na **100€** na wszystkich 5
 `SignalAsset` (prod) - Adam: "eod 2 pozycje po 100euro/usd sygnał też 2 po
 100" (budżet Sygnału efektywnie 200€ zamiast 300€, do zmiany w UI w każdej
 chwili). Wdrożone na prod, `run.py` zrestartowany, log czysty, zero błędów.
+
+## ZROBIONE (2026-08-03, noc): money management √equity rozszerzone na Sygnał i EOD + backtest realnego efektu
+
+Adam wyjaśnione znaczenie money management √equity (patrz sekcja z 31.07),
+zapytał "a jak myślisz ma to sens tam?" (Sygnał/EOD) - odpowiedź: TAK,
+strukturalnie ten sam problem co w Micro-Gridzie (entry_amount to STAŁA
+absolutna kwota, przy kurczącym się equity ryzyko na transakcję względem
+kapitału ROŚNIE), tylko rzadziej dostrzegany bo nie ma DCA mnożącego efekt.
+Adam: "dodaj do obu i przetestuj oba boty na danych które mamy już czy oc
+to realnie zmieni w zyskach".
+
+**Implementacja** (identyczna z Micro-Gridem, ta sama funkcja czysta
+`microgrid_strategy.compute_equity_scaled_amount` reużyta wprost, zero
+duplikacji matematyki): nowe kolumny `equity_sizing_enabled`/
+`equity_sizing_baseline` w `SignalSettings`/`EODSettings` (migracja
+`migrate_add_equity_sizing_signal_eod.py`), nowy `_get_current_equity()` w
+obu silnikach (zduplikowany z własnym tagiem diagnostyki "signal"/"eod" -
+NIE reużyty wprost z `bot_engine.py`, bo tamta wersja hardkoduje tag "bot" w
+logu). `_enter_position` w obu silnikach skaluje `entry_amount` PRZED innymi
+mnożnikami - w EOD to ważne rozróżnienie: equity scaling mnoży kwotę BAZOWĄ,
+tier spadku (`_size_multiplier_for_drop`) mnoży AGRESYWNOŚĆ konkretnego
+sygnału, oba mnożą się niezależnie. UI: checkbox + auto-capture baseline
+identyczne jak w Micro-Gridzie, w `signal.html`/`eod.html` +
+`routes/signal.py`/`routes/eod.py`. Zweryfikowane: 2 testy syntetyczne
+(equity 4x -> Sygnał 2x kwoty; equity 0.25x -> EOD 0.5x kwoty bazowej,
+niezależnie od tieru) + test end-to-end Flask (render + zapis + odrzucenie
+włączenia bez zapisanych kluczy API demo, potrzebnych do auto-capture).
+
+**Backtest realnego efektu - Sygnał** (58 tickerów, 1300 dni, WSPÓLNY portfel
+- w odróżnieniu od dotychczasowego per-tickerowego `run_signal_backtest`,
+equity scaling z definicji wymaga JEDNEGO portfela współdzielonego między
+tickerami, żeby equity miało w ogóle sens do przeliczenia; nowy skrypt
+kalendarzowo wyrównany jak `microgrid_runner.py`, limit=2 pozycje, jedno
+wejście/dzień):
+- Całe okno (1000€ start): BEZ scalingu +30.37%/dd=3.31%, Z scalingiem
+  +32.14%/dd=3.73% (+1.78pp zwrotu, +0.42pp drawdownu) - drobny, ale REALNY,
+  pozytywny efekt, bo equity w tym oknie faktycznie urosło (~1.3x).
+- 4 niezależne okna ~325-dniowe: efekt w KAŻDYM pojedynczym oknie to szum
+  (-0.10pp do +0.04pp) - equity w oknie tej długości nigdy nie oddala się
+  wystarczająco od baseline żeby pierwiastek zrobił zauważalną różnicę.
+  **Zgodne z oczekiwaniem**: to zabezpieczenie na horyzont wieloletni/duże
+  zmiany kapitału (ten sam wniosek co przy weryfikacji Micro-Gridu 31.07),
+  nie dźwignia widoczna w pojedynczym rocznym backteście.
+
+**Backtest EOD** - wymaga świec 1-MINUTOWYCH (nie dziennych jak Sygnał/
+Micro-Grid), których w cache NIE było wcale. Adam: "masz ibkr pobierz sb
+dane" - pobrane świeżo przez `backtest/ibkr_data.py` (kontener `ib-gateway`,
+20 dni na tiker - potwierdzony stabilny sufit z 28.07, TGATE dla 15 tickerów
+EU, IEX dla 14 US) dla wszystkich 29 tickerów EOD. Nowy skrypt (globalna
+kolejka zdarzeń posortowana chronologicznie wg prawdziwego znacznika czasu
+UTC, bo 1-min świece z różnych giełd/stref czasowych nie dają się wyrównać
+po indeksie jak dzienne). Wynik dopisany osobno po zakończeniu fetche/testu.
+
+Wdrożone na prod (kod + migracja), `run.py` zrestartowany, log czysty.
+`equity_sizing_enabled=False` domyślnie na obu silnikach (jak w Micro-Gridzie)
+- włączenie to świadoma decyzja Adama w UI, nie automatyczna część tej pracy.

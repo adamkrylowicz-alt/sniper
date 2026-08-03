@@ -701,6 +701,18 @@ class SignalSettings(db.Model):
     # (ten sam powód co RiskSettings.max_concurrent_positions).
     max_concurrent_positions = db.Column(db.Integer, nullable=False, default=2)
 
+    # Money management √equity - ten sam mechanizm co RiskSettings (Micro-Grid,
+    # 2026-07-31/2026-08-03 wieczorem), teraz też dla Sygnału (Adam: "a jak
+    # myślisz ma to sens tam?" -> "dodaj do obu"). Sygnał nie ma DCA (jedna
+    # noga, brak mnożenia ryzyka przez poziomy uśredniania) - mniej pilne niż
+    # w Micro-Gridzie, ale ten sam problem strukturalny istnieje: entry_amount
+    # jest STAŁĄ absolutną kwotą, więc przy kurczącym się equity ryzyko na
+    # transakcję względem kapitału ROŚNIE (dokładnie to, przed czym broni
+    # skalowanie √equity). Patrz microgrid_strategy.compute_equity_scaled_amount
+    # (funkcja ogólna, nie specyficzna dla DCA - używana też tutaj wprost).
+    equity_sizing_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    equity_sizing_baseline = db.Column(db.Numeric(12, 2), nullable=True, default=None)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<SignalSettings user_id={self.user_id} active={self.is_active}>"
 
@@ -850,6 +862,12 @@ class EODSettings(db.Model):
     # 02/03.08.2026, patrz docs/IDEAS_v2.md) - dodane per-user, edytowalne w UI,
     # zamiast stałej modułowej (Adam: "to tylko ustawienia fabryczne").
     max_concurrent_positions = db.Column(db.Integer, nullable=False, default=2)
+
+    # Money management √equity - ten sam mechanizm co RiskSettings/SignalSettings
+    # (patrz komentarz przy SignalSettings.equity_sizing_enabled - ten sam
+    # uzasadnienie, dodane razem 2026-08-03 wieczorem).
+    equity_sizing_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    equity_sizing_baseline = db.Column(db.Numeric(12, 2), nullable=True, default=None)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<EODSettings user_id={self.user_id} active={self.is_active}>"

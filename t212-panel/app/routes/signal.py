@@ -230,9 +230,41 @@ def update_settings():
     settings.take_profit_atr_mult = take_profit_atr_mult
     settings.max_concurrent_positions = max_concurrent_positions
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
+
+    # Money management √equity - ten sam wzorzec auto-capture co routes/bot.py
+    # (2026-07-31), dodany tutaj 2026-08-03 (Adam: "dodaj do obu").
+    equity_sizing_enabled = bool(payload.get("equity_sizing_enabled", settings.equity_sizing_enabled))
+    equity_sizing_turned_on = equity_sizing_enabled and not settings.equity_sizing_enabled
+    equity_sizing_baseline = settings.equity_sizing_baseline
+
+    if equity_sizing_turned_on:
+        creds = get_decrypted_credentials(current_user_id(), current_master_key(), signal_engine.SIGNAL_ENVIRONMENT)
+        if creds is None:
+            return jsonify(
+                ok=False,
+                error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API) - potrzebny do "
+                      "odczytania bieżącego equity jako punktu odniesienia dla skalowania.",
+            ), 400
+        client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=signal_engine.SIGNAL_ENVIRONMENT,
+            engine="signal", user_id=current_user_id(),
+        )
+        try:
+            cash = client.get_cash()
+            equity_sizing_baseline = Decimal(str(cash["total"]))
+        except (T212APIError, InvalidOperation, TypeError, KeyError) as exc:
+            return jsonify(ok=False, error=f"Nie udało się odczytać equity z T212: {exc}"), 502
+        if equity_sizing_baseline is None or equity_sizing_baseline <= 0:
+            return jsonify(ok=False, error="Odczytane equity <= 0 - nie mogę ustawić punktu odniesienia."), 400
+
+    settings.equity_sizing_enabled = equity_sizing_enabled
+    settings.equity_sizing_baseline = equity_sizing_baseline
     db.session.commit()
 
-    return jsonify(ok=True)
+    return jsonify(
+        ok=True,
+        equity_sizing_baseline=str(equity_sizing_baseline) if equity_sizing_baseline is not None else None,
+    )
 
 
 @signal_bp.route("/activate", methods=["POST"])

@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import pytz
 from flask import current_app
@@ -78,6 +78,7 @@ from ..routes.scalping import _log_order
 from . import bot_credentials, diagnostics, market_hours, price_feed
 from .bot_engine import _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import signal_strategy
+from .strategy.microgrid_strategy import compute_equity_scaled_amount
 from .t212_client import T212APIError, T212Client
 
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
@@ -246,13 +247,49 @@ def _finalize_closed_trade(user_id: int, trade: SignalTrade, via: str, fill_pric
     )
 
 
+def _get_current_equity(
+    user_id: int, settings: SignalSettings, client: T212Client | None = None,
+) -> Decimal | None:
+    """
+    Equity CAŁEGO konta T212 - ten sam wzorzec co bot_engine.py::_get_current_equity
+    (money management √equity, patrz SignalSettings.equity_sizing_enabled),
+    zduplikowany zamiast reużyty przez import - bot_engine.py-owa wersja
+    hardkoduje tag "bot" w diagnostics.log_diag, więc reużycie zaciemniłoby
+    log diagnostyczny (patrz [[project_snajper_diagnostics_log]]).
+    """
+    if client is None:
+        master_key = bot_credentials.get_master_key(user_id)
+        if master_key is None:
+            return None
+        creds = get_decrypted_credentials(user_id, master_key, SIGNAL_ENVIRONMENT)
+        if creds is None:
+            return None
+        client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=SIGNAL_ENVIRONMENT,
+            engine="signal", user_id=user_id,
+        )
+    try:
+        raw = client.get_cash()
+        return Decimal(str(raw["total"]))
+    except (T212APIError, InvalidOperation, TypeError, KeyError) as exc:
+        diagnostics.log_diag(
+            user_id, "signal", f"equity sizing: nie udało się pobrać equity ({exc}) - baza bez skalowania.",
+        )
+        return None
+
+
 def _enter_position(
     user_id: int, client: T212Client | None, asset: SignalAsset, settings: SignalSettings,
-    price: Decimal, atr: Decimal,
+    price: Decimal, atr: Decimal, current_equity: Decimal | None = None,
 ) -> None:
+    effective_entry_amount = asset.entry_amount
+    if settings.equity_sizing_enabled and current_equity is not None:
+        effective_entry_amount = compute_equity_scaled_amount(
+            asset.entry_amount, current_equity, settings.equity_sizing_baseline or Decimal("0"),
+        )
     try:
         decision = signal_strategy.compute_entry(
-            asset.entry_amount, price, atr, settings.stop_loss_atr_mult, settings.take_profit_atr_mult,
+            effective_entry_amount, price, atr, settings.stop_loss_atr_mult, settings.take_profit_atr_mult,
         )
     except signal_strategy.EntryValidationError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
@@ -313,7 +350,9 @@ def _enter_position(
     )
 
 
-def _process_entries(user_id: int, client: T212Client | None, settings: SignalSettings) -> None:
+def _process_entries(
+    user_id: int, client: T212Client | None, settings: SignalSettings, current_equity: Decimal | None = None,
+) -> None:
     assets = SignalAsset.query.filter_by(user_id=user_id).all()
     if not assets:
         return
@@ -366,7 +405,7 @@ def _process_entries(user_id: int, client: T212Client | None, settings: SignalSe
             continue
 
         if rsi < settings.rsi_threshold and price > sma:
-            _enter_position(user_id, client, asset, settings, price, atr)
+            _enter_position(user_id, client, asset, settings, price, atr, current_equity)
             return  # NAJWYŻEJ JEDNO nowe wejście na tick - ten sam powód co
             # bot_engine.py::_process_entries (rate limit T212 na demo, patrz
             # docstring MAX_CONCURRENT_POSITIONS wyżej) - kolejny kandydat
@@ -752,7 +791,8 @@ def tick(app) -> None:
                 # sprawdza is_paper_trading PRZED jakimkolwiek uzyciem client), stad
                 # bezpieczne None zamiast prawdziwego T212Client. Okno wejscia
                 # sprawdzane per-aktywo/waluta wewnatrz _process_entries.
-                _process_entries(user_id, None, settings)
+                current_equity = _get_current_equity(user_id, settings) if settings.equity_sizing_enabled else None
+                _process_entries(user_id, None, settings, current_equity)
                 continue
 
             master_key = bot_credentials.get_master_key(user_id)
@@ -799,4 +839,5 @@ def tick(app) -> None:
 
             if skip_new_entries:
                 continue
-            _process_entries(user_id, client, settings)
+            current_equity = _get_current_equity(user_id, settings, client) if settings.equity_sizing_enabled else None
+            _process_entries(user_id, client, settings, current_equity)

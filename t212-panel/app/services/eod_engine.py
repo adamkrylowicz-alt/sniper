@@ -70,7 +70,7 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 import pytz
 from flask import current_app
@@ -82,6 +82,7 @@ from ..routes.scalping import _log_order
 from . import bot_credentials, diagnostics, market_hours, price_feed
 from .bot_engine import _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import eod_strategy
+from .strategy.microgrid_strategy import compute_equity_scaled_amount
 from .t212_client import T212APIError, T212Client
 
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
@@ -241,9 +242,35 @@ def _finalize_closed_trade(user_id: int, trade: EODTrade, via: str, fill_price: 
     )
 
 
+def _get_current_equity(
+    user_id: int, settings: EODSettings, client: T212Client | None = None,
+) -> Decimal | None:
+    """Ten sam wzorzec co signal_engine.py::_get_current_equity, tag "eod" w diagnostics.log_diag."""
+    if client is None:
+        master_key = bot_credentials.get_master_key(user_id)
+        if master_key is None:
+            return None
+        creds = get_decrypted_credentials(user_id, master_key, EOD_ENVIRONMENT)
+        if creds is None:
+            return None
+        client = T212Client(
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT,
+            engine="eod", user_id=user_id,
+        )
+    try:
+        raw = client.get_cash()
+        return Decimal(str(raw["total"]))
+    except (T212APIError, InvalidOperation, TypeError, KeyError) as exc:
+        diagnostics.log_diag(
+            user_id, "eod", f"equity sizing: nie udało się pobrać equity ({exc}) - baza bez skalowania.",
+        )
+        return None
+
+
 def _enter_position(
     user_id: int, client: T212Client | None, asset: EODAsset, settings: EODSettings,
     price: Decimal, drop_pct: Decimal, multiplier: Decimal, reference_price: Decimal,
+    current_equity: Decimal | None = None,
 ) -> None:
     # Matematyka (sizing, TP=reference_price z fallbackiem na sztywny %)
     # wyciągnięta 2026-07-28 do eod_strategy.compute_entry() - PEŁNE
@@ -251,9 +278,19 @@ def _enter_position(
     # poziomu... nawet nie musi być idealnie w punkt ale w okolice") zostaje
     # w docstringu tego modułu i eod_strategy.py - tu tylko wołanie już
     # zweryfikowanej formuły (sprawdzone 1:1 na 3 realnych transakcjach z bazy).
+    #
+    # Money management √equity (2026-08-03) - skalujemy BAZOWĄ kwotę PRZED
+    # mnożnikiem tieru spadku (`multiplier`), nie po - equity_sizing dotyczy
+    # Twojego kapitału bazowego, tier dotyczy agresywności KONKRETNEGO
+    # sygnału, oba mnożą się niezależnie.
+    effective_entry_amount = asset.entry_amount
+    if settings.equity_sizing_enabled and current_equity is not None:
+        effective_entry_amount = compute_equity_scaled_amount(
+            asset.entry_amount, current_equity, settings.equity_sizing_baseline or Decimal("0"),
+        )
     try:
         decision = eod_strategy.compute_entry(
-            asset.entry_amount, price, multiplier, reference_price,
+            effective_entry_amount, price, multiplier, reference_price,
             settings.stop_loss_pct, settings.take_profit_pct,
         )
     except eod_strategy.EntryValidationError as exc:
@@ -316,7 +353,9 @@ def _enter_position(
     )
 
 
-def _process_entries(user_id: int, client: T212Client | None, settings: EODSettings) -> None:
+def _process_entries(
+    user_id: int, client: T212Client | None, settings: EODSettings, current_equity: Decimal | None = None,
+) -> None:
     assets = EODAsset.query.filter_by(user_id=user_id).all()
     if not assets:
         return
@@ -364,7 +403,7 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
         if price is None or price <= 0:
             continue
 
-        _enter_position(user_id, client, asset, settings, price, drop, multiplier, reference_price)
+        _enter_position(user_id, client, asset, settings, price, drop, multiplier, reference_price, current_equity)
         return  # NAJWYŻEJ JEDNO nowe wejście na tick - ten sam powód co
         # bot_engine.py/signal_engine.py::_process_entries (rate limit T212 na
         # demo) - kolejny kandydat dostanie szansę w następnym ticku.
@@ -769,7 +808,8 @@ def tick(app) -> None:
 
             if settings.is_paper_trading:
                 if _in_eod_window():
-                    _process_entries(user_id, None, settings)
+                    current_equity = _get_current_equity(user_id, settings) if settings.equity_sizing_enabled else None
+                    _process_entries(user_id, None, settings, current_equity)
                 continue
 
             master_key = bot_credentials.get_master_key(user_id)
@@ -817,4 +857,5 @@ def tick(app) -> None:
             if skip_new_entries:
                 continue
             if _in_eod_window():
-                _process_entries(user_id, client, settings)
+                current_equity = _get_current_equity(user_id, settings, client) if settings.equity_sizing_enabled else None
+                _process_entries(user_id, client, settings, current_equity)

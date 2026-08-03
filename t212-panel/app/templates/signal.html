@@ -213,6 +213,22 @@
         Warunek wejścia (na sztywno, nie edytowalny tutaj): RSI(14) &lt; próg
         powyżej ORAZ cena &gt; SMA(200), liczone ze świec dziennych.
     </p>
+
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="signal-equity-sizing" {{ "checked" if settings.equity_sizing_enabled else "" }}>
+        Money management: skaluj kwotę wejścia wg √equity
+    </label>
+    <p class="auth-box__hint">
+        Gdy włączone: efektywna kwota wejścia = kwota z listy Aktywa *
+        √(bieżące equity / equity odniesienia) - NIE liniowo (patrz
+        microgrid_strategy.compute_equity_scaled_amount). Equity odniesienia
+        jest ZAPISYWANE AUTOMATYCZNIE w momencie zaznaczenia tego checkboxa
+        (nic nie wpisujesz ręcznie) - obecnie:
+        <span id="signal-equity-sizing-baseline">{{ settings.equity_sizing_baseline if settings.equity_sizing_baseline else "—" }}</span> EUR.
+        Odznaczenie i ponowne zaznaczenie ustawia nowy punkt odniesienia na
+        equity z TEGO momentu.
+    </p>
+
     <label class="auth-form__checkbox">
         <input type="checkbox" id="signal-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
         Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)

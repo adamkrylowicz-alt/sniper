@@ -211,6 +211,22 @@
         -2.0% do -3.49% → x0.6 kwoty bazowej, -3.5% do -5.49% → x1.0,
         -5.5% i więcej → x1.5. Poniżej -2.0% - brak wejścia.
     </p>
+
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="eod-equity-sizing" {{ "checked" if settings.equity_sizing_enabled else "" }}>
+        Money management: skaluj kwotę wejścia wg √equity
+    </label>
+    <p class="auth-box__hint">
+        Gdy włączone: kwota BAZOWA z listy Aktywa (przed mnożnikiem tieru
+        powyżej) * √(bieżące equity / equity odniesienia) - NIE liniowo
+        (patrz microgrid_strategy.compute_equity_scaled_amount). Equity
+        odniesienia jest ZAPISYWANE AUTOMATYCZNIE w momencie zaznaczenia tego
+        checkboxa (nic nie wpisujesz ręcznie) - obecnie:
+        <span id="eod-equity-sizing-baseline">{{ settings.equity_sizing_baseline if settings.equity_sizing_baseline else "—" }}</span> EUR.
+        Odznaczenie i ponowne zaznaczenie ustawia nowy punkt odniesienia na
+        equity z TEGO momentu.
+    </p>
+
     <label class="auth-form__checkbox">
         <input type="checkbox" id="eod-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
         Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)

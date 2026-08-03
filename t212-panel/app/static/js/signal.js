@@ -90,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
             take_profit_atr_mult: document.getElementById("signal-take-profit-mult").value,
             max_concurrent_positions: document.getElementById("signal-max-positions").value,
             is_paper_trading: document.getElementById("signal-paper-trading").checked,
+            equity_sizing_enabled: document.getElementById("signal-equity-sizing").checked,
         };
 
         try {
@@ -102,6 +103,9 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.ok) {
                 playSuccess();
                 settingsStatus.textContent = "Zapisano.";
+                if (data.equity_sizing_baseline !== undefined) {
+                    document.getElementById("signal-equity-sizing-baseline").textContent = data.equity_sizing_baseline || "—";
+                }
             } else {
                 playError();
                 settingsStatus.textContent = data.error || "Błąd zapisu.";
