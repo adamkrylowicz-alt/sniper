@@ -88,6 +88,7 @@ document.addEventListener("DOMContentLoaded", () => {
             rsi_threshold: document.getElementById("signal-rsi-threshold").value,
             stop_loss_atr_mult: document.getElementById("signal-stop-loss-mult").value,
             take_profit_atr_mult: document.getElementById("signal-take-profit-mult").value,
+            max_concurrent_positions: document.getElementById("signal-max-positions").value,
             is_paper_trading: document.getElementById("signal-paper-trading").checked,
         };
 

@@ -380,6 +380,7 @@ def update_settings():
     try:
         dca_scenario = (payload.get("dca_scenario") or settings.dca_scenario).strip()
         max_dca_levels = int(payload.get("max_dca_levels", settings.max_dca_levels))
+        max_concurrent_positions = int(payload.get("max_concurrent_positions", settings.max_concurrent_positions))
         dca_trigger_pct = Decimal(str(payload.get("dca_trigger_pct", settings.dca_trigger_pct)))
         max_spread_pct = Decimal(str(payload.get("max_spread_pct", settings.max_spread_pct)))
         take_profit_step_pct = Decimal(str(payload.get("take_profit_step_pct", settings.take_profit_step_pct)))
@@ -387,7 +388,7 @@ def update_settings():
         max_daily_loss = Decimal(str(payload.get("max_daily_loss", settings.max_daily_loss)))
 
         if (
-            max_dca_levels <= 0 or dca_trigger_pct <= 0 or max_spread_pct <= 0
+            max_dca_levels <= 0 or max_concurrent_positions <= 0 or dca_trigger_pct <= 0 or max_spread_pct <= 0
             or take_profit_step_pct <= 0 or stop_loss_pct <= 0 or max_daily_loss <= 0
         ):
             raise ValueError("Wartości muszą być dodatnie.")
@@ -431,6 +432,7 @@ def update_settings():
 
     settings.dca_scenario = dca_scenario
     settings.max_dca_levels = max_dca_levels
+    settings.max_concurrent_positions = max_concurrent_positions
     settings.dca_trigger_pct = dca_trigger_pct
     settings.max_spread_pct = max_spread_pct
     settings.take_profit_step_pct = take_profit_step_pct

@@ -213,13 +213,15 @@ def update_settings():
     try:
         stop_loss_pct = Decimal(str(payload.get("stop_loss_pct", settings.stop_loss_pct)))
         take_profit_pct = Decimal(str(payload.get("take_profit_pct", settings.take_profit_pct)))
-        if stop_loss_pct <= 0 or take_profit_pct <= 0:
+        max_concurrent_positions = int(payload.get("max_concurrent_positions", settings.max_concurrent_positions))
+        if stop_loss_pct <= 0 or take_profit_pct <= 0 or max_concurrent_positions <= 0:
             raise ValueError("Wartości muszą być dodatnie.")
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Nieprawidłowe dane w ustawieniach ryzyka."), 400
 
     settings.stop_loss_pct = stop_loss_pct
     settings.take_profit_pct = take_profit_pct
+    settings.max_concurrent_positions = max_concurrent_positions
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
     settings.force_close_enabled = bool(payload.get("force_close_enabled", settings.force_close_enabled))
     db.session.commit()

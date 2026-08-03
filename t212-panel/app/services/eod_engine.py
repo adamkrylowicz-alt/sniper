@@ -322,6 +322,14 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
         return
 
     open_tickers = {t.ticker for t in EODTrade.query.filter_by(user_id=user_id, status="OPEN").all()}
+    # DODANE 2026-08-03 - do tej pory EOD nie miało ŻADNEGO limitu jednoczesnych
+    # pozycji (ta sama luka jaką miał Sygnał do wieczora tego samego dnia,
+    # patrz signal_engine.py::MAX_CONCURRENT_POSITIONS) - lista High Conviction
+    # mogłaby teoretycznie otworzyć pozycję na KAŻDYM tickerze naraz przy
+    # szerokim spadku rynku. EODSettings.max_concurrent_positions - edytowalne
+    # w UI, domyślnie 2 (patrz migrate_add_max_concurrent_positions.py).
+    if len(open_tickers) >= settings.max_concurrent_positions:
+        return  # limit otwartych pozycji osiągnięty - nic nowego dziś
 
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
@@ -357,6 +365,9 @@ def _process_entries(user_id: int, client: T212Client | None, settings: EODSetti
             continue
 
         _enter_position(user_id, client, asset, settings, price, drop, multiplier, reference_price)
+        return  # NAJWYŻEJ JEDNO nowe wejście na tick - ten sam powód co
+        # bot_engine.py/signal_engine.py::_process_entries (rate limit T212 na
+        # demo) - kolejny kandydat dostanie szansę w następnym ticku.
 
 
 def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSettings, pending_order_ids: set[str]) -> None:

@@ -1299,3 +1299,65 @@ log czysty. **Istniejące otwarte pozycje NIETKNIĘTE** (Adam: "nie
 przejmuj się, to demo/testy") - nowe limity blokują tylko NOWE wejścia,
 dopóki liczba otwartych pozycji nie spadnie naturalnie poniżej nowych
 progów (10→6 dla Micro-Gridu, 6→2 dla Sygnału).
+
+## ZROBIONE (2026-08-03, wieczór): wyścig gubiący cenę zamknięcia + limit pozycji jako ustawienie
+
+Po sprawdzeniu bota na żywo (Adam: "spr bota") znalezione na żywo w bazie:
+**31 z ostatnich 52 zamkniętych pozycji Micro-Gridu (60%), w tym 6 z 8
+zamkniętych tego samego dnia, miało `close_price=NULL`** - stanowczo za
+dużo jak na ręczne sprzedaże (Adam spał przez większość tego okna). To
+samo "56% bez known close_price" było wcześniej powodem odrzucenia
+Kelly/OptimalF w sekcji money management (2026-07-31) - część tej luki
+mogła być artefaktem poniższego buga, nie prawdziwym brakiem danych.
+
+**Root cause - wyścig dwóch funkcji o zamknięcie tej samej pozycji.**
+W `reconcile()`/`tick()` (`bot_engine.py`) `_manage_trailing_exit()` woła
+się CELOWO przed `get_pending_orders()`/`_detect_exit_fills()` (ochrona
+zysku ma priorytet, decyzja Adama 2026-07-27 - **ta kolejność NIE zostaje
+zmieniona**, tylko właściwy bug naprawiony w miejscu). Problem:
+`_manage_trailing_exit()` ma gałąź (dodaną 2026-07-24 na wypadek "sprzedane
+ręcznie poza appką") która przy 0 sztuk w portfelu T212 NATYCHMIAST
+zamyka trade z `close_price=NULL` i **zeruje** `stop_order_id`/
+`sell_order_id`. Dopiero PO NIEJ leci `_detect_exit_fills()`, którego
+zadaniem jest właśnie sprawdzić historię zleceń T212 i wyciągnąć realną
+cenę wykonania stopu/take-profitu - ale trade jest już CLOSED i zlecenia
+wyzerowane, więc nie ma czego sprawdzić. Cena ginie bezpowrotnie przy
+KAŻDYM zamknięciu przez własny stop bota, nie tylko przy prawdziwej
+ręcznej sprzedaży.
+
+**Fix** (bez zmiany kolejności wywołań funkcji): w tej samej gałęzi, PRZED
+uznaniem za "sprzedane ręcznie", sprawdzić `stop_order_id`/`sell_order_id`
+przez `_lookup_recent_order` (ten sam mechanizm co `_resolve_vanished_leg`)
+- jeśli historia T212 potwierdza `status=FILLED`, wyciągnąć realną cenę i
+zamknąć przez `_finalize_closed_trade` z prawdziwym `close_price` zamiast
+NULL. Dopiero gdy brak dowodu wykonania (żadnego order_id, albo lookup nic
+nie zwraca) - fallback do starego zachowania (cena nieznana, prawdopodobnie
+faktycznie ręczne). Zweryfikowane dwoma testami syntetycznymi na
+izolowanej bazie in-memory: (1) symulowany fill stopu bota (order history
+zwraca FILLED, cena 103.50) - `close_price` teraz poprawnie odzyskane,
+zamiast zgubione; (2) symulowana faktyczna ręczna sprzedaż (lookup zwraca
+nic) - fallback nadal działa, `close_price=NULL` jak wcześniej. Zero zmiany
+zachowania tradingowego, tylko poprawność danych P&L.
+
+**Limit jednoczesnych pozycji przeniesiony ze stałych modułowych do
+ustawień per-user** (Adam: "ilość otwartych pozycji wrzuć do ustawień dla
+każdego bota osobno... to musi się dać zmieniać w ustawieniach... to tylko
+ustawienia fabryczne"). Nowa kolumna `max_concurrent_positions` w
+`RiskSettings`/`SignalSettings`/`EODSettings` (migracja
+`migrate_add_max_concurrent_positions.py`, uruchomiona dev+prod), domyślne
+wartości zachowują dotychczasowe zachowanie: Micro-Grid=6, Sygnał=2. **EOD
+dostał ten sam limit co Sygnał miał od wczoraj wieczorem - do tej pory
+`_process_entries` w `eod_engine.py` NIE MIAŁO ŻADNEGO capa** (ta sama
+klasa luki, dodana dokładnie ten sam wzorzec: check na początku funkcji +
+`return` po pierwszym wejściu na tick), domyślnie **2 pozycje**. UI: nowe
+pole "Maks. liczba jednoczesnych otwartych pozycji" w ustawieniach ryzyka
+każdego z trzech botów (bot.html/signal.html/eod.html + odpowiednie
+routes/*.py + static/js/*.js), zweryfikowane end-to-end testem Flask
+test-client na izolowanej bazie in-memory (render + zapis + odrzucenie
+wartości ≤0 dla wszystkich trzech silników).
+
+**Wartości fabryczne**: EOD `entry_amount` już było 100€ (bez zmian) -
+Sygnał obniżony ze 150€ (wczorajsza wartość) na **100€** na wszystkich 58
+`SignalAsset` (prod) - Adam: "eod 2 pozycje po 100euro/usd sygnał też 2 po
+100" (budżet Sygnału efektywnie 200€ zamiast 300€, do zmiany w UI w każdej
+chwili). Wdrożone na prod, `run.py` zrestartowany, log czysty, zero błędów.

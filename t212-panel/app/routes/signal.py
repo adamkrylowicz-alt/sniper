@@ -215,8 +215,12 @@ def update_settings():
         rsi_threshold = Decimal(str(payload.get("rsi_threshold", settings.rsi_threshold)))
         stop_loss_atr_mult = Decimal(str(payload.get("stop_loss_atr_mult", settings.stop_loss_atr_mult)))
         take_profit_atr_mult = Decimal(str(payload.get("take_profit_atr_mult", settings.take_profit_atr_mult)))
+        max_concurrent_positions = int(payload.get("max_concurrent_positions", settings.max_concurrent_positions))
 
-        if rsi_threshold <= 0 or rsi_threshold >= 100 or stop_loss_atr_mult <= 0 or take_profit_atr_mult <= 0:
+        if (
+            rsi_threshold <= 0 or rsi_threshold >= 100 or stop_loss_atr_mult <= 0 or take_profit_atr_mult <= 0
+            or max_concurrent_positions <= 0
+        ):
             raise ValueError("Wartości poza dozwolonym zakresem.")
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Nieprawidłowe dane w ustawieniach ryzyka."), 400
@@ -224,6 +228,7 @@ def update_settings():
     settings.rsi_threshold = rsi_threshold
     settings.stop_loss_atr_mult = stop_loss_atr_mult
     settings.take_profit_atr_mult = take_profit_atr_mult
+    settings.max_concurrent_positions = max_concurrent_positions
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
     db.session.commit()
 

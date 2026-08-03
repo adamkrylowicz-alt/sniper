@@ -435,6 +435,14 @@ class RiskSettings(db.Model):
     # traktowane jak "brak" w compute_equity_scaled_amount, gdy None/<=0.
     equity_sizing_baseline = db.Column(db.Numeric(12, 2), nullable=True, default=None)
 
+    # Limit jednoczesnych otwartych pozycji Micro-Gridu - do 2026-08-03 była to
+    # stała modułowa MAX_CONCURRENT_POSITIONS w bot_engine.py (patrz
+    # docs/IDEAS_v2.md, dopasowanie do budżetu ~1000€ z 02/03.08.2026), teraz
+    # przeniesiona do ustawień per-user na życzenie Adama - "to tylko ustawienia
+    # fabryczne", ma się dać zmieniać w UI bez redeployu. Default=6 zachowuje
+    # wartość ustaloną tamtego dnia (multi-window walk-forward, patrz tam).
+    max_concurrent_positions = db.Column(db.Integer, nullable=False, default=6)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<RiskSettings user_id={self.user_id} active={self.is_bot_active}>"
 
@@ -687,6 +695,12 @@ class SignalSettings(db.Model):
     stop_loss_atr_mult = db.Column(db.Numeric(6, 2), nullable=False, default=1.8)
     take_profit_atr_mult = db.Column(db.Numeric(6, 2), nullable=False, default=3.0)
 
+    # Limit jednoczesnych otwartych pozycji - do 2026-08-03 stała modułowa
+    # signal_engine.MAX_CONCURRENT_POSITIONS (dodana wieczorem 02/03.08.2026,
+    # patrz docs/IDEAS_v2.md), teraz ustawienie per-user, edytowalne w UI
+    # (ten sam powód co RiskSettings.max_concurrent_positions).
+    max_concurrent_positions = db.Column(db.Integer, nullable=False, default=2)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<SignalSettings user_id={self.user_id} active={self.is_active}>"
 
@@ -830,6 +844,12 @@ class EODSettings(db.Model):
     # Domyślnie WYŁĄCZONE (pozycje zostają otwarte, zarządzane tylko stop-lossem/
     # take-profitem, jak w Sygnale) - patrz eod_engine.py::FORCE_CLOSE_TIME.
     force_close_enabled = db.Column(db.Boolean, nullable=False, default=False)
+
+    # Limit jednoczesnych otwartych pozycji - EOD do 2026-08-03 nie miał
+    # ŻADNEGO capa (luka tej samej klasy co Sygnał przed wieczorną poprawką
+    # 02/03.08.2026, patrz docs/IDEAS_v2.md) - dodane per-user, edytowalne w UI,
+    # zamiast stałej modułowej (Adam: "to tylko ustawienia fabryczne").
+    max_concurrent_positions = db.Column(db.Integer, nullable=False, default=2)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<EODSettings user_id={self.user_id} active={self.is_active}>"

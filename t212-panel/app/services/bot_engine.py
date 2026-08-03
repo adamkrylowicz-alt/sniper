@@ -285,7 +285,12 @@ ENTRY_TREND_MAX_DROP_PCT = Decimal("0.03")
 # ~16.67€/nogę (patrz UPDATE BotAsset.entry_amount tego dnia) worst-case =
 # 6*7*16.67≈700€, dokładnie budżet przypisany temu silnikowi (700€ z 1000€
 # całości, reszta 300€ na Sygnał).
-MAX_CONCURRENT_POSITIONS = 6
+#
+# PRZENIESIONE 2026-08-03 (wieczorem) ze stałej modułowej do
+# RiskSettings.max_concurrent_positions (edytowalne w UI per-user, bez
+# redeployu) - Adam: "to tylko ustawienia fabryczne", 6 zostaje jako DEFAULT
+# nowej kolumny (patrz migrate_add_max_concurrent_positions.py), read z
+# settings.max_concurrent_positions w miejscach użycia poniżej.
 
 # Stop-loss oparty o realna zmiennosc instrumentu (ATR - Average True Range)
 # ZAMIAST sztywnego % (RiskSettings.stop_loss_pct) - dodane 2026-07-22 na
@@ -1087,6 +1092,44 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
 
     for trade in candidates:
         if owned_map is not None and owned_map.get(trade.ticker, Decimal("0")) <= 0:
+            # PRZED uznaniem za "sprzedane ręcznie" (cena nieznana) - sprawdź czy
+            # to nie WŁASNY stop/take-profit bota, który właśnie się wykonał.
+            # _detect_exit_fills()/_resolve_vanished_leg() robią dokładnie to
+            # samo sprawdzenie (historia zleceń T212), ale wołane są PO tej
+            # funkcji w reconcile()/tick() (celowo - patrz komentarz przy
+            # wywołaniu _manage_trailing_exit, ochrona zysku ma priorytet nad
+            # get_pending_orders()) - do tego czasu ta gałąź już zdążyłaby
+            # zamknąć trade i wyzerować stop_order_id/sell_order_id, więc
+            # _detect_exit_fills nie miałby już czego sprawdzić - realna cena
+            # ginie bezpowrotnie. Znalezione 2026-08-03 na żywo: 31/52 (60%)
+            # zamkniętych pozycji miało close_price=NULL, w tym 6/8 zamkniętych
+            # jednego dnia - zdecydowanie za dużo jak na ręczną sprzedaż, to
+            # niemal na pewno własne zamknięcia bota gubione przez ten wyścig.
+            resolved = False
+            for order_id, filled_via in (
+                (trade.stop_order_id, "stop-loss"),
+                (trade.sell_order_id, "take-profit"),
+            ):
+                if not order_id:
+                    continue
+                item = _lookup_recent_order(client, order_id)
+                if item is None or (item.get("order") or {}).get("status") != _FILLED_ORDER_STATUS:
+                    continue
+                fill_price_raw = (item.get("fill") or {}).get("price")
+                fill_price = Decimal(str(fill_price_raw)) if fill_price_raw is not None else None
+                _log(
+                    user_id, "WARN",
+                    f"{trade.ticker}: 0 szt. w portfelu T212, zlecenie {order_id} potwierdzone jako "
+                    f"WYKONANE w historii T212 (cena {fill_price if fill_price is not None else trade.stop_target_price}) "
+                    "- zamykam z realną ceną, NIE jako 'sprzedane ręcznie'.",
+                    trade.position_group_id,
+                )
+                _finalize_closed_trade(user_id, client, trade, filled_via, fill_price=fill_price)
+                resolved = True
+                break
+            if resolved:
+                continue
+
             trade.status = "CLOSED"
             trade.closed_at = dt.datetime.utcnow()
             trade.stop_order_id = None
@@ -1978,8 +2021,8 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
     zasłaniałby kolejne w liście.
     """
     open_count = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False).count()
-    if open_count >= MAX_CONCURRENT_POSITIONS:
-        return  # limit otwartych pozycji osiągnięty (patrz MAX_CONCURRENT_POSITIONS) - nic nowego dziś
+    if open_count >= settings.max_concurrent_positions:
+        return  # limit otwartych pozycji osiągnięty (patrz RiskSettings.max_concurrent_positions) - nic nowego dziś
 
     now = dt.datetime.utcnow()
 

@@ -103,7 +103,11 @@ SIGNAL_LOOKBACK_DAYS = 250
 # spadku rynku (wiele tickerów jednocześnie "oversold") mogło to teoretycznie
 # otworzyć dziesiątki pozycji naraz - przy małym budżecie realne ryzyko
 # przekroczenia dostępnego kapitału.
-MAX_CONCURRENT_POSITIONS = 2
+#
+# PRZENIESIONE 2026-08-03 (wieczorem) ze stałej modułowej do
+# SignalSettings.max_concurrent_positions (edytowalne w UI per-user, bez
+# redeployu) - Adam: "to tylko ustawienia fabryczne", 2 zostaje jako DEFAULT
+# nowej kolumny (patrz migrate_add_max_concurrent_positions.py).
 
 # Godziny wejścia - PRD: "Normalny tryb handlu (10:00-15:45/16:00)". Wyjścia
 # (stop-loss/take-profit) NIE są ograniczone do tego okna, tylko do
@@ -318,8 +322,8 @@ def _process_entries(user_id: int, client: T212Client | None, settings: SignalSe
         t.ticker for t in
         SignalTrade.query.filter_by(user_id=user_id, status="OPEN").all()
     }
-    if len(open_tickers) >= MAX_CONCURRENT_POSITIONS:
-        return  # limit otwartych pozycji osiągnięty (patrz MAX_CONCURRENT_POSITIONS) - nic nowego dziś
+    if len(open_tickers) >= settings.max_concurrent_positions:
+        return  # limit otwartych pozycji osiągnięty (patrz SignalSettings.max_concurrent_positions) - nic nowego dziś
 
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
