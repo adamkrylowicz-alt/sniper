@@ -1518,3 +1518,42 @@ MMI. Nie dotyczyło produkcji na żywo (tylko narzędzie backtestowe), ale
 naprawione: własna, niezależna stała `MAX_CONCURRENT_POSITIONS=6` w
 `microgrid_runner.py` zamiast importu. Zmirrorowane dev->prod (plik
 nieużywany przez żywy `run.py`, bez restartu).
+
+## ZROBIONE (2026-08-03, noc): ten sam bug "zniknięcie z pending = wykonanie" znaleziony w Sygnale i EOD, naprawiony (Micro-Grid miał ten fix już od 23.07)
+
+Adam: "sprawdź co jeszcze da się poprawić w botach" - ogólny przegląd.
+Sprawdzone czy Sygnał/EOD mają ten sam problem, który Micro-Grid już
+rozwiązał 2026-07-23 (`_resolve_vanished_leg`, patrz komentarz tam:
+"Zniknięcie z pending SAMO W SOBIE nie dowodzi wykonania - zlecenie mogło
+też zostać anulowane/odrzucone... znaleziono 2026-07-23, gdy ASML pokazywał
+wciąż otwartą pozycję na koncie T212, mimo że bot już oznaczył ją CLOSED
+wyłącznie na podstawie zniknięcia z pending").
+
+**Znalezione: TAK, dokładnie ten sam bug, w OBU pozostałych silnikach.**
+`signal_engine.py::_manage_exits` i `eod_engine.py::_manage_exits` miały:
+```python
+if pending_fetch_ok and trade.stop_order_id and trade.stop_order_id not in pending_order_ids:
+    _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=trade.stop_loss_price)
+```
+- ZERO weryfikacji w historii T212 czy zlecenie faktycznie się wykonało
+(status FILLED) czy zostało anulowane/odrzucone - naiwne założenie
+"zniknęło z pending = wykonane". Poprawka z Micro-Gridu (23.07) NIGDY nie
+została przeniesiona do pozostałych dwóch silników, mimo że oba zostały
+napisane PO tamtym fixie. Skutek na żywo: gdyby zlecenie stop-loss w
+Sygnale/EOD zostało anulowane/odrzucone przez T212 (ten sam scenariusz co
+złapany na ASML w Micro-Gridzie), bot BŁĘDNIE oznaczyłby pozycję jako
+zamkniętą (z ceną = `stop_loss_price`, nie realną) i przestałby nią
+zarządzać, mimo że pozycja realnie WCIĄŻ jest otwarta i niechroniona na
+koncie.
+
+**Fix**: reużyte wprost `bot_engine._lookup_recent_order`/
+`_FILLED_ORDER_STATUS` (generyczne, bez tagowania per-silnik, bezpieczne do
+importu) w obu plikach. Ten sam trójstanowy wzorzec co `_resolve_vanished_leg`:
+FILLED w historii -> zamknij z REALNĄ ceną wykonania (nie tylko
+`stop_loss_price` jak dotąd - poprawia też dokładność P&L); status inny
+(anulowane/odrzucone) -> NIE zamykaj, wyczyść `stop_order_id`, zlecenie
+zostanie wystawione od nowa; brak w historii (jeszcze nie wiadomo) -> nic
+nie zmieniaj, sprawdź ponownie następnym razem. Zweryfikowane 6 testami
+syntetycznymi (po 3 na silnik: FILLED z realną ceną / anulowane-zostaje-OPEN
+/ nieznane-bez-zmian), wszystkie przeszły. Zmirrorowane dev->prod, `run.py`
+zrestartowany, log czysty.

@@ -80,7 +80,7 @@ from ..models import EODAsset, EODAuditLog, EODSettings, EODTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from . import bot_credentials, diagnostics, market_hours, price_feed
-from .bot_engine import _next_retry_delay, _place_buy_with_precision_fallback
+from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import eod_strategy
 from .strategy.microgrid_strategy import compute_equity_scaled_amount
 from .t212_client import T212APIError, T212Client
@@ -699,8 +699,29 @@ def _manage_exits(
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
     for trade in open_trades:
+        # Stop-loss zniknal z pending - MOZE oznaczac wykonanie, ale samo
+        # zniknięcie tego NIE dowodzi (mogło też zostać anulowane/odrzucone
+        # przez T212) - ten sam bug i fix co bot_engine.py::_resolve_vanished_leg
+        # (znaleziony tam 2026-07-23), nigdy nie przeniesiony do EOD.
+        # Sprawdzamy realny status w historii T212 PRZED uznaniem za zamknięte.
         if pending_fetch_ok and trade.stop_order_id and trade.stop_order_id not in pending_order_ids:
-            _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=trade.stop_loss_price)
+            item = _lookup_recent_order(client, trade.stop_order_id)
+            if item is None:
+                continue
+            status = (item.get("order") or {}).get("status")
+            if status == _FILLED_ORDER_STATUS:
+                fill_price_raw = (item.get("fill") or {}).get("price")
+                fill_price = Decimal(str(fill_price_raw)) if fill_price_raw is not None else trade.stop_loss_price
+                _finalize_closed_trade(user_id, trade, "stop-loss", fill_price=fill_price)
+            else:
+                _log(
+                    user_id, "WARN",
+                    f"{trade.ticker}: zlecenie stop-loss {trade.stop_order_id} zniknęło z pending, ale "
+                    f"historia T212 pokazuje status {status} (NIE {_FILLED_ORDER_STATUS}) - NIE zamykam "
+                    "pozycji EOD, zlecenie zostanie wystawione ponownie.",
+                )
+                trade.stop_order_id = None
+                db.session.commit()
             continue
 
         if force_close:
