@@ -793,14 +793,31 @@ def reconcile(user_id: int) -> None:
             api_key=creds["api_key"], api_secret=creds["api_secret"], environment=SIGNAL_ENVIRONMENT,
             engine="signal", user_id=user_id,
         )
+        # get_pending_orders_for_tick() zamiast get_pending_orders() - reconcile()
+        # (start appki + ręczna aktywacja) wcześniej omijało WSPÓLNY backoff/cache
+        # tick()/reconcile() między Micro-Grid/Sygnał/EOD (patrz t212_client.py),
+        # więc restart appki albo ręczne "Aktywuj" mogło strzelić realny request
+        # do T212 W TRAKCIE aktywnego backoffu ustawionego przez inny silnik, a
+        # własny 429 stąd nie zasilał eskalacji - złapane na żywo 2026-08-04.
         try:
-            pending = client.get_pending_orders()
-            pending_ids = {str(o.get("id")) for o in pending}
-            pending_fetch_ok = True
+            pending = client.get_pending_orders_for_tick()
         except T212APIError as exc:
-            _log(user_id, "ERROR", f"Reconciliation: błąd pobierania pending orders - {exc}")
+            consecutive, delay_seconds = client.tick_backoff_status() or (1, 60.0)
+            _log(
+                user_id, "ERROR",
+                f"Reconciliation: błąd pobierania pending orders #{consecutive} z rzędu ({exc}) - "
+                f"kolejna próba za {max(1, round(delay_seconds / 60))} min.",
+            )
             pending_ids = set()
             pending_fetch_ok = False
+        else:
+            if pending is None:
+                _log(user_id, "INFO", "Reconciliation: pomijam pending orders (wspólny backoff po wcześniejszych błędach T212).")
+                pending_ids = set()
+                pending_fetch_ok = False
+            else:
+                pending_ids = {str(o.get("id")) for o in pending}
+                pending_fetch_ok = True
         if pending_fetch_ok:
             _confirm_pending_entries(user_id, client, settings, pending_ids)
             _retry_pending_buys(user_id, client, settings, pending=pending)
