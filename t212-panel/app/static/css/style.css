@@ -1645,6 +1645,22 @@ img.tile__logo {
     margin-bottom: 12px;
 }
 
+.pie-detail__budget-row--disabled { opacity: 0.45; }
+
+/* Podnagłówki grupujące pola wewnątrz .collapsible (np. "Ustawienia ryzyka"
+   w bot.html) - lżejsze niż .section-heading, bez linii pod spodem, tylko
+   cienka linia górna odseparowująca kolejne grupy pól. */
+.settings-subheading {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin: 24px 0 10px;
+    padding-top: 16px;
+    border-top: 1px solid var(--hairline);
+}
+.settings-subheading:first-of-type { margin-top: 12px; padding-top: 0; border-top: none; }
+
 .pie-fx-banner {
     background: rgba(168, 85, 255, 0.1);
     border: 1px solid var(--accent-amber);

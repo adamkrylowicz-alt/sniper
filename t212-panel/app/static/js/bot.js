@@ -80,6 +80,16 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    const fxCostCheckbox = document.getElementById("bot-fx-cost-adjustment");
+    const fxFeeInput = document.getElementById("bot-fx-fee-pct");
+    const fxFeeRow = document.getElementById("bot-fx-fee-row");
+    const syncFxFeeDisabled = () => {
+        fxFeeInput.disabled = !fxCostCheckbox.checked;
+        fxFeeRow.classList.toggle("pie-detail__budget-row--disabled", !fxCostCheckbox.checked);
+    };
+    syncFxFeeDisabled();
+    fxCostCheckbox.addEventListener("change", syncFxFeeDisabled);
+
     document.getElementById("btn-bot-save-settings").addEventListener("click", async () => {
         const btn = document.getElementById("btn-bot-save-settings");
         const settingsStatus = document.getElementById("bot-settings-status");
