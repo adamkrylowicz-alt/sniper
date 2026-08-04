@@ -47,6 +47,14 @@ function pplClass(value) {
     return value >= 0 ? "focus-tile__pnl--profit" : "focus-tile__pnl--loss";
 }
 
+// "bot"/"signal"/"eod" -> etykieta w UI, jeden na wszystkie 3 przyciski
+// adopcji + odznaka "Zarządzane przez X" (patrz routes/scalping.py::
+// _annotate_bot_state, managed_by - 2026-08-04, "ujednolić wszystkie boty").
+const ENGINE_LABELS = { bot: "Micro-Grid", signal: "Sygnał", eod: "EOD" };
+function engineLabel(engine) {
+    return ENGINE_LABELS[engine] || engine;
+}
+
 function sortHeaderCell(label, key) {
     const active = sortState.key === key;
     const arrow = active ? (sortState.dir === 1 ? "▲" : "▼") : "⇅";
@@ -92,10 +100,14 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
                     (${p.ppl_pct >= 0 ? "+" : ""}${p.ppl_pct.toFixed(1)}%)
                 </td>
                 <td class="portfolio-bot-cell" data-ticker="${escapeHtml(p.ticker)}">
-                    ${p.bot_managed
-                        ? `<span class="badge badge--bot">Zarządzane przez bota</span>
-                           <button type="button" class="account-bar__btn portfolio-release-btn" data-trade-id="${p.bot_trade_id}">Cofnij</button>`
-                        : `<button type="button" class="account-bar__btn portfolio-adopt-btn" data-ticker="${escapeHtml(p.ticker)}" data-on-bot-list="${p.on_bot_list ? "true" : "false"}">Przekaż botowi</button>`}
+                    ${p.managed_by
+                        ? `<span class="badge badge--bot">Zarządzane przez ${engineLabel(p.managed_by)}</span>
+                           <button type="button" class="account-bar__btn portfolio-release-btn" data-engine="${p.managed_by}" data-trade-id="${p.managed_trade_id}">Cofnij</button>`
+                        : `<div class="portfolio-adopt-group">
+                               <button type="button" class="account-bar__btn portfolio-adopt-btn" data-engine="bot" data-ticker="${escapeHtml(p.ticker)}" data-on-list="${p.on_bot_list ? "true" : "false"}">→ Micro-Grid</button>
+                               <button type="button" class="account-bar__btn portfolio-adopt-btn" data-engine="signal" data-ticker="${escapeHtml(p.ticker)}" data-on-list="${p.on_signal_list ? "true" : "false"}">→ Sygnał</button>
+                               <button type="button" class="account-bar__btn portfolio-adopt-btn" data-engine="eod" data-ticker="${escapeHtml(p.ticker)}" data-on-list="${p.on_eod_list ? "true" : "false"}">→ EOD</button>
+                           </div>`}
                 </td>
             </tr>`;
     }).join("");
@@ -189,23 +201,23 @@ renderPortfolio() (odswiezenie z T212), a sam kontener zostaje ten sam
 element przez cala zywotnosc strony. confirmDialog - ten sam modal co
 bot.js::unblock (common.js), zamiast window.confirm, dla spojnosci wygladu.
 */
-async function adoptPosition(ticker, onBotList) {
+async function adoptPosition(engine, ticker, onList) {
     let entryAmount = null;
-    if (!onBotList) {
+    if (!onList) {
         const input = window.prompt(
-            `${ticker} nie jest jeszcze na liście bota - podaj kwotę wejścia (na przyszłe poziomy DCA):`
+            `${ticker} nie jest jeszcze na liście ${engineLabel(engine)} - podaj kwotę wejścia (na przyszłe poziomy DCA):`
         );
         if (input === null) return;
         entryAmount = input.trim();
         if (!entryAmount) return;
     }
 
-    if (!(await confirmDialog(`Przekazać ${ticker} botowi? Od tego momentu bot przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).`))) {
+    if (!(await confirmDialog(`Przekazać ${ticker} silnikowi ${engineLabel(engine)}? Od tego momentu przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).`))) {
         return;
     }
 
     try {
-        const resp = await fetch("/bot/asset/adopt", {
+        const resp = await fetch(`/${engine}/asset/adopt`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ ticker, entry_amount: entryAmount }),
@@ -213,7 +225,7 @@ async function adoptPosition(ticker, onBotList) {
         const data = await resp.json();
         if (!data.ok) {
             playError();
-            window.alert(`Nie udało się przekazać ${ticker} botowi: ${data.error}`);
+            window.alert(`Nie udało się przekazać ${ticker} silnikowi ${engineLabel(engine)}: ${data.error}`);
             return;
         }
         playSuccess();
@@ -225,13 +237,13 @@ async function adoptPosition(ticker, onBotList) {
     }
 }
 
-async function releasePosition(tradeId) {
-    if (!(await confirmDialog("Cofnąć tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany)."))) {
+async function releasePosition(engine, tradeId) {
+    if (!(await confirmDialog(`Cofnąć tę pozycję spod zarządzania ${engineLabel(engine)}? Udziały ZOSTAJĄ na koncie - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).`))) {
         return;
     }
 
     try {
-        const resp = await fetch(`/bot/positions/${tradeId}/release`, { method: "POST" });
+        const resp = await fetch(`/${engine}/positions/${tradeId}/release`, { method: "POST" });
         const data = await resp.json();
         if (!data.ok) {
             playError();
@@ -250,12 +262,12 @@ async function releasePosition(tradeId) {
 document.getElementById("portfolio-content")?.addEventListener("click", (ev) => {
     const adoptBtn = ev.target.closest(".portfolio-adopt-btn");
     if (adoptBtn) {
-        adoptPosition(adoptBtn.dataset.ticker, adoptBtn.dataset.onBotList === "true");
+        adoptPosition(adoptBtn.dataset.engine, adoptBtn.dataset.ticker, adoptBtn.dataset.onList === "true");
         return;
     }
     const releaseBtn = ev.target.closest(".portfolio-release-btn");
     if (releaseBtn) {
-        releasePosition(releaseBtn.dataset.tradeId);
+        releasePosition(releaseBtn.dataset.engine, releaseBtn.dataset.tradeId);
         return;
     }
     const sortTh = ev.target.closest("[data-sort-key]");

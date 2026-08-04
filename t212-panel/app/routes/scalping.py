@@ -27,7 +27,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, current_app, jsonify, render_template, request
 
 from ..extensions import db
-from ..models import ActiveTrade, BotAsset, EODTrade, Instrument, OrderLog, SignalTrade
+from ..models import ActiveTrade, BotAsset, EODAsset, EODTrade, Instrument, OrderLog, SignalAsset, SignalTrade
 from ..services import logo_cache, price_feed
 from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
@@ -990,32 +990,76 @@ def limits():
 
 def _annotate_bot_state(user_id: int, positions: list[dict]) -> list[dict]:
     """
-    Dolacza do kazdej pozycji flagi o stanie bota (BotAsset/ActiveTrade) - do
-    przycisku "Przekaz botowi" w portfolio.html (patrz routes/bot.py::adopt_position,
-    pomysl #2 z docs/IDEAS_v2.md, 2026-07-23). Zapytania WYLACZNIE do lokalnej
-    bazy (tanie, zero rate limitu T212) - liczone na swiezo przy KAZDYM
-    renderze/refreshu, NIGDY nie wchodza do _portfolio_cache razem z reszta
-    portfela, inaczej adopcja pozycji nie odswiezylaby przycisku na "juz
-    zarzadzane" bez pelnego odswiezenia z T212.
+    Dolacza do kazdej pozycji flagi o stanie WSZYSTKICH TRZECH silnikow
+    (BotAsset/ActiveTrade, SignalAsset/SignalTrade, EODAsset/EODTrade) - do
+    przyciskow "Przekaz botowi" w portfolio.html (patrz routes/bot.py::
+    adopt_position, pomysl #2 z docs/IDEAS_v2.md, 2026-07-23 - rozszerzone
+    na Sygnal/EOD 2026-08-04, "ujednolic wszystkie boty pod tym wzgledem").
+    Zapytania WYLACZNIE do lokalnej bazy (tanie, zero rate limitu T212) -
+    liczone na swiezo przy KAZDYM renderze/refreshu, NIGDY nie wchodza do
+    _portfolio_cache razem z reszta portfela, inaczej adopcja pozycji nie
+    odswiezylaby przycisku na "juz zarzadzane" bez pelnego odswiezenia z T212.
+
+    `managed_by` - "bot"/"signal"/"eod"/None (ticker moze byc zarzadzany
+    najwyzej przez JEDEN silnik naraz, patrz market_hours.held_by_other_engine) -
+    zastepuje stare bot_managed/bot_trade_id, ktore znaly tylko Micro-Grid.
     """
     if not positions:
         return positions
     tickers = [p["ticker"] for p in positions]
+
     bot_assets_by_ticker = {
         a.ticker: a for a in
         BotAsset.query.filter_by(user_id=user_id).filter(BotAsset.ticker.in_(tickers)).all()
     }
-    open_trades_by_ticker = {
+    signal_assets_by_ticker = {
+        a.ticker: a for a in
+        SignalAsset.query.filter_by(user_id=user_id).filter(SignalAsset.ticker.in_(tickers)).all()
+    }
+    eod_assets_by_ticker = {
+        a.ticker: a for a in
+        EODAsset.query.filter_by(user_id=user_id).filter(EODAsset.ticker.in_(tickers)).all()
+    }
+    bot_trades_by_ticker = {
         t.ticker: t for t in
         ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").filter(ActiveTrade.ticker.in_(tickers)).all()
     }
+    signal_trades_by_ticker = {
+        t.ticker: t for t in
+        SignalTrade.query.filter_by(user_id=user_id, status="OPEN").filter(SignalTrade.ticker.in_(tickers)).all()
+    }
+    eod_trades_by_ticker = {
+        t.ticker: t for t in
+        EODTrade.query.filter_by(user_id=user_id, status="OPEN").filter(EODTrade.ticker.in_(tickers)).all()
+    }
+
     for p in positions:
-        asset = bot_assets_by_ticker.get(p["ticker"])
-        trade = open_trades_by_ticker.get(p["ticker"])
-        p["bot_managed"] = trade is not None
-        p["bot_trade_id"] = trade.id if trade is not None else None
-        p["on_bot_list"] = asset is not None
-        p["bot_entry_amount"] = str(asset.entry_amount) if asset else None
+        ticker = p["ticker"]
+        bot_trade = bot_trades_by_ticker.get(ticker)
+        signal_trade = signal_trades_by_ticker.get(ticker)
+        eod_trade = eod_trades_by_ticker.get(ticker)
+
+        if bot_trade is not None:
+            p["managed_by"] = "bot"
+            p["managed_trade_id"] = bot_trade.id
+        elif signal_trade is not None:
+            p["managed_by"] = "signal"
+            p["managed_trade_id"] = signal_trade.id
+        elif eod_trade is not None:
+            p["managed_by"] = "eod"
+            p["managed_trade_id"] = eod_trade.id
+        else:
+            p["managed_by"] = None
+            p["managed_trade_id"] = None
+
+        # Zachowane dla wstecznej zgodnosci (stare pola, wciaz uzywane gdzies
+        # indziej?) - patrz tez nowe on_signal_list/on_eod_list nizej.
+        p["bot_managed"] = p["managed_by"] == "bot"
+        p["bot_trade_id"] = bot_trade.id if bot_trade is not None else None
+        p["on_bot_list"] = ticker in bot_assets_by_ticker
+        p["on_signal_list"] = ticker in signal_assets_by_ticker
+        p["on_eod_list"] = ticker in eod_assets_by_ticker
+        p["bot_entry_amount"] = str(bot_assets_by_ticker[ticker].entry_amount) if ticker in bot_assets_by_ticker else None
     return positions
 
 
@@ -1043,9 +1087,13 @@ def _serialize_portfolio(positions: list[dict], total_value, total_ppl, total_pp
                 "hue": p["hue"],
                 "initial": p["initial"],
                 "logo_filename": p["logo_filename"],
+                "managed_by": p["managed_by"],
+                "managed_trade_id": p["managed_trade_id"],
                 "bot_managed": p["bot_managed"],
                 "bot_trade_id": p["bot_trade_id"],
                 "on_bot_list": p["on_bot_list"],
+                "on_signal_list": p["on_signal_list"],
+                "on_eod_list": p["on_eod_list"],
                 "bot_entry_amount": p["bot_entry_amount"],
             }
             for p in positions

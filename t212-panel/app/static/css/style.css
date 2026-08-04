@@ -935,6 +935,15 @@ img.tile__logo {
 .account-bar__btn--start:hover { border-color: var(--buy-green); color: var(--buy-green); }
 .account-bar__btn--stop:hover { border-color: var(--sell-red); color: var(--sell-red); }
 
+/* Portfolio "Aktywa" - 3 przyciski adopcji (Micro-Grid/Sygnał/EOD) obok
+   siebie w jednej komórce tabeli (patrz portfolio.html/portfolio.js,
+   2026-08-04 - "ujednolić wszystkie boty pod tym względem"). */
+.portfolio-adopt-group {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
 .account-bar__status {
     max-width: 620px;
     margin: 0 auto 12px;

@@ -210,6 +210,7 @@ def adopt_position():
     liczyć progi trailing stopu od tej average_price.
     """
     user_id = current_user_id()
+    settings = _get_or_create_settings(user_id)
     payload = request.get_json(silent=True) or {}
     ticker = (payload.get("ticker") or "").strip()
 
@@ -292,6 +293,22 @@ def adopt_position():
         "od teraz zarządzana przez trailing exit bota.",
         position_group_id,
     )
+
+    # Natychmiastowy trailing check (dodane 2026-08-04, patrz ten sam fix w
+    # tick()::_auto_adopt_foreign_positions z tej samej nocy) - bez tego
+    # świeżo adoptowana pozycja czekałaby do 60s na pierwszy tick, zanim bot
+    # w ogóle sprawdziłby czy uzbroić/przesunąć stop. Błąd tutaj CELOWO nie
+    # psuje odpowiedzi (pozycja i tak jest już zaadoptowana, kolejny tick i
+    # tak by to zrobił) - tylko log.
+    try:
+        bot_engine._manage_trailing_exit(user_id, client, settings)
+    except Exception as exc:  # noqa: BLE001 - najlepsza proba, nie krytyczne
+        bot_engine._log(
+            user_id, "ERROR",
+            f"{ticker}: natychmiastowy trailing check po adopcji nie powiódł się ({exc}) - "
+            "spróbuje ponownie na najbliższym tick.",
+            position_group_id,
+        )
 
     return jsonify(ok=True, trade_id=trade.id)
 

@@ -73,16 +73,26 @@
                         ({{ "+" if p.ppl_pct >= 0 else "" }}{{ "%.1f"|format(p.ppl_pct) }}%)
                     </td>
                     <td class="portfolio-bot-cell" data-ticker="{{ p.ticker }}">
-                        {% if p.bot_managed %}
-                        <span class="badge badge--bot">Zarządzane przez bota</span>
-                        <button type="button" class="account-bar__btn portfolio-release-btn" data-trade-id="{{ p.bot_trade_id }}">
+                        {% if p.managed_by %}
+                        <span class="badge badge--bot">Zarządzane przez {{ {"bot": "Micro-Grid", "signal": "Sygnał", "eod": "EOD"}[p.managed_by] }}</span>
+                        <button type="button" class="account-bar__btn portfolio-release-btn" data-engine="{{ p.managed_by }}" data-trade-id="{{ p.managed_trade_id }}">
                             Cofnij
                         </button>
                         {% else %}
-                        <button type="button" class="account-bar__btn portfolio-adopt-btn"
-                                data-ticker="{{ p.ticker }}" data-on-bot-list="{{ 'true' if p.on_bot_list else 'false' }}">
-                            Przekaż botowi
-                        </button>
+                        <div class="portfolio-adopt-group">
+                            <button type="button" class="account-bar__btn portfolio-adopt-btn"
+                                    data-engine="bot" data-ticker="{{ p.ticker }}" data-on-list="{{ 'true' if p.on_bot_list else 'false' }}">
+                                → Micro-Grid
+                            </button>
+                            <button type="button" class="account-bar__btn portfolio-adopt-btn"
+                                    data-engine="signal" data-ticker="{{ p.ticker }}" data-on-list="{{ 'true' if p.on_signal_list else 'false' }}">
+                                → Sygnał
+                            </button>
+                            <button type="button" class="account-bar__btn portfolio-adopt-btn"
+                                    data-engine="eod" data-ticker="{{ p.ticker }}" data-on-list="{{ 'true' if p.on_eod_list else 'false' }}">
+                                → EOD
+                            </button>
+                        </div>
                         {% endif %}
                     </td>
                 </tr>

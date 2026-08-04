@@ -9,6 +9,7 @@ poświadczeń (bot_credentials) co pozostałe dwa.
 
 from __future__ import annotations
 
+import uuid
 from decimal import Decimal, InvalidOperation
 
 import pytz
@@ -378,6 +379,136 @@ def close_position(trade_id):
         price_snapshot=price, status="sent", t212_order_id=sell_result.order_id,
     )
     eod_engine._finalize_closed_trade(user_id, trade, "manual", fill_price=price or trade.buy_price)
+    return jsonify(ok=True)
+
+
+@eod_bp.route("/asset/adopt", methods=["POST"])
+@login_required
+def adopt_position():
+    """
+    "Przekaż botowi" dla EOD - ten sam pomysł co routes/bot.py::adopt_position
+    (2026-07-23), dodane 2026-08-04 ("ujednolić wszystkie boty pod tym
+    względem"). Ten sam powód co Sygnał (routes/signal.py::adopt_position) -
+    EOD zawsze ma AKTYWNY resting stop od wejścia, więc adopcja od razu
+    wystawia prawdziwe zlecenie STOP na T212.
+
+    Adoptowana pozycja NIE ma prawdziwego "spadku wyzwalającego" (nie weszła
+    przez _worst_recent_drop) - drop_pct_at_entry=0/size_multiplier=1 jako
+    formalne defaulty (kolumny NOT NULL), take_profit_price liczony sztywnym
+    % (fallback z eod_strategy.compute_entry, bo nie ma "reference_price"
+    sprzed spadku do czego wracać).
+
+    JSON {"ticker": "...", "entry_amount": "100.00"}.
+    """
+    user_id = current_user_id()
+    settings = _get_or_create_settings(user_id)
+    payload = request.get_json(silent=True) or {}
+    ticker = (payload.get("ticker") or "").strip()
+
+    instrument = Instrument.query.get(ticker) if ticker else None
+    if instrument is None:
+        return jsonify(ok=False, error=f"{ticker or '(brak)'} nie znaleziony w lokalnej bazie instrumentów."), 400
+
+    if EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first() is not None:
+        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez EOD."), 400
+
+    from ..services.market_hours import held_by_other_engine
+    other = held_by_other_engine(user_id, ticker, "eod")
+    if other is not None:
+        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
+
+    creds = get_decrypted_credentials(user_id, current_master_key(), eod_engine.EOD_ENVIRONMENT)
+    if creds is None:
+        return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
+    client = T212Client(
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=eod_engine.EOD_ENVIRONMENT,
+        engine="eod", user_id=user_id,
+    )
+
+    try:
+        position = client.get_position(ticker)
+    except T212APIError as exc:
+        return jsonify(ok=False, error=str(exc)), 502
+    if position is None:
+        return jsonify(ok=False, error=f"Nie posiadasz {ticker} w portfelu T212 (demo)."), 400
+
+    try:
+        quantity = Decimal(str(position["quantity"]))
+        avg_price = Decimal(str(position["averagePrice"]))
+    except (KeyError, InvalidOperation, TypeError):
+        return jsonify(ok=False, error="Nieprawidłowe dane pozycji zwrócone przez T212."), 502
+    if quantity <= 0:
+        return jsonify(ok=False, error=f"{ticker}: ilość w portfelu wynosi 0."), 400
+
+    stop_loss_price = avg_price * (1 - settings.stop_loss_pct)
+    take_profit_price = avg_price * (1 + settings.take_profit_pct)
+
+    asset = EODAsset.query.filter_by(user_id=user_id, ticker=ticker).first()
+    if asset is None:
+        try:
+            entry_amount = Decimal(str(payload.get("entry_amount")))
+            if entry_amount <= 0:
+                raise InvalidOperation
+        except (InvalidOperation, ValueError, TypeError):
+            return jsonify(
+                ok=False,
+                error=f"{ticker} nie jest jeszcze na liście EOD - podaj kwotę wejścia (entry_amount, > 0).",
+            ), 400
+        asset = EODAsset(
+            user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
+            currency=instrument.currency_code or "USD", entry_amount=entry_amount,
+        )
+        db.session.add(asset)
+        db.session.flush()
+
+    try:
+        stop_result = client.place_stop_order(ticker, -quantity, stop_loss_price)
+    except T212APIError as exc:
+        return jsonify(ok=False, error=f"Nie udało się wystawić stop-loss na T212 - {exc}. Pozycja NIE zaadoptowana."), 502
+
+    trade = EODTrade(
+        user_id=user_id, eod_asset_id=asset.id, ticker=ticker, currency=instrument.currency_code or "USD",
+        buy_order_id=f"ADOPTED-{uuid.uuid4()}", baseline_owned_quantity=Decimal("0"),
+        buy_price=avg_price, quantity=quantity, allocated_value=quantity * avg_price,
+        drop_pct_at_entry=Decimal("0"), size_multiplier=Decimal("1"),
+        stop_loss_price=stop_loss_price, take_profit_price=take_profit_price,
+        stop_order_id=stop_result.order_id, status="OPEN", is_paper=False, buy_confirmed=True,
+    )
+    db.session.add(trade)
+    db.session.commit()
+
+    eod_engine._log(
+        user_id, "INFO",
+        f"{ticker}: pozycja adoptowana ręcznie z portfela T212 ({quantity} @ ~{avg_price}) - "
+        f"stop-loss uzbrojony od razu na {stop_loss_price:.4f}.",
+    )
+    return jsonify(ok=True, trade_id=trade.id)
+
+
+@eod_bp.route("/positions/<int:trade_id>/release", methods=["POST"])
+@login_required
+def release_position(trade_id):
+    """Odwrotność adopt_position() - patrz routes/bot.py::release_position, ten sam wzorzec."""
+    user_id = current_user_id()
+    trade = EODTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+
+    if not trade.buy_confirmed:
+        return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400
+
+    if not trade.is_paper and trade.stop_order_id:
+        creds = get_decrypted_credentials(user_id, current_master_key(), eod_engine.EOD_ENVIRONMENT)
+        if creds is None:
+            return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
+        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=eod_engine.EOD_ENVIRONMENT)
+        try:
+            client.cancel_order(trade.stop_order_id)
+        except T212APIError as exc:
+            return jsonify(ok=False, error=f"Nie udało się anulować stop-loss przed zwolnieniem - {exc}"), 502
+
+    trade.status = "RELEASED"
+    trade.closed_at = None
+    db.session.commit()
+    eod_engine._log(user_id, "INFO", f"{trade.ticker}: pozycja zwolniona spod zarządzania EOD (udziały zostają na koncie).")
     return jsonify(ok=True)
 
 
