@@ -123,6 +123,24 @@ ENTRY_WINDOW = (dt.time(10, 0), dt.time(15, 45))
 # okno pokrywające prawie całą sesję NASDAQ/NYSE.
 US_ENTRY_WINDOW = (dt.time(15, 35), dt.time(21, 45))
 
+# Cooldown ponownego wejścia po stop-lossie (dodane 2026-08-05, na żywo
+# znaleziony bug: IFXd_EQ 28.07 między 11:41 a 11:56 dostało 10 wejść z rzędu,
+# każde natychmiast stop-lossowane na praktycznie tej samej cenie (~-6%),
+# strata ~-66€ w 15 minut - RSI<próg pozostawało prawdziwe tick po ticku bo
+# cena leciała w dół, więc _process_entries wchodziło ponownie zaraz po
+# zamknięciu poprzedniej pozycji. 29.07 ten sam ticker (już większą pozycją,
+# 18.79 szt.) powtórzył scenariusz, -60€ w jednym strzale - razem te dwa
+# epizody to ~126€ z ~139€ całej straty Sygnału w tym okresie.
+# Backtestowane (backtest/signal_runner.py, parametry produkcyjne RSI<35/
+# SL=3xATR/TP=3xATR, 58 tickerów, 400 dni): cooldown 0-10 dni handlowych
+# praktycznie NIE zmienia win rate ani total P&L strategii (195.09€ przy
+# cooldown=0 vs 193.83€ przy cooldown=3d na 130 transakcjach) - oczekiwane,
+# bo dobowy backtest z natury MA już 1 transakcję/dzień/ticker, więc nigdy
+# nie zobaczy klastra intraday. Innymi słowy: cooldown nic nie kosztuje
+# statystycznie, a usuwa CAŁĄ klasę bugu. 72h (3 dni) pokrywa z zapasem oba
+# żywe incydenty (15 min i ~26h odstępu).
+STOP_LOSS_REENTRY_COOLDOWN = dt.timedelta(hours=72)
+
 # Backoff dla tick()::get_pending_orders po błędzie T212API (dodane 2026-07-28:
 # znalezione na żywo - Micro-Grid już się wycofywał po serii 429, ale Sygnał i
 # EOD dalej dobijały się o get_pending_orders CO 60s BEZ PRZERWY, bo żaden z
@@ -359,6 +377,20 @@ def _enter_position(
     )
 
 
+def _stop_loss_cooldown_until(user_id: int, ticker: str) -> dt.datetime | None:
+    """None gdy wejście dozwolone, inaczej moment (UTC) do kiedy trwa cooldown po ostatnim stop-lossie."""
+    last = (
+        SignalTrade.query
+        .filter_by(user_id=user_id, ticker=ticker, status="CLOSED", closed_via="stop-loss")
+        .order_by(SignalTrade.closed_at.desc())
+        .first()
+    )
+    if last is None or last.closed_at is None:
+        return None
+    cooldown_until = last.closed_at + STOP_LOSS_REENTRY_COOLDOWN
+    return cooldown_until if dt.datetime.utcnow() < cooldown_until else None
+
+
 def _process_entries(
     user_id: int, client: T212Client | None, settings: SignalSettings, current_equity: Decimal | None = None,
 ) -> None:
@@ -379,6 +411,16 @@ def _process_entries(
 
     for asset in assets:
         if asset.ticker in open_tickers:
+            continue
+        cooldown_until = _stop_loss_cooldown_until(user_id, asset.ticker)
+        if cooldown_until is not None:
+            # Blokada ponownego wejścia po stop-lossie (patrz komentarz przy
+            # STOP_LOSS_REENTRY_COOLDOWN) - zapobiega whipsaw-owi typu IFXd_EQ
+            # 28-29.07 (10 wejść/stop-lossów w 15 minut na tym samym tickerze).
+            diagnostics.log_diag(
+                user_id, "signal",
+                f"{asset.ticker}: pominięte wejście - cooldown po stop-lossie do {cooldown_until.strftime('%Y-%m-%d %H:%M')} UTC.",
+            )
             continue
         other = market_hours.held_by_other_engine(user_id, asset.ticker, "signal")
         if other is not None:

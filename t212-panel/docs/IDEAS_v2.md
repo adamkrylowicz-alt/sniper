@@ -1588,3 +1588,80 @@ Adam kupił ręcznie Rheinmetall (RHMd_EQ) i poprosił o uzbrojenie trailing sto
 4. **UI** (`portfolio.html`+`portfolio.js`) - nieprzypisana pozycja pokazuje teraz **3 małe przyciski** ("→ Micro-Grid"/"→ Sygnał"/"→ EOD") zamiast jednego "Przekaż botowi"; przypisana pokazuje "Zarządzane przez {silnik}" + "Cofnij" (wywołuje właściwy silnik przez `data-engine`). JS `adoptPosition`/`releasePosition` uogólnione o parametr `engine` zamiast hardkodowanego `/bot/...`.
 
 Zweryfikowane end-to-end testem Flask (3 silniki, mockowany T212Client): adopcja w każdym silniku tworzy poprawny trade z realną ilością/ceną z T212, Sygnał/EOD wystawiają prawdziwy stop OD RAZU (2 wywołania `place_stop_order`, 0 dla Micro-Gridu - zgodnie z projektem), kolizja między silnikami poprawnie odrzucana, duplikat w tym samym silniku odrzucany, release zwalnia i anuluje stop (2 `cancel_order` - tylko tam gdzie stop istniał). Zmirrorowane dev->prod, `run.py` zrestartowany, log czysty.
+
+## ZROBIONE (2026-08-05): whipsaw-bug w Sygnale (brak cooldownu po stop-lossie) - znaleziony przy raporcie P&L, naprawiony backtestem
+
+Adam poprosił raport P&L wszystkich 3 silników. Wynik: Micro-Grid 33W/2L
+(+11.41€/+10.34€), Sygnał 2W/15L (**-138.89€**), EOD 1W/2L (-0.39€, szum).
+Sygnał wyraźnie odstawał - zamiast zgadywać "słabe sygnały", rozbite na
+pojedyncze transakcje (`SELECT ... ORDER BY closed_at`).
+
+**Znalezione**: 28.07 między 11:41 a 11:56 IFXd_EQ dostało **10 wejść z
+rzędu**, każde natychmiast stop-lossowane na praktycznie tej samej cenie
+(~58→55, -6% za każdym razem) - suma ~-66€ w 15 minut. 29.07 ten sam ticker
+powtórzył scenariusz z dużo większą pozycją (18.79 szt. zamiast ~1.7) i znów
+oberwał stopem: -60.18€ w jednym strzale. Te dwa epizody to **~126€ z
+138.89€** całej straty Sygnału - reszta transakcji (SAFp_EQ, ASMa_EQ) to
+zwykły szum, nie systemowy problem.
+
+**Root cause**: `_process_entries` w `signal_engine.py` nie miało ŻADNEGO
+cooldownu ani blokady po stop-lossie. Warunek wejścia (RSI<35 ORAZ
+cena>SMA200) zostawał prawdziwy tick po ticku podczas ciągłego spadku ceny -
+bot wchodził ponownie zaraz po zamknięciu poprzedniej pozycji, dokładnie w
+ten sam spadający nóż, i dostawał stop na tej samej odległości ATR co
+poprzednio.
+
+**Backtest przed naprawą** (jak Adam poprosił - "zrób backtest"):
+`backtest/signal_runner.py`, 58 tickerów z produkcyjnej listy, 400 dni,
+parametry produkcyjne (RSI<35, SL=3xATR, TP=3xATR). Owinięta kopia pętli
+dnia z dodatkową blokadą "N dni handlowych od ostatniego stop-lossu na tym
+tickerze":
+
+```
+cooldown= 0d  trades= 130  win_rate=36.2%  total_pnl=195.09
+cooldown= 1d  trades= 130  win_rate=36.2%  total_pnl=195.09
+cooldown= 2d  trades= 129  win_rate=36.4%  total_pnl=185.55
+cooldown= 3d  trades= 125  win_rate=36.0%  total_pnl=193.83
+cooldown= 5d  trades= 116  win_rate=35.3%  total_pnl=170.13
+cooldown=10d  trades= 104  win_rate=37.5%  total_pnl=179.31
+```
+
+Cooldown liczony w dniach handlowych praktycznie NIE zmienia wyniku
+strategii - **oczekiwane**, nie zaskoczenie: dobowy backtest z natury robi
+maksymalnie 1 transakcję/dzień/ticker (pętla dnia albo zarządza istniejącą
+pozycją, albo rozważa nowe wejście, nigdy oba), więc strukturalnie NIE JEST
+W STANIE wygenerować klastra 10 wejść w 15 minut - ten konkretny bug jest
+niewidoczny dla backtestu na świecach dziennych, bo żyje wyłącznie na
+poziomie częstotliwości tickowania na żywo (60s). Dobra wiadomość: skoro
+cooldown nic nie kosztuje statystycznie (195.09€ vs 193.83€ przy 3 dniach na
+130 transakcjach), można go dodać bez ryzyka "zjedzenia" zysków.
+
+**Fix**: `STOP_LOSS_REENTRY_COOLDOWN = timedelta(hours=72)` (stała
+modułowa w `signal_engine.py`, pokrywa z zapasem oba żywe incydenty - 15 min
+i ~26h odstępu). Nowa funkcja `_stop_loss_cooldown_until(user_id, ticker)`
+- szuka ostatniego `SignalTrade` ze `status="CLOSED"` i
+`closed_via="stop-loss"` dla danego tickera, zwraca `None` (wejście
+dozwolone) albo moment do kiedy trwa blokada. Wpięta na samym początku
+pętli `_process_entries`, PRZED pobraniem świec przez `price_feed` - żeby
+nie marnować budżetu Finnhub/Alpaca na tickery i tak zablokowane. Diagnostyka
+(`diagnostics.log_diag`) loguje każde pominięcie, ten sam wzorzec co
+`held_by_other_engine`.
+
+Zweryfikowane testem syntetycznym (3 przypadki): świeży stop-loss (5 min
+temu) blokuje wejście I `price_feed.get_mini_chart_ohlc` w ogóle nie jest
+wołane (monkeypatch rzucający `AssertionError` gdyby zostało wywołane);
+stary stop-loss (100h temu, >72h) już NIE blokuje; ticker bez historii
+stop-lossów nigdy nie jest blokowany. Zmirrorowane dev->prod, `run.py`
+zrestartowany, log czysty (0 błędów w `nohup.out`).
+
+**Pytanie Adama "jak inni to robią w swoich botach"**: to standardowy,
+nazwany wzorzec w detalicznych algo-botach - np. freqtrade ma wbudowaną
+ochronę `StoplossGuard`/`PairLock` (N stop-lossów w oknie czasowym blokuje
+dany instrument na czas). Warianty poza czystym cooldownem czasowym (to co
+tu wdrożone): licznik kolejnych strat z rzędu jako circuit-breaker,
+wymóg "resetu sygnału" (np. RSI musi wyjść z wyprzedania i dopiero wrócić
+poniżej progu, zamiast dalej po prostu spełniać "<35"), filtr zmienności
+(pauza gdy ATR gwałtownie rośnie = rynek "choppy", właśnie wtedy whipsawe są
+najczęstsze). Do rozważenia w przyszłości, jeśli 72h cooldown okaże się za
+krótki na żywo (np. gdyby ticker wszedł w wielodniowy, powolny spadek z
+kolejnymi pojedynczymi stop-lossami co kilka dni).
