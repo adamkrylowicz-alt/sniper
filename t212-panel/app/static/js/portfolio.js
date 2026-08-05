@@ -47,6 +47,59 @@ function pplClass(value) {
     return value >= 0 ? "focus-tile__pnl--profit" : "focus-tile__pnl--loss";
 }
 
+/*
+"Całość konta" vs punkt startowy (Adam, 2026-08-05) - element ŻYJE POZA
+#portfolio-content (patrz portfolio.html), więc renderPortfolio() (który
+podmienia #portfolio-content w całości przy KAŻDYM odświeżeniu, nawet gdy
+pozycji jest 0) go nie dotyka - aktualizowany osobno, tutaj, po każdym
+udanym /warp/portfolio/refresh.
+*/
+function renderAccountSummary(data) {
+    const totalEl = document.getElementById("account-total-value");
+    const labelEl = document.getElementById("account-baseline-label");
+    const pnlEl = document.getElementById("account-baseline-pnl");
+    if (!totalEl || !labelEl || !pnlEl) return;
+
+    totalEl.textContent = data.account_total != null ? `${data.account_total.toFixed(2)} €` : "…";
+
+    const baselineNote = data.account_baseline_equity != null
+        ? ` (${Math.round(data.account_baseline_equity)}€${data.account_baseline_at ? ", " + data.account_baseline_at : ""})`
+        : "";
+    labelEl.textContent = `vs punkt startowy${baselineNote}`;
+
+    if (data.account_pnl != null) {
+        pnlEl.textContent = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)`;
+        pnlEl.className = `instrument-detail__position-value ${pplClass(data.account_pnl)}`;
+    } else {
+        pnlEl.textContent = "…";
+        pnlEl.className = "instrument-detail__position-value";
+    }
+}
+
+async function resetAccountBaseline() {
+    const btn = document.getElementById("account-baseline-reset-btn");
+    if (btn) btn.disabled = true;
+    try {
+        const resp = await fetch("/warp/portfolio/reset-baseline", { method: "POST" });
+        const data = await resp.json();
+        if (!data.ok) {
+            playError();
+            window.alert(`Nie udało się zresetować punktu startowego: ${data.error}`);
+            return;
+        }
+        renderAccountSummary(data);
+        playSuccess();
+    } catch (err) {
+        playError();
+        console.error("Błąd resetu punktu startowego:", err);
+        window.alert("Błąd sieci przy resetowaniu punktu startowego.");
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+document.getElementById("account-baseline-reset-btn")?.addEventListener("click", resetAccountBaseline);
+
 // "bot"/"signal"/"eod" -> etykieta w UI, jeden na wszystkie 3 przyciski
 // adopcji + odznaka "Zarządzane przez X" (patrz routes/scalping.py::
 // _annotate_bot_state, managed_by - 2026-08-04, "ujednolić wszystkie boty").
@@ -299,6 +352,7 @@ async function refreshPortfolio() {
         currentTotals = { value: data.total_value, ppl: data.total_ppl, pplPct: data.total_ppl_pct };
 
         renderSorted();  // zachowuje wybrany sort (jesli user juz kliknal jakis naglowek) zamiast wracac do domyslnej kolejnosci z backendu
+        renderAccountSummary(data);
         playUpdate();
     } catch (err) {
         console.error("Błąd odświeżania portfela:", err);

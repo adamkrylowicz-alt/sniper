@@ -22,6 +22,7 @@ UPROSZCZENIA POZOSTAŁE DO POPRAWY:
 
 from __future__ import annotations
 
+import datetime as dt
 from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, current_app, jsonify, render_template, request
@@ -1063,7 +1064,51 @@ def _annotate_bot_state(user_id: int, positions: list[dict]) -> list[dict]:
     return positions
 
 
-def _serialize_portfolio(positions: list[dict], total_value, total_ppl, total_ppl_pct) -> dict:
+def _get_or_create_user_settings(user_id: int):
+    """
+    Kopia settings.py::_get_or_create_settings - NIE importowana stamtąd,
+    bo settings.py już importuje `_get_client` STĄD (scalping.py); import
+    w drugą stronę zrobiłby cykl. UserSettings trzyma m.in. punkt odniesienia
+    "całości konta" (account_baseline_equity/at, patrz models.py).
+    """
+    from ..models import UserSettings
+
+    settings = UserSettings.query.filter_by(user_id=user_id).first()
+    if settings is None:
+        settings = UserSettings(user_id=user_id)
+        db.session.add(settings)
+        db.session.commit()
+    return settings
+
+
+def _account_summary(user_id: int, account_total: Decimal | None) -> dict:
+    """
+    "Całość konta" vs punkt odniesienia (Adam, 2026-08-05: "to demo bylo na
+    start 5keuro... ile jest teraz i czy to zysk czy strata i w %") -
+    account_total to gotówka+pozycje z T212 W TEJ CHWILI (None gdy odczyt
+    /equity/account/summary się nie udał, patrz _fetch_portfolio_live),
+    baseline to ostatni zapisany punkt odniesienia (domyślnie zseedowany
+    migracją na 5000€, ale Adam może go zresetować jednym klikiem po każdym
+    ręcznym resecie konta demo - patrz account_baseline_equity w models.py).
+    """
+    settings = _get_or_create_user_settings(user_id)
+    baseline = settings.account_baseline_equity
+    baseline_at = settings.account_baseline_at
+    account_pnl = None
+    account_pnl_pct = None
+    if account_total is not None and baseline is not None and baseline > 0:
+        account_pnl = account_total - baseline
+        account_pnl_pct = (account_pnl / baseline) * 100
+    return {
+        "account_total": float(account_total) if account_total is not None else None,
+        "account_baseline_equity": float(baseline) if baseline is not None else None,
+        "account_baseline_at": baseline_at.strftime("%Y-%m-%d") if baseline_at else None,
+        "account_pnl": float(account_pnl) if account_pnl is not None else None,
+        "account_pnl_pct": float(account_pnl_pct) if account_pnl_pct is not None else None,
+    }
+
+
+def _serialize_portfolio(user_id: int, positions: list[dict], total_value, total_ppl, total_ppl_pct, account_total=None) -> dict:
     """
     Forma JSON-owalna (Decimal -> float) dzielona przez initial_data (portfolio.html,
     embedowane do natychmiastowego re-renderu z zapamietanym sortem - patrz
@@ -1071,6 +1116,7 @@ def _serialize_portfolio(positions: list[dict], total_value, total_ppl, total_pp
     IDENTYCZNY ksztalt danych, ktory renderPortfolio() w JS umie skonsumowac.
     """
     return {
+        **_account_summary(user_id, account_total),
         "positions": [
             {
                 "ticker": p["ticker"],
@@ -1132,17 +1178,22 @@ def portfolio_view():
     if cached:
         positions = _annotate_bot_state(user_id, cached["positions"])
         initial_data = _serialize_portfolio(
-            positions, cached["total_value"], cached["total_ppl"], cached["total_ppl_pct"]
+            user_id, positions, cached["total_value"], cached["total_ppl"], cached["total_ppl_pct"],
+            account_total=cached.get("account_total"),
         )
         return render_template(
             "portfolio.html", positions=positions,
             total_value=cached["total_value"], total_ppl=cached["total_ppl"],
             total_ppl_pct=cached["total_ppl_pct"],
             error=None, has_cache=True, initial_data=initial_data,
+            account=_account_summary(user_id, cached.get("account_total")),
         )
     return render_template(
         "portfolio.html", positions=[], total_value=None, total_ppl=None,
         total_ppl_pct=None, error=None, has_cache=False, initial_data=None,
+        # Baseline nie wymaga T212 (czysty odczyt z bazy) - pokaż go od razu
+        # nawet zanim jakiekolwiek dane portfela zdążyły trafić do cache.
+        account=_account_summary(user_id, None),
     )
 
 
@@ -1156,6 +1207,18 @@ def _fetch_portfolio_live(user_id: int) -> dict:
 
     client = _get_client()
     raw_positions = client.get_portfolio()
+
+    # Equity CAŁEGO konta (gotówka+pozycje) - ten sam odczyt co bot_engine.py::
+    # _get_current_equity (/equity/account/summary, "totalValue"), NIEZALEŻNY
+    # od /equity/portfolio powyżej - osobny endpoint, może się nie udać
+    # niezależnie (patrz account_info() wyżej, ten sam powód: T212 czasem
+    # daje różne uprawnienia na różne endpointy). Błąd tutaj NIE psuje
+    # reszty strony - po prostu sekcja "Całość konta" pokaże ostatnią znaną
+    # wartość z cache zamiast crashować cały widok Aktywa.
+    try:
+        account_total = Decimal(str(client.get_cash()["total"]))
+    except (T212APIError, InvalidOperation, TypeError, KeyError):
+        account_total = None
 
     tickers = [p.get("ticker") for p in raw_positions if p.get("ticker")]
     instruments_by_ticker = (
@@ -1210,7 +1273,7 @@ def _fetch_portfolio_live(user_id: int) -> dict:
     total_ppl_pct = (total_ppl / total_cost_basis * 100) if total_cost_basis else Decimal("0")
     result = {
         "positions": positions, "total_value": total_value, "total_ppl": total_ppl,
-        "total_ppl_pct": total_ppl_pct,
+        "total_ppl_pct": total_ppl_pct, "account_total": account_total,
     }
     _portfolio_cache[user_id] = result
     return result
@@ -1240,8 +1303,38 @@ def portfolio_refresh():
 
     return jsonify(
         ok=True,
-        **_serialize_portfolio(result["positions"], result["total_value"], result["total_ppl"], result["total_ppl_pct"]),
+        **_serialize_portfolio(
+            user_id, result["positions"], result["total_value"], result["total_ppl"], result["total_ppl_pct"],
+            account_total=result.get("account_total"),
+        ),
     )
+
+
+@scalping_bp.route("/portfolio/reset-baseline", methods=["POST"])
+@login_required
+def portfolio_reset_baseline():
+    """
+    "Resetuj punkt startowy" (Adam, 2026-08-05) - zapisuje AKTUALNĄ equity
+    całego konta (gotówka+pozycje, świeży odczyt T212, NIE z cache) jako
+    nowy punkt odniesienia dla %/€ na zakładce Aktywa. Do klikania po każdym
+    ręcznym resecie konta demo (patrz [[project_snajper_demo_resets]]) - bez
+    tego % liczyłby się dalej od starego, już nieaktualnego punktu.
+    """
+    user_id = current_user_id()
+    try:
+        client = _get_client()
+        account_total = Decimal(str(client.get_cash()["total"]))
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    except (T212APIError, InvalidOperation, TypeError, KeyError) as exc:
+        return jsonify(ok=False, error=f"Nie udało się odczytać equity konta: {exc}"), 502
+
+    settings = _get_or_create_user_settings(user_id)
+    settings.account_baseline_equity = account_total
+    settings.account_baseline_at = dt.datetime.utcnow()
+    db.session.commit()
+
+    return jsonify(ok=True, **_account_summary(user_id, account_total))
 
 
 @scalping_bp.route("/history", methods=["GET"])

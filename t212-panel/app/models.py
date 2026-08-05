@@ -230,6 +230,18 @@ class UserSettings(db.Model):
 
     focus_tiles = db.Column(db.Integer, default=1, nullable=False)  # 1-9 kafelków w Focus Mode
 
+    # Punkt odniesienia dla "całości konta" na zakładce Aktywa (dodane
+    # 2026-08-05, Adam: "to demo bylo na start 5keuro... jak i gdzie
+    # wyswietlic ile jest teraz i czy to zysk czy strata") - equity CAŁEGO
+    # konta T212 (gotówka+pozycje, ten sam wzorzec co bot_engine.py::
+    # _get_current_equity) w chwili ustawienia punktu odniesienia, NIE
+    # sztywna stała - Adam czasem RĘCZNIE resetuje konto demo (patrz
+    # [[project_snajper_demo_resets]] w pamięci Claude, zero śladu w logach),
+    # więc wartość musi dać się odświeżyć jednym klikiem zamiast wymagać
+    # zmiany stałej w kodzie po każdym takim reset.
+    account_baseline_equity = db.Column(db.Numeric(12, 2), nullable=True)
+    account_baseline_at = db.Column(db.DateTime, nullable=True)
+
     user = db.relationship("User", back_populates="settings")
 
     def __repr__(self) -> str:  # pragma: no cover

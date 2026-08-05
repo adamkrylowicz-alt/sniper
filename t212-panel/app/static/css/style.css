@@ -2331,6 +2331,7 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 }
 .portfolio-summary__cell { display: flex; flex-direction: column; gap: 4px; }
 .portfolio-summary__cell .instrument-detail__position-value { font-size: 22px; }
+.portfolio-summary__cell--action { justify-content: flex-end; margin-left: auto; }
 
 .portfolio-freshness {
     display: inline-block;
