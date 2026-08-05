@@ -65,19 +65,24 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper")
     open_trades = trade_model.query.filter_by(user_id=user_id, status="OPEN", **{is_paper_field: False}).all()
     unrealized = Decimal("0")
     unrealized_unpriced = 0
+    open_positions = []  # [(ticker, pnl, currency)] - patrz telegram_commands.py::_status_message
     for t in open_trades:
         price = price_feed.get_live_price(
             _api_key(), t.ticker, _alpaca_key(), _alpaca_secret(),
         )
         if price is None or price <= 0:
             unrealized_unpriced += 1
+            open_positions.append((t.ticker, None, t.currency))
             continue
         cost_basis = getattr(t, "average_price", None) or t.buy_price
-        unrealized += (price - cost_basis) * t.quantity
+        pnl = (price - cost_basis) * t.quantity
+        unrealized += pnl
+        open_positions.append((t.ticker, pnl, t.currency))
 
     return {
         "realized": realized, "realized_n": len(closed), "realized_unknown": realized_unknown,
         "unrealized": unrealized, "open_n": len(open_trades), "unrealized_unpriced": unrealized_unpriced,
+        "open_positions": open_positions,
     }
 
 
