@@ -275,7 +275,13 @@ def _enter_position(
     user_id: int, client: T212Client | None, asset: EODAsset, settings: EODSettings,
     price: Decimal, drop_pct: Decimal, multiplier: Decimal, reference_price: Decimal,
     current_equity: Decimal | None = None,
-) -> None:
+) -> bool:
+    """
+    Zwraca True gdy pozycja faktycznie została otwarta (paper LUB realne
+    zlecenie złożone), False gdy odrzucona - patrz _process_entries niżej
+    (ranking kandydatów po głębokości spadku zamiast "pierwszy pasujący"),
+    ten sam wzorzec co signal_engine.py/bot_engine.py.
+    """
     # Matematyka (sizing, TP=reference_price z fallbackiem na sztywny %)
     # wyciągnięta 2026-07-28 do eod_strategy.compute_entry() - PEŁNE
     # uzasadnienie (Adam: "liczę na szybkie odbicie w okolice wcześniejszego
@@ -307,7 +313,7 @@ def _enter_position(
         )
     except eod_strategy.EntryValidationError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
-        return
+        return False
     quantity = decision.quantity
     stop_loss_price = decision.stop_loss_price
     take_profit_price = decision.take_profit_price
@@ -328,7 +334,7 @@ def _enter_position(
             f"[PAPER] {asset.ticker}: ostry spadek {drop_pct*100:.2f}% (tier x{multiplier}), "
             f"{quantity} @ ~{price} - SL {stop_loss_price:.4f} / TP {take_profit_price:.4f}.",
         )
-        return
+        return True
 
     try:
         existing_position = client.get_position(asset.ticker)
@@ -340,7 +346,7 @@ def _enter_position(
         buy_result, quantity = _place_buy_with_precision_fallback(client, asset.ticker, quantity, price)
     except T212APIError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: błąd składania zlecenia kupna EOD - {exc}")
-        return
+        return False
 
     trade = EODTrade(
         user_id=user_id, eod_asset_id=asset.id, ticker=asset.ticker, currency=asset.currency,
@@ -363,6 +369,7 @@ def _enter_position(
         f"{quantity} @ ~{price} - SL {stop_loss_price:.4f} / TP {take_profit_price:.4f}. "
         "Czeka na potwierdzenie kupna, dopiero potem uzbroi stop-loss.",
     )
+    return True
 
 
 def _process_entries(
@@ -385,6 +392,22 @@ def _process_entries(
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+
+    # ZMIANA 2026-08-05 (Adam: "napraw to", po ustaleniu że ta pętla wchodziła
+    # w pierwszego pasującego zamiast oceniać wszystkich - patrz identyczna
+    # zmiana w signal_engine.py::_process_entries, ten sam wzorzec) - EOD to
+    # teraz silnik PRIORYTETOWY ("to jest tzw strzal, jak on cos zacznie
+    # reszta ma czekac i nie przeszkadzac", patrz market_hours.py - CAŁA
+    # lista EOD jest zarezerwowana od Micro-Gridu/Sygnału), więc tym bardziej
+    # ma sens wybierać NAJLEPSZEGO kandydata z tego co faktycznie mu wolno
+    # dotknąć, a nie pierwszego z brzegu. Faza 1 (ta pętla) zbiera
+    # WSZYSTKICH kandydatów u których w ogóle wystrzelił trigger (ostry
+    # spadek), faza 2 (niżej) sortuje po GŁĘBOKOŚCI spadku i próbuje wejść
+    # od najgłębszego - to dokładnie ta sama logika co już istniejący system
+    # tierów wielkości pozycji (SIZE_TIERS: głębszy spadek = większa
+    # przekonanie = większa pozycja), tylko rozszerzona na WYBÓR tickera,
+    # nie tylko wielkość zlecenia.
+    candidates: list[tuple] = []  # (asset, drop, reference_price, multiplier, price)
 
     for asset in assets:
         if asset.ticker in open_tickers:
@@ -415,10 +438,25 @@ def _process_entries(
         if price is None or price <= 0:
             continue
 
-        _enter_position(user_id, client, asset, settings, price, drop, multiplier, reference_price, current_equity)
-        return  # NAJWYŻEJ JEDNO nowe wejście na tick - ten sam powód co
-        # bot_engine.py/signal_engine.py::_process_entries (rate limit T212 na
-        # demo) - kolejny kandydat dostanie szansę w następnym ticku.
+        candidates.append((asset, drop, reference_price, multiplier, price))
+
+    if not candidates:
+        return
+
+    candidates.sort(key=lambda c: c[1])  # drop jest UJEMNY - najgłębszy (najbardziej ujemny) pierwszy
+    _log(
+        user_id, "INFO",
+        f"Wejścia EOD: {len(candidates)} kandydat(ów) z triggerem. Najgłębszy: "
+        f"{candidates[0][0].ticker} ({candidates[0][1]*100:.2f}%).",
+    )
+    for asset, drop, reference_price, multiplier, price in candidates:
+        if _enter_position(user_id, client, asset, settings, price, drop, multiplier, reference_price, current_equity):
+            return  # NAJWYŻEJ JEDNO faktyczne wejście na tick - ten sam powód
+            # rate-limitowy co zawsze (patrz docstring MAX_CONCURRENT_POSITIONS
+            # w innych silnikach) - kolejny kandydat dostanie szansę w
+            # następnym ticku, chyba że zwycięzca akurat zawiódł (wtedy
+            # próbujemy od razu kolejnego w tym samym ticku, patrz fallback
+            # bot_engine.py::_process_entries).
 
 
 def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSettings, pending_order_ids: set[str]) -> None:

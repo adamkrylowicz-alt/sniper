@@ -46,23 +46,42 @@ import datetime as dt
 import pytz
 
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
-EU_SESSION_WINDOW = (dt.time(9, 5), dt.time(17, 25))
+EU_SESSION_WINDOW = (dt.time(9, 0), dt.time(17, 30))
+
+# ZMIANA 2026-08-05 (Adam: "boty na usa dzialaja 24/5 eu dziala 5dni od 9 do
+# 17.30") - USD nie ma już OKNA GODZINOWEGO dla nowych wejść, tylko dzień
+# roboczy (patrz is_market_open() niżej - warunek godziny zdjęty WYŁĄCZNIE
+# dla USD, EUR zostaje w regularnej sesji). ŚWIADOME ryzyko zaakceptowane
+# przez Adama po tym jak wyjaśniłem że NIE jest to identyczne cofnięcie
+# fixu z 27.07 (patrz "ZMIANA 2026-07-27" wyżej) - tamten problem (rate
+# limit T212 zalany przez wszystkie 3 silniki naraz) od tego czasu dostał
+# realne łagodzenie: wspólny 50s cache portfolio/pending-orders (08.2026)
+# + wspólny eskalujący backoff po 429 + Telegram (dziś) daje natychmiastową
+# widoczność gdyby się powtórzyło - czego 27.07 nie było. Ryzyko które
+# ZOSTAJE i którego cache NIE rozwiązuje: niższa płynność/szerszy spread w
+# obrocie pre/post-market - to ryzyko rynkowe, nie techniczne, akceptowane
+# świadomie. `US_SESSION_WINDOW` zostaje jako stała (opisowa/używana gdzie
+# indziej jeśli trzeba), ale is_market_open() już jej nie sprawdza dla USD.
 US_SESSION_WINDOW = (dt.time(15, 35), dt.time(21, 55))
 
 
 def is_market_open(currency: str) -> bool:
     """
-    Czy gielda WLASCIWA dla waluty instrumentu (USD -> NASDAQ/NYSE, wszystko
-    inne -> Euronext/Xetra) jest teraz w regularnej sesji, patrz stale
-    *_SESSION_WINDOW wyzej. UZYWANE WYLACZNIE dla NOWYCH wejsc (_process_entries
-    w bot_engine.py/signal_engine.py/eod_engine.py) - dla zarzadzania JUZ
-    otwarta pozycja patrz is_position_management_hours() nizej (24/5).
+    Czy gielda WLASCIWA dla waluty instrumentu jest teraz otwarta dla NOWYCH
+    wejsc (_process_entries w bot_engine.py/signal_engine.py/eod_engine.py) -
+    dla zarzadzania JUZ otwarta pozycja patrz is_position_management_hours()
+    nizej (24/5 dla obu walut, bez zmian).
+
+    USD: 24/5 (tylko dzien roboczy, bez okna godzinowego) - patrz komentarz
+    przy US_SESSION_WINDOW wyzej. EUR: regularna sesja Euronext/Xetra,
+    EU_SESSION_WINDOW.
     """
     now_local = dt.datetime.now(_AMSTERDAM_TZ)
     if now_local.weekday() >= 5:  # sobota=5, niedziela=6
         return False
-    window = US_SESSION_WINDOW if currency == "USD" else EU_SESSION_WINDOW
-    return window[0] <= now_local.time() <= window[1]
+    if currency == "USD":
+        return True
+    return EU_SESSION_WINDOW[0] <= now_local.time() <= EU_SESSION_WINDOW[1]
 
 
 def is_position_management_hours(currency: str) -> bool:
@@ -80,23 +99,24 @@ def is_position_management_hours(currency: str) -> bool:
     return now_local.weekday() < 5  # sobota=5, niedziela=6
 
 
-# Tickery ZAREZERWOWANE wyłącznie dla EOD (Adam, 2026-08-05: "eod ma miec
-# swoj slot az 1" - po znalezieniu że WSZYSTKIE 30 tickerów z listy EOD
-# pokrywają się 1:1 z listą Micro-Grid i/albo Sygnału, więc EOD miało 0
-# otwartych pozycji od 6 dni - żaden kandydat, który akurat spełniał jego
-# warunek wejścia, nigdy nie był naprawdę wolny). Micro-Grid i Sygnał mają
-# je pomijać w _process_entries TAK SAMO jakby były już otwarte przez EOD -
-# patrz held_by_other_engine() niżej, jedyne miejsce które trzeba było
-# zmienić (obie pętle wejść już i tak wołają tę funkcję przed KAŻDYM nowym
-# wejściem). Świadomie MAŁY zestaw (nie cała lista EOD) - cel to gwarantować
-# EOD chociaż kilku wolnych kandydatów, nie odbierać Micro-Gridowi/Sygnałowi
-# większość ich uniwersum.
-EOD_RESERVED_TICKERS = frozenset({
-    "SAFp_EQ",    # Safran (EU)
-    "INGAa_EQ",   # ING (EU)
-    "MA_US_EQ",   # Mastercard (US)
-    "NFLX_US_EQ", # Netflix (US)
-})
+# CAŁA lista EOD jest ZAREZERWOWANA wyłącznie dla EOD (Adam, 2026-08-05:
+# "eod ma miec swoj slot az 1" -> potem "eod ma priorytet bo to jest tzw
+# strzal jak on cos zacznie reszta ma czekac i nie przeszkadzac"). Wersja 1
+# (tego samego dnia, wcześniej) rezerwowała tylko 4 sztywno wybrane tickery -
+# ROZSZERZONE na CAŁĄ listę EODAsset, dynamicznie (nie hardkodowana lista -
+# automatycznie w synchronie z tym co Adam faktycznie ma na liście EOD,
+# łącznie z planowanym rozszerzeniem do ~100 tickerów). Micro-Grid i Sygnał
+# mają pomijać KAŻDY ticker z listy EOD w _process_entries TAK SAMO jakby
+# był już otwarty przez EOD - patrz held_by_other_engine() niżej, jedyne
+# miejsce które trzeba było zmienić (obie pętle wejść już i tak wołają tę
+# funkcję przed KAŻDYM nowym wejściem). Import modeli LENIWY - patrz
+# uzasadnienie w held_by_other_engine() niżej (ten sam powód, ten sam plik).
+def _eod_reserved_tickers(user_id: int) -> frozenset[str]:
+    from ..models import EODAsset
+
+    return frozenset(
+        row.ticker for row in EODAsset.query.filter_by(user_id=user_id).with_entities(EODAsset.ticker).all()
+    )
 
 
 def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | None:
@@ -126,10 +146,11 @@ def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | N
     """
     from ..models import ActiveTrade, EODTrade, SignalTrade
 
-    # Rezerwacja EOD (patrz EOD_RESERVED_TICKERS wyżej) - blokuje Micro-Grid/
+    # Rezerwacja EOD (patrz _eod_reserved_tickers() wyżej) - blokuje Micro-Grid/
     # Sygnał NIEZALEŻNIE od tego czy EOD faktycznie ma tam już otwartą
-    # pozycję (samo zarezerwowanie tickera ma znaczenie, nie stan EOD).
-    if this_engine != "eod" and ticker in EOD_RESERVED_TICKERS:
+    # pozycję (samo zarezerwowanie tickera - bycie na LIŚCIE EOD - ma
+    # znaczenie, nie aktualny stan pozycji EOD).
+    if this_engine != "eod" and ticker in _eod_reserved_tickers(user_id):
         return "EOD"
 
     if this_engine != "bot" and ActiveTrade.query.filter_by(

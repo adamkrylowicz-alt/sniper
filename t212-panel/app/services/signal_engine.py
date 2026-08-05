@@ -110,18 +110,13 @@ SIGNAL_LOOKBACK_DAYS = 250
 # redeployu) - Adam: "to tylko ustawienia fabryczne", 2 zostaje jako DEFAULT
 # nowej kolumny (patrz migrate_add_max_concurrent_positions.py).
 
-# Godziny wejścia - PRD: "Normalny tryb handlu (10:00-15:45/16:00)". Wyjścia
-# (stop-loss/take-profit) NIE są ograniczone do tego okna, tylko do
-# market_hours.is_market_open() - pozycja ma być chroniona przez CAŁĄ sesję,
-# nie tylko rano.
-ENTRY_WINDOW = (dt.time(10, 0), dt.time(15, 45))
-
-# Rozszerzenie dla USD (Adam, 2026-07-24: dodane największe spółki USA do
-# Sygnału) - sesja US w czasie Amsterdamu to 15:35-21:55 (patrz
-# market_hours.US_SESSION_WINDOW), a stałe ENTRY_WINDOW 10:00-15:45 łapałoby
-# praktycznie tylko pierwsze ~10 minut otwarcia USA. Dla USD osobne, szersze
-# okno pokrywające prawie całą sesję NASDAQ/NYSE.
-US_ENTRY_WINDOW = (dt.time(15, 35), dt.time(21, 45))
+# Godziny wejścia - USUNIĘTE 2026-08-05 (Adam: "boty na usa dzialaja 24/5
+# eu dziala 5dni od 9 do 17.30") - Sygnał miał WŁASNE, węższe okno
+# (10:00-15:45 EUR / 15:35-21:45 USD) NIEZALEŻNE od wspólnego
+# market_hours.is_market_open(). Teraz Sygnał ufa WYŁĄCZNIE wspólnej funkcji
+# (EU_SESSION_WINDOW=9:00-17:30, USD=24/5 bez okna) - jedno źródło prawdy
+# o godzinach wejść dla wszystkich 3 silników zamiast trzech niezależnych
+# definicji które mogły (i tu faktycznie zaczęły) się rozjeżdżać.
 
 # Cooldown ponownego wejścia po stop-lossie (dodane 2026-08-05, na żywo
 # znaleziony bug: IFXd_EQ 28.07 między 11:41 a 11:56 dostało 10 wejść z rzędu,
@@ -176,14 +171,6 @@ _confirm_fail_backoff: dict[tuple[int, str], tuple[int, dt.datetime]] = {}
 def _next_confirm_fail_delay(consecutive_fails: int) -> dt.timedelta:
     idx = min(consecutive_fails - 1, len(CONFIRM_FAIL_BACKOFF_MINUTES) - 1)
     return dt.timedelta(minutes=CONFIRM_FAIL_BACKOFF_MINUTES[idx])
-
-
-def _in_entry_window(currency: str) -> bool:
-    now_local = dt.datetime.now(_AMSTERDAM_TZ)
-    if now_local.weekday() >= 5:
-        return False
-    window = US_ENTRY_WINDOW if currency == "USD" else ENTRY_WINDOW
-    return window[0] <= now_local.time() <= window[1]
 
 
 def _log(user_id: int, action_type: str, message: str) -> None:
@@ -303,7 +290,15 @@ def _get_current_equity(
 def _enter_position(
     user_id: int, client: T212Client | None, asset: SignalAsset, settings: SignalSettings,
     price: Decimal, atr: Decimal, current_equity: Decimal | None = None,
-) -> None:
+) -> bool:
+    """
+    Zwraca True gdy pozycja faktycznie została otwarta (paper LUB realne
+    zlecenie złożone), False gdy odrzucona (walidacja/błąd T212) - ZMIANA
+    2026-08-05 (patrz _process_entries niżej, ranking kandydatów zamiast
+    "pierwszy pasujący") - wywołujący próbuje KOLEJNEGO w rankingu gdy
+    zwycięzca akurat zawiedzie, ten sam wzorzec co bot_engine.py::
+    _process_entries.
+    """
     effective_entry_amount = asset.entry_amount
     if settings.equity_sizing_enabled and current_equity is not None:
         effective_entry_amount = compute_equity_scaled_amount(
@@ -324,7 +319,7 @@ def _enter_position(
         )
     except signal_strategy.EntryValidationError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
-        return
+        return False
     quantity = decision.quantity
     stop_loss_price = decision.stop_loss_price
     take_profit_price = decision.take_profit_price
@@ -345,7 +340,7 @@ def _enter_position(
             f"[PAPER] {asset.ticker}: sygnał wejścia, {quantity} @ ~{price} - "
             f"SL {stop_loss_price:.4f} (trailing) / TP orientacyjny {take_profit_price:.4f} (ATR={atr:.4f}).",
         )
-        return
+        return True
 
     try:
         existing_position = client.get_position(asset.ticker)
@@ -357,7 +352,7 @@ def _enter_position(
         buy_result, quantity = _place_buy_with_precision_fallback(client, asset.ticker, quantity, price)
     except T212APIError as exc:
         _log(user_id, "ERROR", f"{asset.ticker}: błąd składania zlecenia kupna - {exc}")
-        return
+        return False
 
     trade = SignalTrade(
         user_id=user_id, signal_asset_id=asset.id, ticker=asset.ticker, currency=asset.currency,
@@ -379,6 +374,7 @@ def _enter_position(
         f"{quantity} @ ~{price} - SL {stop_loss_price:.4f} (trailing) / TP orientacyjny {take_profit_price:.4f} (ATR={atr:.4f}). "
         "Czeka na potwierdzenie kupna, dopiero potem uzbroi stop-loss.",
     )
+    return True
 
 
 def _stop_loss_cooldown_until(user_id: int, ticker: str) -> dt.datetime | None:
@@ -413,6 +409,29 @@ def _process_entries(
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
+    # ZMIANA 2026-08-05 (Adam: "czy spr tez inne i wybiera najlepsze czy wali
+    # po kolei i spr czy sie lapia?" -> "napraw to") - do tej pory ta pętla
+    # wchodziła w PIERWSZEGO kandydata z kolejności wierszy w bazie, który
+    # akurat spełniał RSI<próg+trend, bez porównania z resztą (w
+    # odróżnieniu od bot_engine.py, który od 23.07 ocenia WSZYSTKICH i
+    # wchodzi w najlepszego - patrz bot_entry_filters.py). Teraz: dwie fazy,
+    # ten sam wzorzec co Micro-Grid. Faza 1 (ta pętla) zbiera WSZYSTKICH
+    # kwalifikujących się kandydatów (bez dotykania T212 - tylko Finnhub/
+    # Yahoo/Alpaca, ten sam koszt co dawniej, cache 30 min). Faza 2 (niżej)
+    # sortuje po sile sygnału i próbuje wejść od najlepszego, z fallbackiem
+    # na kolejnego gdyby zwycięzca akurat zawiódł (429/odrzucone zlecenie) -
+    # NAJWYŻEJ JEDNO faktyczne wejście na tick, ten sam powód rate-limitowy
+    # co zawsze (patrz docstring MAX_CONCURRENT_POSITIONS wyżej).
+    #
+    # Score = (próg RSI - RSI) - im bardziej wyprzedany kandydat WEWNĄTRZ
+    # już potwierdzonego trendu (cena>SMA200, warunek wejścia bez zmian),
+    # tym silniejszy sygnał mean-reversion wg własnej tezy Sygnału. Świadomie
+    # NIE reużyto scoringu bot_entry_filters.py (kalibrowany pod "spokojny
+    # trend, nisko w zakresie dnia" - filozofia DCA Micro-Gridu) - Sygnał ma
+    # inną tezę (RSI-momentum w potwierdzonym uptrendzie), więc potrzebuje
+    # własnego kryterium, nie cudzego.
+    candidates: list[tuple] = []  # (asset, score, price, atr)
+
     for asset in assets:
         if asset.ticker in open_tickers:
             continue
@@ -438,8 +457,6 @@ def _process_entries(
             continue
         if not market_hours.is_market_open(asset.currency):
             continue
-        if not _in_entry_window(asset.currency):
-            continue
 
         candles = price_feed.get_mini_chart_ohlc(
             api_key, asset.ticker, days=SIGNAL_LOOKBACK_DAYS,
@@ -460,12 +477,21 @@ def _process_entries(
             continue
 
         if rsi < settings.rsi_threshold and price > sma:
-            _enter_position(user_id, client, asset, settings, price, atr, current_equity)
-            return  # NAJWYŻEJ JEDNO nowe wejście na tick - ten sam powód co
-            # bot_engine.py::_process_entries (rate limit T212 na demo, patrz
-            # docstring MAX_CONCURRENT_POSITIONS wyżej) - kolejny kandydat
-            # dostanie szansę w następnym ticku zamiast walczyć o ten sam
-            # ciasny limit /equity/orders w tej samej sekundzie.
+            score = settings.rsi_threshold - rsi
+            candidates.append((asset, score, price, atr))
+
+    if not candidates:
+        return
+
+    candidates.sort(key=lambda c: c[1], reverse=True)
+    _log(
+        user_id, "INFO",
+        f"Wejścia: {len(candidates)} kandydat(ów) spełnia warunek. Najlepszy: "
+        f"{candidates[0][0].ticker} (RSI-score {candidates[0][1]:.2f}).",
+    )
+    for asset, _score, price, atr in candidates:
+        if _enter_position(user_id, client, asset, settings, price, atr, current_equity):
+            return
 
 
 def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalSettings, pending_order_ids: set[str]) -> None:
