@@ -117,7 +117,7 @@ def _register_scheduler(app: Flask) -> None:
     if Config.DEBUG and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
 
-    from .services import bot_credentials, bot_engine, eod_engine, signal_engine
+    from .services import bot_credentials, bot_engine, daily_summary, eod_engine, signal_engine, telegram_commands
 
     # Autostart TYMCZASOWY "DO ODWOŁANIA" (Adam, 2026-07-27) - patrz pelny
     # docstring w services/bot_credentials.py. Odtwarza poswiadczenia
@@ -166,6 +166,30 @@ def _register_scheduler(app: Flask) -> None:
         func=lambda: bot_engine.daily_report(app),
         trigger="cron", hour=22, minute=1, timezone="Europe/Amsterdam",
         id="bot_daily_report", replace_existing=True,
+    )
+    # Podsumowanie P&L WSZYSTKICH 3 silników na Telegram, dwa razy dziennie
+    # (Adam, 2026-08-05: "dzienne podsumowanie P&L wieczorem i rano") - patrz
+    # services/daily_summary.py, celowo OSOBNE od bot_daily_report wyżej
+    # (ten mailowy dotyczy wyłącznie Micro-Gridu). Rano 07:45 (przed
+    # otwarciem Euronext 9:00 - łapie co się działo w nocy na USA/24-godzinnych
+    # tickerach), wieczorem 22:05 (tuż po bot_daily_report, ~zamknięcie sesji USA).
+    scheduler.add_job(
+        func=lambda: daily_summary.send_daily_summary(app, "poranny"),
+        trigger="cron", hour=7, minute=45, timezone="Europe/Amsterdam",
+        id="telegram_morning_summary", replace_existing=True,
+    )
+    scheduler.add_job(
+        func=lambda: daily_summary.send_daily_summary(app, "wieczorny"),
+        trigger="cron", hour=22, minute=5, timezone="Europe/Amsterdam",
+        id="telegram_evening_summary", replace_existing=True,
+    )
+    # Obsługa komend przychodzących z Telegrama (Adam: "dodaj /status") -
+    # krótki poll co 15s (patrz docstring telegram_commands.py - appka nie
+    # ma publicznego HTTPS do webhooka Telegrama, więc polling jest prostszym
+    # wystarczającym rozwiązaniem przy jednym użytkowniku).
+    scheduler.add_job(
+        func=lambda: telegram_commands.poll_and_handle(app),
+        trigger="interval", seconds=15, id="telegram_commands_poll", replace_existing=True,
     )
     scheduler.start()
 
