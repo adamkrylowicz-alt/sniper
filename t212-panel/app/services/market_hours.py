@@ -80,6 +80,25 @@ def is_position_management_hours(currency: str) -> bool:
     return now_local.weekday() < 5  # sobota=5, niedziela=6
 
 
+# Tickery ZAREZERWOWANE wyłącznie dla EOD (Adam, 2026-08-05: "eod ma miec
+# swoj slot az 1" - po znalezieniu że WSZYSTKIE 30 tickerów z listy EOD
+# pokrywają się 1:1 z listą Micro-Grid i/albo Sygnału, więc EOD miało 0
+# otwartych pozycji od 6 dni - żaden kandydat, który akurat spełniał jego
+# warunek wejścia, nigdy nie był naprawdę wolny). Micro-Grid i Sygnał mają
+# je pomijać w _process_entries TAK SAMO jakby były już otwarte przez EOD -
+# patrz held_by_other_engine() niżej, jedyne miejsce które trzeba było
+# zmienić (obie pętle wejść już i tak wołają tę funkcję przed KAŻDYM nowym
+# wejściem). Świadomie MAŁY zestaw (nie cała lista EOD) - cel to gwarantować
+# EOD chociaż kilku wolnych kandydatów, nie odbierać Micro-Gridowi/Sygnałowi
+# większość ich uniwersum.
+EOD_RESERVED_TICKERS = frozenset({
+    "SAFp_EQ",    # Safran (EU)
+    "INGAa_EQ",   # ING (EU)
+    "MA_US_EQ",   # Mastercard (US)
+    "NFLX_US_EQ", # Netflix (US)
+})
+
+
 def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | None:
     """
     Zwraca nazwe INNEGO silnika (Micro-Grid/Sygnal/EOD), ktory ma juz OTWARTA
@@ -106,6 +125,12 @@ def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | N
     t212_to_finnhub() (lazy `from . import yahoo_resolver`).
     """
     from ..models import ActiveTrade, EODTrade, SignalTrade
+
+    # Rezerwacja EOD (patrz EOD_RESERVED_TICKERS wyżej) - blokuje Micro-Grid/
+    # Sygnał NIEZALEŻNIE od tego czy EOD faktycznie ma tam już otwartą
+    # pozycję (samo zarezerwowanie tickera ma znaczenie, nie stan EOD).
+    if this_engine != "eod" and ticker in EOD_RESERVED_TICKERS:
+        return "EOD"
 
     if this_engine != "bot" and ActiveTrade.query.filter_by(
         user_id=user_id, ticker=ticker, status="OPEN",
