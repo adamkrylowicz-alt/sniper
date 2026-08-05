@@ -74,6 +74,14 @@ class Config:
     # zapytań/mies.): https://logo.dev - w Dashboard -> "Publishable Key".
     LOGO_DEV_API_KEY = os.environ.get("LOGO_DEV_API_KEY")
 
+    # Powiadomienia Telegram (Adam, 2026-08-05: "zrob port do telegrama zeby
+    # mi wysylal takie bledy a nie milczal jak po smierci organisty" - po
+    # buggu RHMd_EQ, który 30+ godzin nie zostawił ŻADNEGO śladu w logach).
+    # Bot: @Snajper2026_bot. Brak wartości = powiadomienia po cichu wyłączone
+    # (patrz services/telegram_notify.py) - appka działa identycznie bez nich.
+    TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+    TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
     # --- TYMCZASOWE, DO USUNIĘCIA po zbudowaniu auth.py ---------------------
     # Zanim istnieje logowanie użytkownika (i tym samym hasło do odszyfrowania
     # master_key przez cipher.py), testujemy scalping.py z kluczem demo

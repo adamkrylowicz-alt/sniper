@@ -34,7 +34,19 @@ REQUEST_TIMEOUT = 6
 # Uzupełniaj gdy automatyczne mapowanie nie działa (np. europejskie spółki
 # z niestandardowymi tickerami T212). Format: "TICKER_T212": "SYMBOL_FINNHUB"
 TICKER_MAP: dict[str, str] = {
-    "RHMd_EQ": "RHM.XETRA",
+    # BUG znaleziony 2026-08-05 (Adam: "stop jeszcze się nie uzbroił dlaczego?") -
+    # ".XETRA" NIE jest poprawnym sufiksem giełdy w przestrzeni symboli Yahoo
+    # Finance (poprawny to ".DE") - "RHM.XETRA" 404-owało w KAŻDYM zapytaniu
+    # od dnia dodania, więc get_live_price() zawsze zwracał None dla RHMd_EQ.
+    # Skutek na żywo: pozycja RHMD (auto-adoptowana 04.08 przez "zarządzaj
+    # wszystkim") NIGDY nie dostała ceny w _manage_trailing_exit() -> STOP
+    # nigdy się nie uzbroił, mimo że cena tego dnia ruszyła się +2.88%
+    # (daleko ponad próg 2 kroków). Ponieważ TICKER_MAP ma pierwszeństwo
+    # przed automatycznym yahoo_resolver.py, ten literówkowy wpis też
+    # BLOKOWAŁ auto-resolver przed poprawieniem tego samemu (potwierdzone:
+    # yahoo_symbol_map nie miało ŻADNEGO wpisu dla RHMd_EQ, mimo że resolver
+    # sam z siebie poprawnie znajduje "RHM.DE" gdy się go dopuści do głosu).
+    "RHMd_EQ": "RHM.DE",
     "1YD_EQ": "AVGO",           # Broadcom, T212 używa lokalnego symbolu Frankfurt
     "SPCX_US_EQ": "SPCX",      # SpaceX - IPO czerwiec 2026
     "IPOE_US_EQ": "SOFI",      # T212 trzyma stary kod SPAC-a (Social Capital Hedosophia IV),

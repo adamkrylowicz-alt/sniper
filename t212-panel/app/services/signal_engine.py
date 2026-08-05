@@ -75,7 +75,7 @@ from ..extensions import db
 from ..models import SignalAsset, SignalAuditLog, SignalSettings, SignalTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from . import bot_credentials, diagnostics, market_hours, price_feed
+from . import bot_credentials, diagnostics, market_hours, price_feed, price_watchdog, telegram_notify
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import signal_strategy
 from .strategy.microgrid_strategy import compute_equity_scaled_amount
@@ -193,6 +193,10 @@ def _log(user_id: int, action_type: str, message: str) -> None:
     diagnostics.log_diag(user_id, "signal", f"[{action_type}] {message}")
     if action_type == "ERROR":
         current_app.logger.error("[signal user=%s] %s", user_id, message)
+        telegram_notify.send_telegram_message(
+            current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
+            f"🔴 Sygnał ERROR (user {user_id}): {message}",
+        )
     entry = SignalAuditLog(user_id=user_id, action_type=action_type, message=message)
     db.session.add(entry)
     db.session.commit()
@@ -777,7 +781,16 @@ def _manage_exits(
 
         price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
         if price is None or price <= 0:
+            # Watchdog - patrz identyczny komentarz w bot_engine.py::_manage_trailing_exit.
+            if price_watchdog.note_price_result("signal", trade.ticker, False):
+                _log(
+                    user_id, "ERROR",
+                    f"{trade.ticker}: brak ceny przez {price_watchdog.ALERT_THRESHOLD} ticków z rzędu - "
+                    "trailing stop NIE działa dla tej pozycji! Sprawdź TICKER_MAP/mapowanie Yahoo "
+                    "(finnhub_client.py) albo pokrycie instrumentu.",
+                )
             continue
+        price_watchdog.note_price_result("signal", trade.ticker, True)
 
         _trail_stop_loss(user_id, client, trade, settings, price)
 

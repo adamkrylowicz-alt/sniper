@@ -157,7 +157,7 @@ from ..extensions import db
 from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from . import bot_credentials, bot_entry_filters, diagnostics, mailer, price_feed
+from . import bot_credentials, bot_entry_filters, diagnostics, mailer, price_feed, price_watchdog, telegram_notify
 from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
 
@@ -490,6 +490,10 @@ def _log(user_id: int, action_type: str, message: str, position_group_id: str | 
     diagnostics.log_diag(user_id, "bot", f"[{action_type}] {message}")
     if action_type == "ERROR":
         _log_error_to_file(user_id, message)
+        telegram_notify.send_telegram_message(
+            current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
+            f"🔴 Micro-Grid ERROR (user {user_id}): {message}",
+        )
         return
     db.session.add(BotAuditLog(
         user_id=user_id, action_type=action_type, message=message,
@@ -1224,7 +1228,19 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
         )
         if current_price is None or current_price <= 0:
+            # Watchdog (dodany 2026-08-05 po buggu RHMd_EQ - zły symbol Yahoo
+            # w TICKER_MAP sprawiał, że TA GAŁĄŹ wykonywała się cicho przez
+            # >30h, zero śladu w jakimkolwiek logu) - po ALERT_THRESHOLD
+            # ticków z rzędu bez ceny, jeden ERROR (trafia też na Telegram).
+            if price_watchdog.note_price_result("bot", trade.ticker, False):
+                _log(
+                    user_id, "ERROR",
+                    f"{trade.ticker}: brak ceny przez {price_watchdog.ALERT_THRESHOLD} ticków z rzędu - "
+                    "trailing stop NIE działa dla tej pozycji! Sprawdź TICKER_MAP/mapowanie Yahoo "
+                    "(finnhub_client.py) albo pokrycie instrumentu.",
+                )
             continue  # brak ceny - spróbujemy przy kolejnym ticku, nic pilnego do zrobienia
+        price_watchdog.note_price_result("bot", trade.ticker, True)
 
         # Dla USD: liczymy progi/STOP względem ref_price (average_price
         # podbite o round-trip FX), nie surowej average_price - koszt
