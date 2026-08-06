@@ -63,10 +63,11 @@ def view():
         for l in logs_raw
     ]
 
-    all_assets = EODAsset.query.filter_by(user_id=user_id).order_by(EODAsset.created_at.desc()).all()
+    env = current_environment(user_id)
+    all_assets = EODAsset.query.filter_by(user_id=user_id, environment=env).order_by(EODAsset.created_at.desc()).all()
     open_trades = (
         EODTrade.query
-        .filter_by(user_id=user_id, status="OPEN")
+        .filter_by(user_id=user_id, status="OPEN", environment=env)
         .order_by(EODTrade.created_at.desc())
         .all()
     )
@@ -144,12 +145,14 @@ def add_asset():
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Podaj kwotę wejścia (musi być > 0)."), 400
 
-    if EODAsset.query.filter_by(user_id=user_id, ticker=ticker).first() is not None:
+    env = current_environment(user_id)
+    if EODAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first() is not None:
         return jsonify(ok=False, error=f"{ticker} jest już na liście modułu EOD."), 400
 
     asset = EODAsset(
         user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
         currency=instrument.currency_code or "EUR", entry_amount=entry_amount,
+        environment=env,
     )
     db.session.add(asset)
     db.session.commit()
@@ -192,7 +195,7 @@ def asset_prices():
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
     result = {}
-    for asset in EODAsset.query.filter_by(user_id=user_id).all():
+    for asset in EODAsset.query.filter_by(user_id=user_id, environment=current_environment(user_id)).all():
         price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret)
         if price is None or price <= 0:
             result[asset.ticker] = {"price": None, "implied_quantity": None}
@@ -342,7 +345,9 @@ def clear_log():
 def close_position(trade_id):
     """Ręczne zamknięcie pozycji (siatka bezpieczeństwa na czas testów na żywo) - ten sam wzorzec co routes/signal.py::close_position."""
     user_id = current_user_id()
-    trade = EODTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+    trade = EODTrade.query.filter_by(
+        id=trade_id, user_id=user_id, status="OPEN", environment=current_environment(user_id),
+    ).first_or_404()
 
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
@@ -408,7 +413,8 @@ def adopt_position():
     if instrument is None:
         return jsonify(ok=False, error=f"{ticker or '(brak)'} nie znaleziony w lokalnej bazie instrumentów."), 400
 
-    if EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first() is not None:
+    env = current_environment(user_id)
+    if EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first() is not None:
         return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez EOD."), 400
 
     from ..services.market_hours import held_by_other_engine
@@ -442,7 +448,7 @@ def adopt_position():
     stop_loss_price = avg_price * (1 - settings.stop_loss_pct)
     take_profit_price = avg_price * (1 + settings.take_profit_pct)
 
-    asset = EODAsset.query.filter_by(user_id=user_id, ticker=ticker).first()
+    asset = EODAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first()
     if asset is None:
         try:
             entry_amount = Decimal(str(payload.get("entry_amount")))
@@ -456,6 +462,7 @@ def adopt_position():
         asset = EODAsset(
             user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
             currency=instrument.currency_code or "USD", entry_amount=entry_amount,
+            environment=env,
         )
         db.session.add(asset)
         db.session.flush()
@@ -472,6 +479,7 @@ def adopt_position():
         drop_pct_at_entry=Decimal("0"), size_multiplier=Decimal("1"),
         stop_loss_price=stop_loss_price, take_profit_price=take_profit_price,
         stop_order_id=stop_result.order_id, status="OPEN", is_paper=False, buy_confirmed=True,
+        environment=env,
     )
     db.session.add(trade)
     db.session.commit()
@@ -489,7 +497,9 @@ def adopt_position():
 def release_position(trade_id):
     """Odwrotność adopt_position() - patrz routes/bot.py::release_position, ten sam wzorzec."""
     user_id = current_user_id()
-    trade = EODTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+    trade = EODTrade.query.filter_by(
+        id=trade_id, user_id=user_id, status="OPEN", environment=current_environment(user_id),
+    ).first_or_404()
 
     if not trade.buy_confirmed:
         return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400

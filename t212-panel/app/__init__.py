@@ -240,9 +240,9 @@ def _register_context_processors(app: Flask) -> None:
             cached_portfolio = _portfolio_cache.get(session_data.user_id)
 
             open_position_counts = {
-                "bot": ActiveTrade.query.filter_by(user_id=session_data.user_id, status="OPEN").count(),
-                "signal": SignalTrade.query.filter_by(user_id=session_data.user_id, status="OPEN").count(),
-                "eod": EODTrade.query.filter_by(user_id=session_data.user_id, status="OPEN").count(),
+                "bot": ActiveTrade.query.filter_by(user_id=session_data.user_id, status="OPEN", environment=active_environment).count(),
+                "signal": SignalTrade.query.filter_by(user_id=session_data.user_id, status="OPEN", environment=active_environment).count(),
+                "eod": EODTrade.query.filter_by(user_id=session_data.user_id, status="OPEN", environment=active_environment).count(),
                 "aktywa": len(cached_portfolio["positions"]) if cached_portfolio else 0,
             }
 

@@ -327,6 +327,7 @@ def _enter_position(
             drop_pct_at_entry=drop_pct, size_multiplier=multiplier,
             stop_loss_price=stop_loss_price, take_profit_price=take_profit_price,
             status="OPEN", is_paper=True, buy_confirmed=True,
+            environment=current_environment(user_id),
         )
         db.session.add(trade)
         db.session.commit()
@@ -356,6 +357,7 @@ def _enter_position(
         drop_pct_at_entry=drop_pct, size_multiplier=multiplier,
         stop_loss_price=stop_loss_price, take_profit_price=take_profit_price,
         status="OPEN", is_paper=False, buy_confirmed=False,
+        environment=current_environment(user_id),
     )
     db.session.add(trade)
     db.session.commit()
@@ -376,11 +378,12 @@ def _enter_position(
 def _process_entries(
     user_id: int, client: T212Client | None, settings: EODSettings, current_equity: Decimal | None = None,
 ) -> None:
-    assets = EODAsset.query.filter_by(user_id=user_id).all()
+    env = current_environment(user_id)
+    assets = EODAsset.query.filter_by(user_id=user_id, environment=env).all()
     if not assets:
         return
 
-    open_tickers = {t.ticker for t in EODTrade.query.filter_by(user_id=user_id, status="OPEN").all()}
+    open_tickers = {t.ticker for t in EODTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).all()}
     # DODANE 2026-08-03 - do tej pory EOD nie miało ŻADNEGO limitu jednoczesnych
     # pozycji (ta sama luka jaką miał Sygnał do wieczora tego samego dnia,
     # patrz signal_engine.py::MAX_CONCURRENT_POSITIONS) - lista High Conviction
@@ -468,6 +471,7 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: EODSett
     """
     pending_trades = EODTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False,
+        environment=current_environment(user_id),
     ).all()
     if not pending_trades:
         return
@@ -569,7 +573,10 @@ def _retry_pending_buys(
     now = dt.datetime.utcnow()
     candidates = (
         EODTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
+        .filter_by(
+            user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False,
+            environment=current_environment(user_id),
+        )
         .filter(db.or_(EODTrade.next_buy_retry_at.is_(None), EODTrade.next_buy_retry_at <= now))
         .all()
     )
@@ -738,6 +745,7 @@ def _manage_exits(
 ) -> None:
     open_trades = EODTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True,
+        environment=current_environment(user_id),
     ).all()
     if not open_trades:
         return
@@ -822,7 +830,9 @@ def _manage_exits(
 
 
 def _manage_paper_exits(user_id: int, settings: EODSettings) -> None:
-    open_trades = EODTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=True).all()
+    open_trades = EODTrade.query.filter_by(
+        user_id=user_id, status="OPEN", is_paper=True, environment=current_environment(user_id),
+    ).all()
     if not open_trades:
         return
 

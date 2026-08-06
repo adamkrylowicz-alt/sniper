@@ -515,7 +515,7 @@ class BotAsset(db.Model):
     """
     __tablename__ = "bot_assets"
     __table_args__ = (
-        db.UniqueConstraint("user_id", "ticker", name="uq_bot_asset_user_ticker"),
+        db.UniqueConstraint("user_id", "ticker", "environment", name="uq_bot_asset_user_ticker_env"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -527,6 +527,13 @@ class BotAsset(db.Model):
 
     entry_amount = db.Column(db.Numeric(12, 2), nullable=False)
     is_penny_stock = db.Column(db.Boolean, default=False, nullable=False)
+
+    # Do jakiego konta T212 (demo/live) należy ten wpis - dodane 2026-08-07
+    # po incydencie, gdzie Adam skasował klucz demo, przełączył na live, a
+    # bot dalej "widział" stare pozycje demo bo NIC nigdy nie filtrowało po
+    # środowisku (patrz utils.current_environment/UserSettings.active_environment,
+    # 2026-08-06). Wszystkie query MUSZĄ filtrować po tym polu.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
 
@@ -661,6 +668,10 @@ class ActiveTrade(db.Model):
     # zostaje pod botem do recznego "Zwolnij", niezaleznie od stanu switcha.
     auto_adopted = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Denormalizowane (ten sam powód co ticker/currency wyżej - zero JOIN-a
+    # na gorącej ścieżce) - patrz identyczny komentarz przy BotAsset.environment.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
+
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)
 
@@ -706,7 +717,7 @@ class SignalAsset(db.Model):
     """Ticker obserwowany przez strategię sygnałową - własna, niezależna lista (patrz komentarz wyżej)."""
     __tablename__ = "signal_assets"
     __table_args__ = (
-        db.UniqueConstraint("user_id", "ticker", name="uq_signal_asset_user_ticker"),
+        db.UniqueConstraint("user_id", "ticker", "environment", name="uq_signal_asset_user_ticker_env"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -717,6 +728,9 @@ class SignalAsset(db.Model):
     currency = db.Column(db.String(10), nullable=False)
 
     entry_amount = db.Column(db.Numeric(12, 2), nullable=False)
+
+    # Patrz identyczny komentarz przy BotAsset.environment.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
 
@@ -840,6 +854,9 @@ class SignalTrade(db.Model):
     close_price = db.Column(db.Numeric(12, 4), nullable=True)
     closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "manual"
 
+    # Denormalizowane, patrz identyczny komentarz przy ActiveTrade.environment.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
+
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)
 
@@ -886,7 +903,7 @@ class EODAsset(db.Model):
     """
     __tablename__ = "eod_assets"
     __table_args__ = (
-        db.UniqueConstraint("user_id", "ticker", name="uq_eod_asset_user_ticker"),
+        db.UniqueConstraint("user_id", "ticker", "environment", name="uq_eod_asset_user_ticker_env"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -897,6 +914,9 @@ class EODAsset(db.Model):
     currency = db.Column(db.String(10), nullable=False)
 
     entry_amount = db.Column(db.Numeric(12, 2), nullable=False)
+
+    # Patrz identyczny komentarz przy BotAsset.environment.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
 
@@ -1000,6 +1020,9 @@ class EODTrade(db.Model):
 
     close_price = db.Column(db.Numeric(12, 4), nullable=True)
     closed_via = db.Column(db.String(20), nullable=True)  # "stop-loss" / "take-profit" / "eod-forced" / "manual"
+
+    # Denormalizowane, patrz identyczny komentarz przy ActiveTrade.environment.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
     closed_at = db.Column(db.DateTime, nullable=True)

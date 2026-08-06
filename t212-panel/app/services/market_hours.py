@@ -113,9 +113,12 @@ def is_position_management_hours(currency: str) -> bool:
 # uzasadnienie w held_by_other_engine() niżej (ten sam powód, ten sam plik).
 def _eod_reserved_tickers(user_id: int) -> frozenset[str]:
     from ..models import EODAsset
+    from ..utils import current_environment
 
     return frozenset(
-        row.ticker for row in EODAsset.query.filter_by(user_id=user_id).with_entities(EODAsset.ticker).all()
+        row.ticker for row in EODAsset.query.filter_by(
+            user_id=user_id, environment=current_environment(user_id),
+        ).with_entities(EODAsset.ticker).all()
     )
 
 
@@ -145,6 +148,9 @@ def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | N
     t212_to_finnhub() (lazy `from . import yahoo_resolver`).
     """
     from ..models import ActiveTrade, EODTrade, SignalTrade
+    from ..utils import current_environment
+
+    env = current_environment(user_id)
 
     # Rezerwacja EOD (patrz _eod_reserved_tickers() wyżej) - blokuje Micro-Grid/
     # Sygnał NIEZALEŻNIE od tego czy EOD faktycznie ma tam już otwartą
@@ -154,15 +160,15 @@ def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | N
         return "EOD"
 
     if this_engine != "bot" and ActiveTrade.query.filter_by(
-        user_id=user_id, ticker=ticker, status="OPEN",
+        user_id=user_id, ticker=ticker, status="OPEN", environment=env,
     ).first():
         return "Micro-Grid"
     if this_engine != "signal" and SignalTrade.query.filter_by(
-        user_id=user_id, ticker=ticker, status="OPEN",
+        user_id=user_id, ticker=ticker, status="OPEN", environment=env,
     ).first():
         return "Sygnał"
     if this_engine != "eod" and EODTrade.query.filter_by(
-        user_id=user_id, ticker=ticker, status="OPEN",
+        user_id=user_id, ticker=ticker, status="OPEN", environment=env,
     ).first():
         return "EOD"
     return None

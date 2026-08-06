@@ -735,7 +735,7 @@ def _retry_pending_sells(
     now = dt.datetime.utcnow()
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False, environment=current_environment(user_id))
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()
     )
@@ -799,7 +799,7 @@ def _retry_pending_buys(
     now = dt.datetime.utcnow()
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False, environment=current_environment(user_id))
         .filter(db.or_(ActiveTrade.next_buy_retry_at.is_(None), ActiveTrade.next_buy_retry_at <= now))
         .all()
     )
@@ -940,7 +940,9 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
         return 0
 
     open_tickers = {
-        t.ticker for t in ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").all()
+        t.ticker for t in ActiveTrade.query.filter_by(
+            user_id=user_id, status="OPEN", environment=current_environment(user_id),
+        ).all()
     }
     adopted_count = 0
 
@@ -970,11 +972,13 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
         instrument = Instrument.query.get(ticker)
         currency = instrument.currency_code if instrument else "USD"
 
-        asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker).first()
+        env = current_environment(user_id)
+        asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first()
         if asset is None:
             asset = BotAsset(
                 user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
                 currency=currency, entry_amount=(quantity * avg_price).quantize(Decimal("0.01")),
+                environment=env,
             )
             db.session.add(asset)
             db.session.flush()  # potrzebne asset.id do FK ActiveTrade.bot_asset_id ponizej
@@ -988,6 +992,7 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
             average_price=avg_price, dca_level=0, grid_anchor_price=Decimal("0"),
             baseline_owned_quantity=Decimal("0"),
             status="OPEN", is_paper=False, buy_confirmed=True, auto_adopted=True,
+            environment=env,
         )
         db.session.add(trade)
         db.session.commit()
@@ -1094,7 +1099,10 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
     now = dt.datetime.utcnow()
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True, sell_blocked=False)
+        .filter_by(
+            user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True, sell_blocked=False,
+            environment=current_environment(user_id),
+        )
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()
     )
@@ -1455,7 +1463,10 @@ def _trigger_dca_buys(
         return
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True)
+        .filter_by(
+            user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True,
+            environment=current_environment(user_id),
+        )
         .filter(ActiveTrade.dca_pending_buy_order_id.is_(None))
         .filter(ActiveTrade.dca_level < settings.max_dca_levels - 1)
         .all()
@@ -1563,7 +1574,7 @@ def _confirm_dca_fills(
     """
     candidates = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False)
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, environment=current_environment(user_id))
         .filter(ActiveTrade.dca_pending_buy_order_id.isnot(None))
         .all()
     )
@@ -1833,7 +1844,7 @@ def _detect_exit_fills(user_id: int, client: T212Client, pending_ids: set[str]) 
     """
     open_trades = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False)
+        .filter_by(user_id=user_id, status="OPEN", is_paper=False, environment=current_environment(user_id))
         .filter(db.or_(ActiveTrade.sell_order_id.isnot(None), ActiveTrade.stop_order_id.isnot(None)))
         .all()
     )
@@ -1888,7 +1899,9 @@ def reconcile(user_id: int) -> None:
 
     # is_paper=False - pozycje papierowe nigdy nie trafily do T212, wiec nie
     # ma czego z nim uzgadniac (patrz models.py::ActiveTrade.is_paper).
-    open_trades = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False).all()
+    open_trades = ActiveTrade.query.filter_by(
+        user_id=user_id, status="OPEN", is_paper=False, environment=current_environment(user_id),
+    ).all()
     if not open_trades:
         _log(user_id, "INFO", "Reconciliation: brak otwartych pozycji (realnych) do sprawdzenia.")
         return
@@ -2126,7 +2139,8 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
     inaczej jeden asset zablokowany trendem/brakiem ceny wiecznie
     zasłaniałby kolejne w liście.
     """
-    open_count = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False).count()
+    env = current_environment(user_id)
+    open_count = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False, environment=env).count()
     if open_count >= settings.max_concurrent_positions:
         return  # limit otwartych pozycji osiągnięty (patrz RiskSettings.max_concurrent_positions) - nic nowego dziś
 
@@ -2136,10 +2150,10 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
     # giełda zamknięta / pozycja już otwarta / asset w backoffie po serii
     # nieudanych prób. Dopiero to co zostanie idzie do scoringu.
     eligible = []
-    for asset in BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False).all():
+    for asset in BotAsset.query.filter_by(user_id=user_id, is_penny_stock=False, environment=env).all():
         if not _market_open(asset.currency):
             continue  # giełda właściwa dla tej waluty zamknięta - patrz _market_open
-        if ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN").first():
+        if ActiveTrade.query.filter_by(user_id=user_id, ticker=asset.ticker, status="OPEN", environment=env).first():
             continue
         other = held_by_other_engine(user_id, asset.ticker, "bot")
         if other is not None:
@@ -2294,7 +2308,7 @@ def _enter_position(
             buy_order_id=f"PAPER-{uuid.uuid4()}", sell_order_id=None,
             buy_price=buy_price, quantity=quantity, allocated_value=allocated_value,
             average_price=buy_price, dca_level=0, status="OPEN", is_paper=True,
-            buy_confirmed=True,
+            buy_confirmed=True, environment=current_environment(user_id),
         )
         db.session.add(trade)
         db.session.commit()
@@ -2362,6 +2376,7 @@ def _enter_position(
         average_price=buy_price, dca_level=0, status="OPEN", is_paper=False,
         baseline_owned_quantity=baseline_owned_quantity,
         grid_anchor_price=buy_price, buy_confirmed=False,
+        environment=current_environment(user_id),
     )
     db.session.add(trade)
     db.session.commit()
@@ -2408,9 +2423,10 @@ def daily_report(app) -> None:
             if user is None:
                 continue
 
+            env = current_environment(settings.user_id)
             closed = (
                 ActiveTrade.query
-                .filter_by(user_id=settings.user_id, is_paper=False, status="CLOSED")
+                .filter_by(user_id=settings.user_id, is_paper=False, status="CLOSED", environment=env)
                 .filter(ActiveTrade.closed_at >= cutoff)
                 .all()
             )
@@ -2426,7 +2442,7 @@ def daily_report(app) -> None:
                     realized_unknown += 1
                     closed_lines.append(f"  ZAMKNIĘTA {t.ticker}: cena wyjścia nieznana (sprzed 2026-07-21)")
 
-            open_trades = ActiveTrade.query.filter_by(user_id=settings.user_id, is_paper=False, status="OPEN").all()
+            open_trades = ActiveTrade.query.filter_by(user_id=settings.user_id, is_paper=False, status="OPEN", environment=env).all()
             unrealized_total = Decimal("0")
             unrealized_known = 0
             open_lines = []

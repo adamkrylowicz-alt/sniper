@@ -45,9 +45,10 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper")
     niżej rozróżnienie kosztu bazowego).
     """
     cutoff = dt.datetime.utcnow() - dt.timedelta(hours=24)
+    env = current_environment(user_id)
     closed = (
         trade_model.query
-        .filter_by(user_id=user_id, status="CLOSED", **{is_paper_field: False})
+        .filter_by(user_id=user_id, status="CLOSED", environment=env, **{is_paper_field: False})
         .filter(trade_model.closed_at >= cutoff)
         .all()
     )
@@ -63,7 +64,7 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper")
         cost_basis = getattr(t, "average_price", None) or t.buy_price
         realized += (t.close_price - cost_basis) * t.quantity
 
-    open_trades = trade_model.query.filter_by(user_id=user_id, status="OPEN", **{is_paper_field: False}).all()
+    open_trades = trade_model.query.filter_by(user_id=user_id, status="OPEN", environment=env, **{is_paper_field: False}).all()
     unrealized = Decimal("0")
     unrealized_unpriced = 0
     open_positions = []  # [(ticker, pnl, currency)] - patrz telegram_commands.py::_status_message

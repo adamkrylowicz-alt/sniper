@@ -65,10 +65,11 @@ def view():
         for l in logs_raw
     ]
 
-    all_assets = SignalAsset.query.filter_by(user_id=user_id).order_by(SignalAsset.created_at.desc()).all()
+    env = current_environment(user_id)
+    all_assets = SignalAsset.query.filter_by(user_id=user_id, environment=env).order_by(SignalAsset.created_at.desc()).all()
     open_trades = (
         SignalTrade.query
-        .filter_by(user_id=user_id, status="OPEN")
+        .filter_by(user_id=user_id, status="OPEN", environment=env)
         .order_by(SignalTrade.created_at.desc())
         .all()
     )
@@ -144,12 +145,14 @@ def add_asset():
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Podaj kwotę wejścia (musi być > 0)."), 400
 
-    if SignalAsset.query.filter_by(user_id=user_id, ticker=ticker).first() is not None:
+    env = current_environment(user_id)
+    if SignalAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first() is not None:
         return jsonify(ok=False, error=f"{ticker} jest już na liście strategii sygnałowej."), 400
 
     asset = SignalAsset(
         user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
         currency=instrument.currency_code or "USD", entry_amount=entry_amount,
+        environment=env,
     )
     db.session.add(asset)
     db.session.commit()
@@ -193,7 +196,7 @@ def asset_prices():
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
     result = {}
-    for asset in SignalAsset.query.filter_by(user_id=user_id).all():
+    for asset in SignalAsset.query.filter_by(user_id=user_id, environment=current_environment(user_id)).all():
         price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret)
         if price is None or price <= 0:
             result[asset.ticker] = {"price": None, "implied_quantity": None}
@@ -361,7 +364,9 @@ def close_position(trade_id):
     requestów do T212, tylko zamknięcie lokalnego rekordu po żywej cenie.
     """
     user_id = current_user_id()
-    trade = SignalTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+    trade = SignalTrade.query.filter_by(
+        id=trade_id, user_id=user_id, status="OPEN", environment=current_environment(user_id),
+    ).first_or_404()
 
     api_key = current_app.config.get("FINNHUB_API_KEY")
     alpaca_key = current_app.config.get("ALPACA_API_KEY")
@@ -428,7 +433,8 @@ def adopt_position():
     if instrument is None:
         return jsonify(ok=False, error=f"{ticker or '(brak)'} nie znaleziony w lokalnej bazie instrumentów."), 400
 
-    if SignalTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first() is not None:
+    env = current_environment(user_id)
+    if SignalTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first() is not None:
         return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez Sygnał."), 400
 
     from ..services.market_hours import held_by_other_engine
@@ -475,7 +481,7 @@ def adopt_position():
     if stop_loss_price <= 0:
         return jsonify(ok=False, error="Wyliczony stop-loss <= 0 (ATR zbyt duże względem ceny)."), 400
 
-    asset = SignalAsset.query.filter_by(user_id=user_id, ticker=ticker).first()
+    asset = SignalAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first()
     if asset is None:
         try:
             entry_amount = Decimal(str(payload.get("entry_amount")))
@@ -489,6 +495,7 @@ def adopt_position():
         asset = SignalAsset(
             user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
             currency=instrument.currency_code or "USD", entry_amount=entry_amount,
+            environment=env,
         )
         db.session.add(asset)
         db.session.flush()
@@ -504,6 +511,7 @@ def adopt_position():
         buy_price=avg_price, quantity=quantity, allocated_value=quantity * avg_price,
         atr_at_entry=atr, stop_loss_price=stop_loss_price, take_profit_price=take_profit_price,
         stop_order_id=stop_result.order_id, status="OPEN", is_paper=False, buy_confirmed=True,
+        environment=env,
     )
     db.session.add(trade)
     db.session.commit()
@@ -521,7 +529,9 @@ def adopt_position():
 def release_position(trade_id):
     """Odwrotność adopt_position() - patrz routes/bot.py::release_position, ten sam wzorzec."""
     user_id = current_user_id()
-    trade = SignalTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+    trade = SignalTrade.query.filter_by(
+        id=trade_id, user_id=user_id, status="OPEN", environment=current_environment(user_id),
+    ).first_or_404()
 
     if not trade.buy_confirmed:
         return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400

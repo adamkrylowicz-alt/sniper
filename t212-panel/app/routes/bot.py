@@ -80,10 +80,11 @@ def view():
     # Hydratacja do prostych dict-ów - ten sam wzorzec co routes/pie.py::detail.
     # Pełna nazwa spółki jako główny tekst (nie sam ticker) - ten sam wzorzec
     # co Warp/Focus/Aktywa/Virtual Pie, znaleziony brakujący tutaj 2026-07-21.
-    all_bot_assets = BotAsset.query.filter_by(user_id=user_id).order_by(BotAsset.created_at.desc()).all()
+    env = current_environment(user_id)
+    all_bot_assets = BotAsset.query.filter_by(user_id=user_id, environment=env).order_by(BotAsset.created_at.desc()).all()
     open_trades = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, status="OPEN")
+        .filter_by(user_id=user_id, status="OPEN", environment=env)
         .order_by(ActiveTrade.created_at.desc())
         .all()
     )
@@ -174,12 +175,14 @@ def add_bot_asset():
     except (InvalidOperation, ValueError, TypeError):
         return jsonify(ok=False, error="Podaj kwotę wejścia (musi być > 0)."), 400
 
-    if BotAsset.query.filter_by(user_id=user_id, ticker=ticker).first() is not None:
+    env = current_environment(user_id)
+    if BotAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first() is not None:
         return jsonify(ok=False, error=f"{ticker} jest już na liście bota."), 400
 
     asset = BotAsset(
         user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
         currency=instrument.currency_code or "USD", entry_amount=entry_amount,
+        environment=env,
     )
     db.session.add(asset)
     db.session.commit()
@@ -221,7 +224,8 @@ def adopt_position():
     if instrument is None:
         return jsonify(ok=False, error=f"{ticker or '(brak)'} nie znaleziony w lokalnej bazie instrumentów."), 400
 
-    if ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first() is not None:
+    env = current_environment(user_id)
+    if ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first() is not None:
         return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez bota."), 400
 
     # Dodane 2026-07-30 (patrz market_hours.py::held_by_other_engine, historia
@@ -256,7 +260,7 @@ def adopt_position():
     if quantity <= 0:
         return jsonify(ok=False, error=f"{ticker}: ilość w portfelu wynosi 0."), 400
 
-    asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker).first()
+    asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first()
     if asset is None:
         try:
             entry_amount = Decimal(str(payload.get("entry_amount")))
@@ -273,6 +277,7 @@ def adopt_position():
         asset = BotAsset(
             user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
             currency=instrument.currency_code or "USD", entry_amount=entry_amount,
+            environment=env,
         )
         db.session.add(asset)
         db.session.flush()  # potrzebne asset.id do FK ActiveTrade.bot_asset_id poniżej
@@ -286,6 +291,7 @@ def adopt_position():
         average_price=avg_price, dca_level=0, grid_anchor_price=avg_price,
         baseline_owned_quantity=Decimal("0"),
         status="OPEN", is_paper=False, buy_confirmed=True,
+        environment=env,
     )
     db.session.add(trade)
     db.session.commit()
@@ -375,7 +381,7 @@ def bot_asset_prices():
     alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
 
     result = {}
-    for asset in BotAsset.query.filter_by(user_id=user_id).all():
+    for asset in BotAsset.query.filter_by(user_id=user_id, environment=current_environment(user_id)).all():
         price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret)
         if price is None or price <= 0:
             result[asset.ticker] = {"price": None, "implied_quantity": None, "warning": None}
@@ -495,7 +501,9 @@ def _release_auto_adopted_positions(user_id: int) -> int:
     caly release padlby wyjatkiem, nie zwalniajac NAWET pozycji papierowych,
     ktore w ogole nie potrzebuja kontaktu z T212.
     """
-    trades = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", auto_adopted=True).all()
+    trades = ActiveTrade.query.filter_by(
+        user_id=user_id, status="OPEN", auto_adopted=True, environment=current_environment(user_id),
+    ).all()
     if not trades:
         return 0
 
@@ -656,7 +664,9 @@ def unblock_position(trade_id):
     tym jak Adam recznie poprawil przyczyne na koncie T212).
     """
     user_id = current_user_id()
-    trade = ActiveTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+    trade = ActiveTrade.query.filter_by(
+        id=trade_id, user_id=user_id, status="OPEN", environment=current_environment(user_id),
+    ).first_or_404()
     trade.sell_blocked = False
     trade.sell_retry_count = 0
     trade.next_sell_retry_at = None
@@ -689,7 +699,9 @@ def release_position(trade_id):
     brak wiersza OPEN dla tego tickera).
     """
     user_id = current_user_id()
-    trade = ActiveTrade.query.filter_by(id=trade_id, user_id=user_id, status="OPEN").first_or_404()
+    trade = ActiveTrade.query.filter_by(
+        id=trade_id, user_id=user_id, status="OPEN", environment=current_environment(user_id),
+    ).first_or_404()
 
     if not trade.buy_confirmed:
         return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400

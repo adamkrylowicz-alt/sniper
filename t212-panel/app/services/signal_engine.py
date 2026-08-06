@@ -333,6 +333,7 @@ def _enter_position(
             buy_price=price, quantity=quantity, allocated_value=quantity * price,
             atr_at_entry=atr, stop_loss_price=stop_loss_price, take_profit_price=take_profit_price,
             status="OPEN", is_paper=True, buy_confirmed=True,
+            environment=current_environment(user_id),
         )
         db.session.add(trade)
         db.session.commit()
@@ -361,6 +362,7 @@ def _enter_position(
         buy_price=price, quantity=quantity, allocated_value=quantity * price,
         atr_at_entry=atr, stop_loss_price=stop_loss_price, take_profit_price=take_profit_price,
         status="OPEN", is_paper=False, buy_confirmed=False,
+        environment=current_environment(user_id),
     )
     db.session.add(trade)
     db.session.commit()
@@ -382,7 +384,10 @@ def _stop_loss_cooldown_until(user_id: int, ticker: str) -> dt.datetime | None:
     """None gdy wejście dozwolone, inaczej moment (UTC) do kiedy trwa cooldown po ostatnim stop-lossie."""
     last = (
         SignalTrade.query
-        .filter_by(user_id=user_id, ticker=ticker, status="CLOSED", closed_via="stop-loss")
+        .filter_by(
+            user_id=user_id, ticker=ticker, status="CLOSED", closed_via="stop-loss",
+            environment=current_environment(user_id),
+        )
         .order_by(SignalTrade.closed_at.desc())
         .first()
     )
@@ -395,13 +400,14 @@ def _stop_loss_cooldown_until(user_id: int, ticker: str) -> dt.datetime | None:
 def _process_entries(
     user_id: int, client: T212Client | None, settings: SignalSettings, current_equity: Decimal | None = None,
 ) -> None:
-    assets = SignalAsset.query.filter_by(user_id=user_id).all()
+    env = current_environment(user_id)
+    assets = SignalAsset.query.filter_by(user_id=user_id, environment=env).all()
     if not assets:
         return
 
     open_tickers = {
         t.ticker for t in
-        SignalTrade.query.filter_by(user_id=user_id, status="OPEN").all()
+        SignalTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).all()
     }
     if len(open_tickers) >= settings.max_concurrent_positions:
         return  # limit otwartych pozycji osiągnięty (patrz SignalSettings.max_concurrent_positions) - nic nowego dziś
@@ -508,6 +514,7 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalS
     """
     pending_trades = SignalTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False,
+        environment=current_environment(user_id),
     ).all()
     if not pending_trades:
         return
@@ -615,7 +622,10 @@ def _retry_pending_buys(
     now = dt.datetime.utcnow()
     candidates = (
         SignalTrade.query
-        .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False)
+        .filter_by(
+            user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=False,
+            environment=current_environment(user_id),
+        )
         .filter(db.or_(SignalTrade.next_buy_retry_at.is_(None), SignalTrade.next_buy_retry_at <= now))
         .all()
     )
@@ -764,6 +774,7 @@ def _manage_exits(
 ) -> None:
     open_trades = SignalTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True,
+        environment=current_environment(user_id),
     ).all()
     if not open_trades:
         return
@@ -841,7 +852,9 @@ def _trail_stop_loss_paper(trade: SignalTrade, settings: SignalSettings, price: 
 
 def _manage_paper_exits(user_id: int, settings: SignalSettings) -> None:
     """Pozycje papierowe nie maja zadnego zlecenia na T212 - stop-loss (w tym trailing) sprawdzany WYLACZNIE tutaj, w softwarze."""
-    open_trades = SignalTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=True).all()
+    open_trades = SignalTrade.query.filter_by(
+        user_id=user_id, status="OPEN", is_paper=True, environment=current_environment(user_id),
+    ).all()
     if not open_trades:
         return
 

@@ -329,29 +329,167 @@ _IBKR_BAR_SIZES: dict[str, str] = {
 # Mapowanie T212 -> kontrakt IBKR (symbol, exchange, currency) dla EU -
 # ten sam wzorzec co finnhub_client.TICKER_MAP ("ręcznie uzupełniany gdy
 # automatyczne nie działa"), ale IBKR potrzebuje TRZECH pól osobno, nie
-# jednego symbolu. Adam NIE ma subskrypcji Xetra (IBIS) ani pełnej
-# skonsolidowanej taśmy NASDAQ (SMART) - stąd Tradegate (TGATE, pokrywa
-# większość europejskich blue-chipów, darmowe w jego "Alternative European
-# Equities") zamiast primary exchange. 15 tickerów niżej zweryfikowanych
-# na żywo 2026-07-28 (patrz plan "IBKR jako źródło 1-min świec dla EU") -
-# reszta EU tickerów z list botów po prostu nie ma tu wpisu, dochodzą w
-# miarę potrzeby, ten sam duch co TICKER_MAP.
+# jednego symbolu. Tradegate (TGATE, pokrywa większość europejskich
+# blue-chipów, darmowe w "Alternative European Equities") jako domyślna
+# giełda; kilka nazw (głównie hiszpańskie + Tenaris) nie ma notowania na
+# TGATE, dla nich SMART routing (primaryExchange BM/BVME/AEB) - oznaczone
+# niżej. Pierwotne 15 tickerów zweryfikowanych na żywo 2026-07-28.
+
+# ROZSZERZONE 2026-08-06 (Adam: "rozszerz IBKR na resztę tickerów EU") -
+# doszło 121 kolejnych, WSZYSTKIE 136 tickerów EU z list Micro-Grid/Sygnał/
+# EOD teraz pokryte. Metoda (żeby uniknąć zgadywania symbolu - różne EU
+# giełdy nie zawsze mają oczywisty symbol wynikający z tickera T212):
+# 1) pobrane ISIN każdego tickera z T212 `/equity/metadata/instruments`
+# (lokalna tabela `instruments` go nie trzyma, T212 API tak); 2) każdy ISIN
+# rozwiązany przez IBKR `reqContractDetails` (secIdType=ISIN) - zwraca
+# WSZYSTKICH kandydatów na różnych giełdach, wybrany TGATE gdy dostępny;
+# 3) dla 16 tickerów bez TGATE (głównie hiszpańskie: CaixaBank, Amadeus,
+# Sabadell, Indra, Bankinter, Acciona, Cellnex, Mapfre, Naturgy, Enagas,
+# ACS, Merlin, Grifols + ArcelorMittal/APERAM/Tenaris) - SMART routing,
+# zweryfikowane że qualifyContracts daje DOKŁADNIE JEDEN wynik (nie
+# niejednoznaczny). KAŻDY z 121 nowych wpisów zweryfikowany DWA razy na
+# żywo: (a) dokładnie ta sama konstrukcja Contract() co `_fetch_ibkr_
+# intraday` niżej (symbol+exchange+currency, BEZ ISIN) daje jednoznaczny
+# wynik - 121/121 OK, zero niejednoznacznych; (b) end-to-end test
+# `reqHistoricalData` na 4 próbkach z różnych giełd (Niemcy/Belgia/Austria/
+# SMART-Amsterdam) zwrócił realne świece 1-min z sensownymi cenami.
 IBKR_TICKER_MAP: dict[str, tuple[str, str, str]] = {
+    "1COVd_EQ": ("1COV", "TGATE", "EUR"),  # Covestro
+    "2FEd_EQ": ("RACE", "TGATE", "EUR"),  # Ferrari
+    "58Hd_EQ": ("CPR", "TGATE", "EUR"),  # Campari
+    "ABI_BE_EQ": ("ABI", "TGATE", "EUR"),  # AB InBev
+    "ACAp_EQ": ("ACA", "TGATE", "EUR"),  # Credit Agricole
+    "ACSe_EQ": ("ACS", "SMART", "EUR"),  # ACS Actividades de Construccion y Servicios
+    "ADSd_EQ": ("ADS", "TGATE", "EUR"),  # Adidas
+    "ADYENa_EQ": ("ADYEN", "TGATE", "EUR"),  # Adyen
+    "ADa_EQ": ("AD", "TGATE", "EUR"),  # Ahold Delhaize
+    "AENAe_EQ": ("AENA", "TGATE", "EUR"),  # Aena SME
+    "AGNa_EQ": ("AGN", "TGATE", "EUR"),  # Aegon
+    "AGS_BE_EQ": ("AGS", "TGATE", "EUR"),  # Ageas
+    "AIp_EQ": ("AI", "TGATE", "EUR"),  # Air Liquide
     "AIRp_EQ": ("AIR", "TGATE", "EUR"),
+    "AKZAa_EQ": ("AKZA", "TGATE", "EUR"),  # Akzo Nobel
+    "ALOp_EQ": ("ALO", "TGATE", "EUR"),  # Alstom
     "ALVd_EQ": ("ALV", "TGATE", "EUR"),
+    "AMSe_EQ": ("AMS", "SMART", "EUR"),  # Amadeus IT
+    "ANAe_EQ": ("ANA", "SMART", "EUR"),  # Acciona
+    "APAMa_EQ": ("APAM", "SMART", "EUR"),  # APERAM
+    "ASGd_EQ": ("G", "TGATE", "EUR"),  # GENERALI
     "ASMLa_EQ": ("ASML", "TGATE", "EUR"),
+    "ASMa_EQ": ("ASM", "TGATE", "EUR"),  # ASM International
+    "BASd_EQ": ("BAS", "TGATE", "EUR"),  # BASF
+    "BAYNd_EQ": ("BAYN", "TGATE", "EUR"),  # Bayer
+    "BBVAe_EQ": ("BBVA", "TGATE", "EUR"),  # Banco Bilbao Vizcaya Argentaria
+    "BEId_EQ": ("BEI", "TGATE", "EUR"),  # Beiersdorf
+    "BKTe_EQ": ("BKT", "SMART", "EUR"),  # Bankinter
+    "BMWd_EQ": ("BMW", "TGATE", "EUR"),  # Bayerische Motoren Werke
     "BNPp_EQ": ("BNP", "TGATE", "EUR"),
+    "BNRd_EQ": ("BNR", "TGATE", "EUR"),  # Brenntag
+    "BNp_EQ": ("BN", "TGATE", "EUR"),  # Danone
+    "CABKe_EQ": ("CABK", "SMART", "EUR"),  # CaixaBank
+    "CAPp_EQ": ("CAP", "TGATE", "EUR"),  # Capgemini
+    "CAp_EQ": ("CA", "TGATE", "EUR"),  # Carrefour
+    "CBKd_EQ": ("CBK", "TGATE", "EUR"),  # Commerzbank
+    "CLNXe_EQ": ("CLNX", "SMART", "EUR"),  # Cellnex Telecom
+    "COLR_BE_EQ": ("COLR", "TGATE", "EUR"),  # Colruyt Group
+    "CONd_EQ": ("CON", "TGATE", "EUR"),  # Continental
+    "CSp_EQ": ("CS", "TGATE", "EUR"),  # AXA
+    "DAId_EQ": ("MBG", "TGATE", "EUR"),  # Mercedes-Benz
+    "DB1d_EQ": ("DB1", "TGATE", "EUR"),  # Deutsche Boerse
+    "DBKd_EQ": ("DBK", "TGATE", "EUR"),  # Deutsche Bank
+    "DGp_EQ": ("DG", "TGATE", "EUR"),  # Vinci
+    "DPWd_EQ": ("DHL", "TGATE", "EUR"),  # DHL Group
+    "DSMa_EQ": ("DSFIR", "TGATE", "EUR"),  # DSM-Firmenich
+    "DSYp_EQ": ("DSY", "TGATE", "EUR"),  # Dassault Systemes
     "DTEd_EQ": ("DTE", "TGATE", "EUR"),
+    "EDENp_EQ": ("EDEN", "TGATE", "EUR"),  # Edenred
+    "ELEe_EQ": ("ELE", "TGATE", "EUR"),  # Endesa
+    "ELI_BE_EQ": ("ELI", "TGATE", "EUR"),  # Elia Group
+    "ELp_EQ": ("EL", "TGATE", "EUR"),  # EssilorLuxottica
+    "ENGIp_EQ": ("ENGI", "TGATE", "EUR"),  # Engie
+    "ENGe_EQ": ("ENG", "SMART", "EUR"),  # Enagas
+    "ENI_BE_EQ": ("ENI", "TGATE", "EUR"),  # Eni
+    "ENL1d_EQ": ("ENEL", "TGATE", "EUR"),  # Enel
+    "ENp_EQ": ("EN", "TGATE", "EUR"),  # Bouygues
+    "EOANd_EQ": ("EOAN", "TGATE", "EUR"),  # E.ON
+    "FMEd_EQ": ("FME", "TGATE", "EUR"),  # Fresenius Medical Care
     "FPp_EQ": ("TTE", "TGATE", "EUR"),  # TotalEnergies - T212 trzyma stary ticker FP sprzed rebrandingu
+    "FREd_EQ": ("FRE", "TGATE", "EUR"),  # Fresenius
+    "GLEp_EQ": ("GLE", "TGATE", "EUR"),  # Societe Generale
+    "GRFe_EQ": ("GRF", "SMART", "EUR"),  # Grifols
+    "HEIAa_EQ": ("HEIA", "TGATE", "EUR"),  # Heineken
+    "HEId_EQ": ("HEI", "TGATE", "EUR"),  # Heidelberg Materials
+    "HENd_EQ": ("HEN", "TGATE", "EUR"),  # Henkel
+    "HNR1d_EQ": ("HNR1", "TGATE", "EUR"),  # Hannover Rueck
+    "HOp_EQ": ("HO", "TGATE", "EUR"),  # Thales
+    "IBEe_EQ": ("IBE", "TGATE", "EUR"),  # Iberdrola
+    "IDRe_EQ": ("IDR", "SMART", "EUR"),  # Indra Sistemas
+    "IESd_EQ": ("ISP", "TGATE", "EUR"),  # Intesa Sanpaolo
     "IFXd_EQ": ("IFX", "TGATE", "EUR"),
     "INGAa_EQ": ("INGA", "TGATE", "EUR"),
+    "ITXe_EQ": ("ITX", "TGATE", "EUR"),  # Industria de Diseno Textil
+    "KBC_BE_EQ": ("KBC", "TGATE", "EUR"),  # KBC Group
+    "KERp_EQ": ("KER", "TGATE", "EUR"),  # Kering
+    "KPNa_EQ": ("KPN", "TGATE", "EUR"),  # KPN
+    "LIGHTa_EQ": ("LIGHT", "TGATE", "EUR"),  # Signify
+    "LRp_EQ": ("LR", "TGATE", "EUR"),  # Legrand
+    "MAPe_EQ": ("MAP", "SMART", "EUR"),  # Mapfre
     "MCp_EQ": ("MC", "TGATE", "EUR"),
+    "MELE_BE_EQ": ("MELE", "TGATE", "EUR"),  # Melexis
+    "MLp_EQ": ("ML", "TGATE", "EUR"),  # Cie Generale des Etablissements Michelin
+    "MRKd_EQ": ("MRK", "TGATE", "EUR"),  # Merck
+    "MRLe_EQ": ("MRL", "SMART", "EUR"),  # Merlin Properties Socimi
+    "MTXd_EQ": ("MTX", "TGATE", "EUR"),  # MTU Aero Engines
+    "MTa_EQ": ("MT", "SMART", "EUR"),  # ArcelorMittal
+    "MUV2d_EQ": ("MUV2", "TGATE", "EUR"),  # Muenchener Rueckversicherungs-Gesellschaft
+    "NESRd1_EQ": ("NESR", "TGATE", "EUR"),  # Nestlé
+    "NNa_EQ": ("NN", "TGATE", "EUR"),  # NN Group
+    "NOTd1_EQ": ("NOT", "TGATE", "EUR"),  # Novartis
+    "NTGYe_EQ": ("NTGY", "SMART", "EUR"),  # Naturgy Energy
+    "OMV_AT_EQ": ("OMV", "TGATE", "EUR"),  # OMV
+    "ORp_EQ": ("OR", "TGATE", "EUR"),  # L'Oreal
+    "P911d_EQ": ("P911", "TGATE", "EUR"),  # Porsche
+    "PHIAa_EQ": ("PHIA", "TGATE", "EUR"),  # Philips
+    "PROX_BE_EQ": ("PROX", "TGATE", "EUR"),  # Proximus
     "PRXa_EQ": ("PRX", "TGATE", "EUR"),
+    "PUBp_EQ": ("PUB", "TGATE", "EUR"),  # Publicis Groupe
+    "PUMd_EQ": ("PUM", "TGATE", "EUR"),  # Puma
+    "QIAd_EQ": ("QIA", "TGATE", "EUR"),  # QIAGEN
+    "RANDa_EQ": ("RAND", "TGATE", "EUR"),  # Randstad
+    "REPe_EQ": ("REP", "TGATE", "EUR"),  # Repsol
+    "RHMd_EQ": ("RHM", "TGATE", "EUR"),  # Rheinmetall
+    "RHOd_EQ": ("RHO", "TGATE", "EUR"),  # Roche
+    "RIp_EQ": ("RI", "TGATE", "EUR"),  # Pernod Ricard
+    "RMSp_EQ": ("RMS", "TGATE", "EUR"),  # Hermes International
+    "RNOp_EQ": ("RNO", "TGATE", "EUR"),  # Renault
+    "RWEd_EQ": ("RWE", "TGATE", "EUR"),  # RWE
+    "SABe_EQ": ("SAB1", "SMART", "EUR"),  # Banco de Sabadell
     "SAFp_EQ": ("SAF", "TGATE", "EUR"),
     "SANe_EQ": ("SAN", "TGATE", "EUR"),
+    "SANp_EQ": ("SAN1", "TGATE", "EUR"),  # Sanofi
     "SAPd_EQ": ("SAP", "TGATE", "EUR"),
+    "SGOp_EQ": ("SGO", "TGATE", "EUR"),  # Cie de Saint-Gobain
     "SIEd_EQ": ("SIE", "TGATE", "EUR"),
+    "SOLB_BE_EQ": ("SOLB", "TGATE", "EUR"),  # Solvay
+    "SRTd1_EQ": ("SRT", "TGATE", "EUR"),  # Sartorius
+    "STLAPp_EQ": ("STLAP", "TGATE", "EUR"),  # Stellantis
+    "STMpp_EQ": ("STMPA", "TGATE", "EUR"),  # STMicroelectronics
     "SUp_EQ": ("SU", "TGATE", "EUR"),
+    "SY1d_EQ": ("SY1", "TGATE", "EUR"),  # Symrise
+    "TEFe_EQ": ("TEF", "TGATE", "EUR"),  # Telefonica
+    "TEPp_EQ": ("TEP", "TGATE", "EUR"),  # Teleperformance
+    "TW10d_EQ": ("TEN", "SMART", "EUR"),  # Tenaris
+    "UCB_BE_EQ": ("UCB", "TGATE", "EUR"),  # UCB
+    "UMG1a_EQ": ("UMG", "TGATE", "EUR"),  # Universal Music
+    "UMI_BE_EQ": ("UMI", "TGATE", "EUR"),  # Umicore
+    "UNIAa_EQ": ("UNVB", "TGATE", "EUR"),  # Unilever
+    "URWa_EQ": ("URW", "TGATE", "EUR"),  # Unibail-Rodamco-Westfield
+    "VIEp_EQ": ("VIE", "TGATE", "EUR"),  # Veolia Environnement
+    "VIVp_EQ": ("VIV", "TGATE", "EUR"),  # Vivendi
+    "VOWd_EQ": ("VOW", "TGATE", "EUR"),  # Volkswagen
+    "WKLa_EQ": ("WKL", "TGATE", "EUR"),  # Wolters Kluwer
+    "WLNp_EQ": ("WLN", "TGATE", "EUR"),  # Worldline
+    "ZALd_EQ": ("ZAL", "TGATE", "EUR"),  # Zalando
 }
 
 IB_GATEWAY_HOST = "127.0.0.1"

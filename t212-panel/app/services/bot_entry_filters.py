@@ -50,6 +50,7 @@ from flask import current_app
 
 from ..extensions import db
 from ..models import ActiveTrade, RiskSettings
+from ..utils import current_environment
 
 # --- Filtr 1: pozycja ceny w dzisiejszym zakresie ------------------------
 # (cena - low_dnia) / (high_dnia - low_dnia): 0.0 = dokladnie przy dnie dnia,
@@ -534,12 +535,13 @@ def compute_today_pnl(user_id: int, live_price_getter) -> dict:
     musial znac konfiguracji.
     """
     cutoff = _start_of_day_utc()
+    env = current_environment(user_id)
 
     realized = Decimal("0")
     unpriced = 0
     closed = (
         ActiveTrade.query
-        .filter_by(user_id=user_id, is_paper=False, status="CLOSED")
+        .filter_by(user_id=user_id, is_paper=False, status="CLOSED", environment=env)
         .filter(ActiveTrade.closed_at >= cutoff)
         .all()
     )
@@ -550,7 +552,7 @@ def compute_today_pnl(user_id: int, live_price_getter) -> dict:
         realized += (trade.close_price - trade.buy_price) * trade.quantity
 
     unrealized = Decimal("0")
-    open_trades = ActiveTrade.query.filter_by(user_id=user_id, is_paper=False, status="OPEN").all()
+    open_trades = ActiveTrade.query.filter_by(user_id=user_id, is_paper=False, status="OPEN", environment=env).all()
     for trade in open_trades:
         price = live_price_getter(trade.ticker)
         if price is None or price <= 0:
