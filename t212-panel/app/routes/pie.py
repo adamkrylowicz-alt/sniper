@@ -27,15 +27,17 @@ from ..models import Instrument, Pie, PieAsset
 from ..services import price_feed
 from ..services.market_hours import is_market_open as _market_open
 from ..services.t212_client import T212APIError
-from ..utils import avatar_hue, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_user_id, friendly_name, login_required
 from .scalping import _get_client, _get_guard, _log_order
 
 pie_bp = Blueprint("pie", __name__, url_prefix="/pie")
 
 
 def _get_owned_pie(pie_id: int) -> Pie:
-    """404 zamiast 403/500 jeśli koszyk nie istnieje lub należy do kogoś innego."""
-    return Pie.query.filter_by(id=pie_id, user_id=current_user_id()).first_or_404()
+    """404 zamiast 403/500 jeśli koszyk nie istnieje, należy do kogoś innego, albo należy do INNEGO środowiska (demo/live)."""
+    return Pie.query.filter_by(
+        id=pie_id, user_id=current_user_id(), environment=current_environment(current_user_id()),
+    ).first_or_404()
 
 
 def _get_owned_asset(asset_id: int) -> PieAsset:
@@ -49,7 +51,7 @@ def _get_owned_asset(asset_id: int) -> PieAsset:
 def list_view():
     pies = (
         Pie.query
-        .filter_by(user_id=current_user_id())
+        .filter_by(user_id=current_user_id(), environment=current_environment(current_user_id()))
         .order_by(Pie.created_at.desc())
         .all()
     )
@@ -64,7 +66,7 @@ def create():
         flash("Podaj nazwę koszyka.")
         return redirect(url_for("pie.list_view"))
 
-    pie = Pie(user_id=current_user_id(), name=name)
+    pie = Pie(user_id=current_user_id(), name=name, environment=current_environment(current_user_id()))
     db.session.add(pie)
     db.session.commit()
     return redirect(url_for("pie.detail", pie_id=pie.id))

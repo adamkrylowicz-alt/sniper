@@ -321,6 +321,12 @@ class Pie(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     name = db.Column(db.String(100), nullable=False)
+
+    # Patrz identyczny komentarz przy BotAsset.environment - dodane 2026-08-07
+    # po tym jak Adam zauważył że koszyki Virtual Pie stworzone na demo dalej
+    # "wisiały" na liście po przełączeniu konta na live.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
+
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
 
     user = db.relationship("User", back_populates="pies")
