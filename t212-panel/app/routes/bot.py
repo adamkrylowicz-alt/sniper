@@ -6,9 +6,12 @@ wystarczy aktywna sesja przeglądarki) - świadoma bramka bezpieczeństwa, bo
 to uruchamia proces działający NIEZALEŻNIE od tego czy przeglądarka jest
 otwarta, docelowo operujący prawdziwymi (choć na razie tylko demo) zleceniami.
 
-Bot działa WYŁĄCZNIE na demo - T212 nie wspiera zleceń LIMIT (na których
-opiera się cała strategia Cancel-Replace bota) na koncie live - patrz
-services/bot_engine.py::BOT_ENVIRONMENT.
+Środowisko (demo/live) jest per-user od 2026-08-06, patrz
+utils.current_environment/UserSettings.active_environment - wcześniej bot
+działał WYŁĄCZNIE na demo, bo T212 nie wspierał zleceń LIMIT (na których
+opiera się cała strategia Cancel-Replace bota) na koncie live. To ograniczenie
+mogło nadal obowiązywać - przełączenie na live tylko odblokowuje możliwość
+sprawdzenia tego, nie jest gwarancją że zadziała.
 
 Bot ma WŁASNĄ listę aktywów (BotAsset) - CAŁKOWICIE NIEZALEŻNĄ od Smart
 Virtual Pie (PieAsset). To świadoma decyzja (nie pierwotny projekt) - patrz
@@ -28,7 +31,7 @@ from ..extensions import db
 from ..models import ActiveTrade, ApiKeySet, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..services import bot_credentials, bot_engine, market_hours, price_feed
 from ..services.t212_client import T212APIError, T212Client
-from ..utils import avatar_hue, current_master_key, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
 
 bot_bp = Blueprint("bot", __name__, url_prefix="/bot")
@@ -228,11 +231,11 @@ def adopt_position():
     if other is not None:
         return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
 
-    creds = get_decrypted_credentials(user_id, current_master_key(), "demo")
+    creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
     if creds is None:
         return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
     client = T212Client(
-        api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo",
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
         engine="bot", user_id=user_id,
     )
 
@@ -429,15 +432,15 @@ def update_settings():
     equity_sizing_baseline = settings.equity_sizing_baseline
 
     if equity_sizing_turned_on:
-        creds = get_decrypted_credentials(current_user_id(), current_master_key(), bot_engine.BOT_ENVIRONMENT)
+        creds = get_decrypted_credentials(current_user_id(), current_master_key(), current_environment(current_user_id()))
         if creds is None:
             return jsonify(
                 ok=False,
-                error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API) - potrzebny do "
+                error="Brak zapisanego klucza API (Ustawienia -> Klucze API) - potrzebny do "
                       "odczytania bieżącego equity jako punktu odniesienia dla skalowania.",
             ), 400
         client = T212Client(
-            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=bot_engine.BOT_ENVIRONMENT,
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(current_user_id()),
             engine="bot", user_id=current_user_id(),
         )
         try:
@@ -504,9 +507,9 @@ def _release_auto_adopted_positions(user_id: int) -> int:
             if not client_fetch_attempted:
                 client_fetch_attempted = True
                 try:
-                    creds = get_decrypted_credentials(user_id, current_master_key(), "demo")
+                    creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
                     if creds is not None:
-                        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo")
+                        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id))
                 except Exception as exc:  # deszyfrowanie moze rzucic cokolwiek (InvalidToken/ValueError itp.)
                     bot_engine._log(
                         user_id, "WARN",
@@ -566,18 +569,21 @@ def activate():
     except cipher.WrongCredentialsError:
         return jsonify(ok=False, error="Nieprawidłowe hasło."), 401
 
-    # Bot działa wyłącznie na demo (patrz docstring modułu) - bez zapisanego
-    # klucza demo aktywacja i tak byłaby bezużyteczna, więc blokujemy od razu.
-    has_demo_key = ApiKeySet.query.filter_by(
-        user_id=user_id, environment=bot_engine.BOT_ENVIRONMENT
-    ).first() is not None
-    if not has_demo_key:
+    # Środowisko per-user od 2026-08-06 (patrz utils.current_environment) -
+    # bez zapisanego klucza dla AKTUALNIE wybranego środowiska (demo/live)
+    # aktywacja i tak byłaby bezużyteczna, więc blokujemy od razu. UWAGA
+    # historyczna: T212 nie wspierał zleceń LIMIT/STOP na koncie live (na
+    # których opiera się cała strategia Cancel-Replace) - jeśli to nadal
+    # prawda, aktywacja na "live" i tak zawiedzie na pierwszym realnym
+    # zleceniu, tylko już nie jest blokowana na starcie.
+    env = current_environment(user_id)
+    has_key = ApiKeySet.query.filter_by(user_id=user_id, environment=env).first() is not None
+    if not has_key:
         return jsonify(
             ok=False,
             error=(
-                "Brak zapisanego klucza API demo. Bot działa wyłącznie na demo "
-                "(T212 nie wspiera zleceń LIMIT na koncie live) - dodaj klucz "
-                "demo w Ustawienia -> Klucze API."
+                f"Brak zapisanego klucza API dla środowiska '{env}' - dodaj go "
+                "w Ustawienia -> Klucze API."
             ),
         ), 400
 
@@ -689,10 +695,10 @@ def release_position(trade_id):
         return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400
 
     if not trade.is_paper:
-        creds = get_decrypted_credentials(user_id, current_master_key(), "demo")
+        creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
         if creds is None:
             return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
-        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo")
+        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id))
 
         for order_id in (trade.stop_order_id, trade.sell_order_id, trade.dca_pending_buy_order_id):
             if not order_id:

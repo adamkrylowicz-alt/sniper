@@ -20,7 +20,7 @@ import json
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from ..extensions import db
-from ..models import User, UserSettings
+from ..models import ApiKeySet, EODSettings, RiskSettings, SignalSettings, User, UserSettings
 from ..services import instrument_cache, logo_cache
 from ..services.market_hours import is_market_open as _market_open
 from ..services.t212_client import T212APIError
@@ -157,6 +157,58 @@ def toggle_theme():
     settings.dark_mode = not settings.dark_mode
     db.session.commit()
     return jsonify(ok=True, dark_mode=settings.dark_mode)
+
+
+@settings_bp.route("/environment", methods=["POST"])
+@login_required
+def toggle_environment():
+    """
+    Przełącza demo/live - JEDEN przełącznik dla całego konta (patrz
+    utils.current_environment/UserSettings.active_environment, 2026-08-06,
+    Adam: "przełącz na live... i dodaj guzik przełącznik live demo").
+
+    Dwa bezpieczniki PRZED zapisem:
+    1. Musi istnieć zapisany klucz API dla docelowego środowiska (inaczej
+       każdy silnik/Warp Mode i tak zaraz dostanie "brak klucza").
+    2. Żaden z 3 silników nie może być aktualnie aktywny - przełączenie
+       środowiska POD aktywnym botem (który w danym ticku może być w
+       trakcie odczytu poświadczeń) to dokładnie ten rodzaj wyścigu, którego
+       unikaliśmy przy migracji prod->dev tego samego dnia. Wymaga
+       świadomego "najpierw dezaktywuj boty".
+    """
+    user_id = current_user_id()
+    payload = request.get_json(silent=True) or {}
+    target = payload.get("environment")
+    if target not in ("demo", "live"):
+        return jsonify(ok=False, error="Nieprawidłowe środowisko."), 400
+
+    has_key = ApiKeySet.query.filter_by(user_id=user_id, environment=target).first() is not None
+    if not has_key:
+        return jsonify(
+            ok=False,
+            error=f"Brak zapisanego klucza API dla środowiska '{target}' - dodaj go w Ustawienia -> Klucze API.",
+        ), 400
+
+    active_engines = []
+    risk = RiskSettings.query.filter_by(user_id=user_id).first()
+    if risk is not None and risk.is_bot_active:
+        active_engines.append("Micro-Grid")
+    signal = SignalSettings.query.filter_by(user_id=user_id).first()
+    if signal is not None and signal.is_active:
+        active_engines.append("Sygnał")
+    eod = EODSettings.query.filter_by(user_id=user_id).first()
+    if eod is not None and eod.is_active:
+        active_engines.append("EOD")
+    if active_engines:
+        return jsonify(
+            ok=False,
+            error=f"Najpierw wyłącz aktywne boty ({', '.join(active_engines)}) - dopiero potem zmień środowisko.",
+        ), 400
+
+    settings = _get_or_create_settings(user_id)
+    settings.active_environment = target
+    db.session.commit()
+    return jsonify(ok=True, active_environment=target)
 
 
 @settings_bp.route("/watchlist", methods=["GET"])

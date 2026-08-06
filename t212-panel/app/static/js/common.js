@@ -271,6 +271,45 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /*
+Przełącznik demo/live w topbarze (2026-08-06) - patrz routes/settings.py::
+toggle_environment. Świadomie confirmDialog() (własny modal appki), NIE
+natywny confirm() - patrz [[feedback_snajper_no_native_confirm]] w pamięci
+Claude, natywny "Anuluj" koliduje z przyciskiem appki o tej samej etykiecie.
+Backend i tak ma własne bezpieczniki (klucz musi istnieć, boty muszą być
+wyłączone) - to potwierdzenie to tylko "na pewno?", nie jedyna linia obrony.
+*/
+document.addEventListener("DOMContentLoaded", () => {
+    const envBtn = document.getElementById("env-toggle");
+    if (!envBtn) return;
+
+    envBtn.addEventListener("click", async () => {
+        const current = envBtn.classList.contains("topbar__env--live") ? "live" : "demo";
+        const target = current === "live" ? "demo" : "live";
+        const label = target === "live" ? "PRAWDZIWE (LIVE)" : "demo";
+
+        const ok = await confirmDialog(`Przełączyć konto na ${label}? Dotyczy WSZYSTKICH silników (Micro-Grid/Sygnał/EOD) i Warp Mode.`);
+        if (!ok) return;
+
+        try {
+            const resp = await fetch("/settings/environment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ environment: target }),
+            });
+            const data = await resp.json();
+            if (!data.ok) {
+                alert(data.error || "Nie udało się przełączyć środowiska.");
+                return;
+            }
+            location.reload();
+        } catch (err) {
+            console.error("Nie udało się przełączyć środowiska:", err);
+            alert("Błąd sieci - spróbuj ponownie.");
+        }
+    });
+});
+
+/*
 Suwak glosnosci powiadomien dzwiekowych w Ustawieniach - patrz
 settings_index.html. Element istnieje TYLKO na tej stronie, stad guard
 "if (!slider) return" (ten sam wzorzec co theme-toggle wyzej, wspolny

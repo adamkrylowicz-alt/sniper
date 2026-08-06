@@ -212,6 +212,7 @@ def _register_context_processors(app: Flask) -> None:
         session_data = get_session(token)
 
         theme = "dark"  # domyślny motyw dla niezalogowanych / braku ustawień
+        active_environment = "demo"  # ten sam bezpieczny default co UserSettings.active_environment
         # Liczniki otwartych pozycji per silnik - Adam 2026-07-28: "w
         # zakladkach pododawaj liczbe porzadkowa zeby bylo latwo widziec ile
         # pozycji jest otwartych" - pokazywane jako plakietka przy Bot/
@@ -224,6 +225,8 @@ def _register_context_processors(app: Flask) -> None:
             settings = UserSettings.query.filter_by(user_id=session_data.user_id).first()
             if settings is not None and settings.dark_mode is False:
                 theme = "light"
+            if settings is not None:
+                active_environment = settings.active_environment
 
             # "Aktywa" (scalping.py::portfolio_view) - WSZYSTKIE pozycje z
             # T212 (nie tylko botowe), stad nie liczba z lokalnej bazy jak
@@ -247,6 +250,7 @@ def _register_context_processors(app: Flask) -> None:
             "is_authenticated": session_data is not None,
             "current_theme": theme,
             "open_position_counts": open_position_counts,
+            "active_environment": active_environment,
         }
 
 

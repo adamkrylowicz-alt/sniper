@@ -22,7 +22,7 @@ from ..extensions import db
 from ..models import ApiKeySet, Instrument, RiskSettings, SignalAsset, SignalAuditLog, SignalSettings, SignalTrade, User
 from ..services import bot_credentials, price_feed, signal_engine
 from ..services.t212_client import T212APIError, T212Client
-from ..utils import avatar_hue, current_master_key, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
 
 signal_bp = Blueprint("signal", __name__, url_prefix="/signal")
@@ -243,7 +243,7 @@ def update_settings():
     equity_sizing_baseline = settings.equity_sizing_baseline
 
     if equity_sizing_turned_on:
-        creds = get_decrypted_credentials(current_user_id(), current_master_key(), signal_engine.SIGNAL_ENVIRONMENT)
+        creds = get_decrypted_credentials(current_user_id(), current_master_key(), current_environment(current_user_id()))
         if creds is None:
             return jsonify(
                 ok=False,
@@ -251,7 +251,7 @@ def update_settings():
                       "odczytania bieżącego equity jako punktu odniesienia dla skalowania.",
             ), 400
         client = T212Client(
-            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=signal_engine.SIGNAL_ENVIRONMENT,
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(current_user_id()),
             engine="signal", user_id=current_user_id(),
         )
         try:
@@ -295,15 +295,13 @@ def activate():
     except cipher.WrongCredentialsError:
         return jsonify(ok=False, error="Nieprawidłowe hasło."), 401
 
-    has_demo_key = ApiKeySet.query.filter_by(
-        user_id=user_id, environment=signal_engine.SIGNAL_ENVIRONMENT
-    ).first() is not None
-    if not has_demo_key:
+    env = current_environment(user_id)
+    has_key = ApiKeySet.query.filter_by(user_id=user_id, environment=env).first() is not None
+    if not has_key:
         return jsonify(
             ok=False,
             error=(
-                "Brak zapisanego klucza API demo. Strategia sygnałowa działa wyłącznie "
-                "na demo (T212 nie wspiera zleceń STOP na live) - dodaj klucz demo "
+                f"Brak zapisanego klucza API dla środowiska '{env}' - dodaj go "
                 "w Ustawienia -> Klucze API."
             ),
         ), 400
@@ -377,10 +375,10 @@ def close_position(trade_id):
     if not trade.buy_confirmed:
         return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400
 
-    creds = get_decrypted_credentials(user_id, current_master_key(), signal_engine.SIGNAL_ENVIRONMENT)
+    creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
     if creds is None:
         return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
-    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=signal_engine.SIGNAL_ENVIRONMENT)
+    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id))
 
     if trade.stop_order_id:
         try:
@@ -438,11 +436,11 @@ def adopt_position():
     if other is not None:
         return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
 
-    creds = get_decrypted_credentials(user_id, current_master_key(), signal_engine.SIGNAL_ENVIRONMENT)
+    creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
     if creds is None:
         return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
     client = T212Client(
-        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=signal_engine.SIGNAL_ENVIRONMENT,
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
         engine="signal", user_id=user_id,
     )
 
@@ -529,10 +527,10 @@ def release_position(trade_id):
         return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400
 
     if not trade.is_paper and trade.stop_order_id:
-        creds = get_decrypted_credentials(user_id, current_master_key(), signal_engine.SIGNAL_ENVIRONMENT)
+        creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
         if creds is None:
             return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
-        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=signal_engine.SIGNAL_ENVIRONMENT)
+        client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id))
         try:
             client.cancel_order(trade.stop_order_id)
         except T212APIError as exc:

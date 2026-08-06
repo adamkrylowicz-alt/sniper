@@ -30,6 +30,7 @@ import pytz
 from ..extensions import db
 from ..models import ActiveTrade, EODSettings, EODTrade, RiskSettings, SignalSettings, SignalTrade, User, UserSettings
 from ..routes.api_keys import get_decrypted_credentials
+from ..utils import current_environment
 from . import bot_credentials, price_feed, telegram_notify
 from .t212_client import T212APIError, T212Client
 
@@ -106,10 +107,11 @@ def _account_total(user_id: int) -> Decimal | None:
     master_key = bot_credentials.get_master_key(user_id)
     if master_key is None:
         return None
-    creds = get_decrypted_credentials(user_id, master_key, "demo")
+    env = current_environment(user_id)
+    creds = get_decrypted_credentials(user_id, master_key, env)
     if creds is None:
         return None
-    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment="demo", engine="daily_summary", user_id=user_id)
+    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=env, engine="daily_summary", user_id=user_id)
     try:
         raw = client.get_cash()
         return Decimal(str(raw["total"]))

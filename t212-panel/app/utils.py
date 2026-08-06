@@ -91,6 +91,22 @@ def friendly_name(name: str | None) -> str | None:
     return _LEGAL_SUFFIX_RE.sub("", name).strip()
 
 
+def current_environment(user_id: int) -> str:
+    """
+    Zwraca "demo" albo "live" dla danego użytkownika - patrz
+    models.py::UserSettings.active_environment (2026-08-06, zastąpiło stałe
+    modułowe BOT_ENVIRONMENT/SIGNAL_ENVIRONMENT/EOD_ENVIRONMENT, zawsze
+    "demo" na sztywno). Przyjmuje user_id WPROST (nie czyta flask.g) - musi
+    działać też w tle w APScheduler jobach (tick()/reconcile()), które NIE
+    mają kontekstu requestu. Brak wiersza UserSettings (nowy user) -> "demo",
+    ten sam bezpieczny default co samo pole w modelu.
+    """
+    from .models import UserSettings
+
+    settings = UserSettings.query.filter_by(user_id=user_id).first()
+    return settings.active_environment if settings else "demo"
+
+
 def avatar_hue(ticker: str) -> int:
     """
     Deterministyczny odcień (0-359) na podstawie tickera - ten sam ticker

@@ -1665,3 +1665,26 @@ poniżej progu, zamiast dalej po prostu spełniać "<35"), filtr zmienności
 najczęstsze). Do rozważenia w przyszłości, jeśli 72h cooldown okaże się za
 krótki na żywo (np. gdyby ticker wszedł w wielodniowy, powolny spadek z
 kolejnymi pojedynczymi stop-lossami co kilka dni).
+
+## TODO (2026-08-06, noc): reconcile() we wszystkich 3 silnikach nie sprawdza is_bot_active/is_active
+
+Znalezione przy okazji incydentu z autostart plikiem na prod (patrz
+CLAUDE.md, wpis "przełącznik środowiska demo/live... + INCYDENT"):
+`bot_engine.reconcile()`/`signal_engine.reconcile()`/`eod_engine.reconcile()`
+(wołane RAZ przy starcie appki dla każdego usera odtworzonego z
+`bot_autostart_keys.json`, ORAZ przy ręcznej aktywacji) NIGDY nie sprawdzały
+`RiskSettings.is_bot_active`/`SignalSettings.is_active`/`EODSettings.
+is_active` - w odróżnieniu od `tick()`, który to sprawdza jako pierwszy
+warunek pętli. Efekt uboczny: user z autostart-em w pliku, ale świadomie
+WYŁĄCZONYM botem w UI, i tak dostaje pełne `reconcile()` (w tym realne
+zlecenia - `_manage_trailing_exit`/`_trigger_dca_buys`) przy KAŻDYM
+restarcie appki. Nie naprawione w tej sesji (poza zakresem tamtego zadania,
+i ryzykowne robić "przy okazji" bez osobnego testu) - do zrobienia: dodać
+identyczny gate `if not settings or not settings.is_bot_active: return` na
+początku każdego z 3 `reconcile()`, tuż po pobraniu `settings`, symetrycznie
+do `tick()`. Backup: NIGDY nie zostawiać `instance/bot_autostart_keys.json`
+na instancji, gdzie bot jest świadomie wyłączony w UI - usunąć plik ręcznie
+(patrz `bot_credentials.deactivate()`) jeśli deaktywacja dzieje się przez
+bezpośrednią zmianę w bazie zamiast przez UI (tak jak przy migracji
+prod->dev tego dnia - deaktywowałem flagi w bazie, ale zapomniałem usunąć
+plik autostartu, co spowodowało incydent).

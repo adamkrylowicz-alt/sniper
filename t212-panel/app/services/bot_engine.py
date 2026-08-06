@@ -73,9 +73,13 @@ Silnik Micro-Grid Bota:
    to tylko odczyt stanu już złożonych zleceń, nie warto opóźniać wykrycia
    wykonania.
 
-Bot działa WYŁĄCZNIE na demo (patrz routes/bot.py - blokada environment="live"
-na poziomie aktywacji, bo T212 nie wspiera zleceń LIMIT na live) - stąd
-"demo" na sztywno tutaj, nie parametr.
+Bot do 2026-08-06 działał WYŁĄCZNIE na demo (T212 nie wspiera zleceń LIMIT
+na koncie live - patrz `routes/bot.py::activate()`, blokada aktywacji bez
+klucza demo) - od tego dnia środowisko jest per-user (patrz
+`utils.current_environment`/`UserSettings.active_environment`), Adam
+świadomie testuje na koncie live. Ograniczenie T212 (LIMIT/STOP niedostępne
+na live) NADAL może obowiązywać - to nie zostało tu obejście problemu, tylko
+odblokowanie możliwości sprawdzenia go na żywo.
 
 Historia buga (2026-07-20, potwierdzone realnym testem na koncie demo, DWIE
 niezależne przyczyny):
@@ -157,11 +161,18 @@ from ..extensions import db
 from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
+from ..utils import current_environment
 from . import bot_credentials, bot_entry_filters, diagnostics, mailer, price_feed, price_watchdog, telegram_notify
 from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
 
-BOT_ENVIRONMENT = "demo"
+# BOT_ENVIRONMENT jako stała modułowa USUNIĘTA 2026-08-06 (była zawsze
+# "demo" na sztywno) - zastąpiona per-userowym `utils.current_environment
+# (user_id)` (patrz models.py::UserSettings.active_environment), Adam:
+# "przełącz na live... i dodaj guzik przełącznik live demo". WAŻNE: T212 nie
+# wspiera zleceń LIMIT/STOP na koncie live (patrz historia niżej) - sama ta
+# zmiana NIE gwarantuje że bot faktycznie zadziała na live, tylko pozwala
+# to świadomie wypróbować zamiast twardej blokady.
 
 # Empirycznie zaobserwowana granica (NIE oficjalnie udokumentowana przez T212):
 # próba zakupu SPCX za 1.00 USD dała błąd "min-quantity-exceeded" - "must
@@ -516,11 +527,11 @@ def _get_client_for_user(user_id: int, settings: RiskSettings) -> T212Client | N
     master_key = bot_credentials.get_master_key(user_id)
     if master_key is None:
         return None
-    creds = get_decrypted_credentials(user_id, master_key, BOT_ENVIRONMENT)
+    creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
     if creds is None:
         return None
     return T212Client(
-        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
         engine="bot", user_id=user_id,
     )
 
@@ -550,11 +561,11 @@ def _get_current_equity(
         master_key = bot_credentials.get_master_key(user_id)
         if master_key is None:
             return None
-        creds = get_decrypted_credentials(user_id, master_key, BOT_ENVIRONMENT)
+        creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
         if creds is None:
             return None
         client = T212Client(
-            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
             engine="bot", user_id=user_id,
         )
     try:
@@ -1855,7 +1866,7 @@ def reconcile(user_id: int) -> None:
         _log(user_id, "ERROR", "Reconciliation: brak poświadczeń w bot_credentials mimo aktywacji - zgłoś to.")
         return
 
-    creds = get_decrypted_credentials(user_id, master_key, BOT_ENVIRONMENT)
+    creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
     if creds is None:
         _log(user_id, "ERROR", "Reconciliation: brak zapisanego klucza API demo, pomijam.")
         return
@@ -1863,7 +1874,7 @@ def reconcile(user_id: int) -> None:
     settings = RiskSettings.query.filter_by(user_id=user_id).first()
 
     client = T212Client(
-        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
         engine="bot", user_id=user_id,
     )
 
@@ -2240,7 +2251,7 @@ def _enter_position(
     if master_key is None:
         return False  # nie powinno się zdarzyć - user_id pochodzi z bot_credentials.active_user_ids()
 
-    creds = get_decrypted_credentials(user_id, master_key, BOT_ENVIRONMENT)
+    creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
     if creds is None:
         _log(user_id, "ERROR", f"{asset.ticker}: brak zapisanego klucza API demo.")
         return False
@@ -2296,7 +2307,7 @@ def _enter_position(
         return True
 
     client = T212Client(
-        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=BOT_ENVIRONMENT,
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
         engine="bot", user_id=user_id,
     )
 

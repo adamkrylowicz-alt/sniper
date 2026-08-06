@@ -242,6 +242,19 @@ class UserSettings(db.Model):
     account_baseline_equity = db.Column(db.Numeric(12, 2), nullable=True)
     account_baseline_at = db.Column(db.DateTime, nullable=True)
 
+    # Przełącznik demo/live (2026-08-06, Adam: "przełącz na live... i dodaj
+    # guzik przełącznik live demo") - JEDEN toggle na konto (nie per-silnik),
+    # bo wszystkie 3 silniki + Warp Mode dzielą TO SAMO fizyczne konto T212
+    # w danej instancji. Zastępuje dotychczasowe stałe modułowe BOT_ENVIRONMENT/
+    # SIGNAL_ENVIRONMENT/EOD_ENVIRONMENT (zawsze "demo" na sztywno) -
+    # bot_credentials.get_environment(user_id) czyta to pole, domyślnie
+    # "demo" gdy brak wiersza UserSettings (bezpieczny default, zero zmiany
+    # zachowania dla nowych userów). WAŻNE: T212 nie wspiera zleceń LIMIT/
+    # STOP na koncie live (patrz historia w bot_engine.py) - przełączenie na
+    # "live" NIE gwarantuje że boty (oparte o LIMIT/STOP) faktycznie
+    # zadziałają, wymaga ręcznej weryfikacji na koncie Adama najpierw.
+    active_environment = db.Column(db.String(10), nullable=False, default="demo")
+
     user = db.relationship("User", back_populates="settings")
 
     def __repr__(self) -> str:  # pragma: no cover

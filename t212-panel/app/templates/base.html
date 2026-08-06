@@ -75,7 +75,11 @@
             <span class="topbar__conn" id="t212-status-dot" title="Status połączenia z T212 (nieznany)">
                 <span class="topbar__conn-dot topbar__conn-dot--unknown"></span> T212
             </span>
+            {% if is_authenticated %}
+            <button type="button" class="topbar__env topbar__env--{{ active_environment }}" id="env-toggle" title="Kliknij, żeby przełączyć demo/live">{{ active_environment|upper }}</button>
+            {% else %}
             <span class="topbar__env">DEMO</span>
+            {% endif %}
         </nav>
     </header>
 

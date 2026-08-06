@@ -146,6 +146,16 @@ html[data-theme="light"] .topbar__mark {
     border-radius: 2px;
 }
 
+/* Przełącznik demo/live (2026-08-06) - <button>, nie <span>, na kontach z
+   ustawionym active_environment. LIVE celowo krzykliwy (czerwony + delikatny
+   glow) - to jedyny stały wizualny sygnał "to jest prawdziwe konto" widoczny
+   na KAŻDEJ stronie appki, nie tylko przy aktywacji bota. */
+button.topbar__env { cursor: pointer; font-family: inherit; font-weight: 600; letter-spacing: 0.04em; background: transparent; }
+.topbar__env--demo { color: var(--text-muted); border-color: var(--hairline); }
+.topbar__env--demo:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
+.topbar__env--live { color: var(--sell-red); border-color: var(--sell-red); background: rgba(239, 68, 68, 0.1); box-shadow: 0 0 6px rgba(239, 68, 68, 0.35); }
+.topbar__env--live:hover { background: rgba(239, 68, 68, 0.18); }
+
 .topbar__nav {
     grid-column: 2;
     justify-self: center;

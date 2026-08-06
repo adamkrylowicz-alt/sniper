@@ -79,6 +79,7 @@ from ..extensions import db
 from ..models import EODAsset, EODAuditLog, EODSettings, EODTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
+from ..utils import current_environment
 from . import bot_credentials, diagnostics, market_hours, price_feed, price_watchdog, telegram_notify
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import eod_strategy
@@ -87,9 +88,9 @@ from .t212_client import T212APIError, T212Client
 
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
 
-# Bot działa WYŁĄCZNIE na demo - ten sam powód co Micro-Grid/Sygnał (T212 nie
-# wspiera zleceń LIMIT/STOP na koncie live).
-EOD_ENVIRONMENT = "demo"
+# EOD_ENVIRONMENT jako stała USUNIĘTA 2026-08-06 - patrz identyczny komentarz
+# w bot_engine.py przy `utils.current_environment`. T212 nadal może nie
+# wspierać zleceń LIMIT/STOP na koncie live - nieobjęte tą zmianą.
 
 # PRD (pierwotnie): "Działa tylko pod koniec sesji (od ok. 16:00)". Adam
 # 2026-07-24 rozszerzył o sesję USA (16:00-22:00), a 2026-07-27 poprosił o
@@ -254,11 +255,11 @@ def _get_current_equity(
         master_key = bot_credentials.get_master_key(user_id)
         if master_key is None:
             return None
-        creds = get_decrypted_credentials(user_id, master_key, EOD_ENVIRONMENT)
+        creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
         if creds is None:
             return None
         client = T212Client(
-            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT,
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
             engine="eod", user_id=user_id,
         )
     try:
@@ -852,7 +853,7 @@ def reconcile(user_id: int) -> None:
     if master_key is None:
         _log(user_id, "ERROR", "Reconciliation: brak poświadczeń w bot_credentials mimo aktywacji.")
         return
-    creds = get_decrypted_credentials(user_id, master_key, EOD_ENVIRONMENT)
+    creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
     if creds is None:
         _log(user_id, "ERROR", "Reconciliation: brak zapisanego klucza API demo, pomijam.")
         return
@@ -863,7 +864,7 @@ def reconcile(user_id: int) -> None:
     _manage_paper_exits(user_id, settings)
     if not settings.is_paper_trading:
         client = T212Client(
-            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT,
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
             engine="eod", user_id=user_id,
         )
         # get_pending_orders_for_tick() zamiast get_pending_orders() - reconcile()
@@ -919,12 +920,12 @@ def tick(app) -> None:
             master_key = bot_credentials.get_master_key(user_id)
             if master_key is None:
                 continue
-            creds = get_decrypted_credentials(user_id, master_key, EOD_ENVIRONMENT)
+            creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
             if creds is None:
                 _log(user_id, "ERROR", "Brak zapisanego klucza API demo, pomijam tick.")
                 continue
             client = T212Client(
-            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=EOD_ENVIRONMENT,
+            api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),
             engine="eod", user_id=user_id,
         )
 

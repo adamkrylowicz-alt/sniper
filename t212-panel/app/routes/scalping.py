@@ -33,7 +33,7 @@ from ..services import logo_cache, price_feed
 from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
-from ..utils import avatar_hue, current_master_key, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
 
 scalping_bp = Blueprint("scalping", __name__, url_prefix="/warp")
@@ -59,11 +59,19 @@ def _get_guard(user_id: int) -> RiskGuard:
     return _guards[user_id]
 
 
-def _get_client(environment: str = "demo") -> T212Client:
+def _get_client(environment: str | None = None) -> T212Client:
     """
     Buduje klienta T212 dla ZALOGOWANEGO użytkownika, odszyfrowując jego
     klucz+sekret z bazy (ApiKeySet) przy pomocy master_key z bieżącej sesji.
+
+    environment=None (domyślnie, wszystkie 11+ wywołań w tym pliku) - czyta
+    aktualnie wybrane środowisko usera (patrz utils.current_environment,
+    2026-08-06) zamiast dawnego sztywnego "demo". Jeden punkt, więc każde
+    wywołanie `_get_client()` automatycznie dostaje dynamiczne zachowanie
+    bez zmiany 11 miejsc z osobna.
     """
+    if environment is None:
+        environment = current_environment(current_user_id())
     creds = get_decrypted_credentials(current_user_id(), current_master_key(), environment)
     if creds is None:
         raise RuntimeError(
@@ -1361,7 +1369,7 @@ def _log_order(
     status: str,
     block_reason: str | None = None,
     t212_order_id: str | None = None,
-    environment: str = "demo",
+    environment: str | None = None,
     pie_id: int | None = None,
 ) -> None:
     """
@@ -1370,9 +1378,11 @@ def _log_order(
     To jest ważne dla audytu: "blocked" nigdy nie dotarło do T212, ale
     chcemy wiedzieć że próba się wydarzyła.
 
-    environment/pie_id: opcjonalne, żeby routes/pie.py (Smart Virtual Pie)
-    mogło reużyć tę samą funkcję zamiast duplikować logikę zapisu - pie_id
-    znaczy "to zlecenie wyszło z tego koszyka", None = Warp Mode jak dotąd.
+    environment=None (domyślnie) - czyta current_environment(user_id), TA
+    SAMA logika co _get_client() w tym pliku (2026-08-06, zastąpiło sztywne
+    "demo"). pie_id: opcjonalne, żeby routes/pie.py (Smart Virtual Pie) mogło
+    reużyć tę samą funkcję zamiast duplikować logikę zapisu - pie_id znaczy
+    "to zlecenie wyszło z tego koszyka", None = Warp Mode jak dotąd.
 
     user_id: JAWNY parametr (nie current_user_id() wołane w środku) - Micro-Grid
     Bot (services/bot_engine.py) też reużywa tę funkcję z wątku w tle, gdzie
@@ -1380,6 +1390,8 @@ def _log_order(
     z warstwy routes/* przekazują user_id=current_user_id() jawnie w miejscu
     wywołania - zachowanie identyczne jak wcześniej, tylko bez ukrytej zależności.
     """
+    if environment is None:
+        environment = current_environment(user_id)
     estimated_value = (quantity * price_snapshot) if price_snapshot else None
 
     entry = OrderLog(
