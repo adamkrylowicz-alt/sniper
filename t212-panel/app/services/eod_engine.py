@@ -905,7 +905,7 @@ def tick(app) -> None:
             _manage_paper_exits(user_id, settings)
 
             if settings.is_paper_trading:
-                if _in_eod_window():
+                if _in_eod_window() and not settings.stop_loss_only_mode:
                     current_equity = _get_current_equity(user_id, settings) if settings.equity_sizing_enabled else None
                     _process_entries(user_id, None, settings, current_equity)
                 continue
@@ -952,7 +952,7 @@ def tick(app) -> None:
                     _retry_pending_buys(user_id, client, settings, pending=pending)
                     _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=True)
 
-            if skip_new_entries:
+            if skip_new_entries or settings.stop_loss_only_mode:
                 continue
             if _in_eod_window():
                 current_equity = _get_current_equity(user_id, settings, client) if settings.equity_sizing_enabled else None

@@ -89,6 +89,7 @@ document.addEventListener("DOMContentLoaded", () => {
             max_concurrent_positions: document.getElementById("eod-max-positions").value,
             is_paper_trading: document.getElementById("eod-paper-trading").checked,
             force_close_enabled: document.getElementById("eod-force-close").checked,
+            stop_loss_only_mode: document.getElementById("eod-stop-loss-only").checked,
             equity_sizing_enabled: document.getElementById("eod-equity-sizing").checked,
             fx_cost_adjustment_enabled: document.getElementById("eod-fx-cost-adjustment").checked,
             fx_fee_pct: document.getElementById("eod-fx-fee-pct").value,

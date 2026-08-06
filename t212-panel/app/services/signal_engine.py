@@ -922,8 +922,9 @@ def tick(app) -> None:
                 # sprawdza is_paper_trading PRZED jakimkolwiek uzyciem client), stad
                 # bezpieczne None zamiast prawdziwego T212Client. Okno wejscia
                 # sprawdzane per-aktywo/waluta wewnatrz _process_entries.
-                current_equity = _get_current_equity(user_id, settings) if settings.equity_sizing_enabled else None
-                _process_entries(user_id, None, settings, current_equity)
+                if not settings.stop_loss_only_mode:
+                    current_equity = _get_current_equity(user_id, settings) if settings.equity_sizing_enabled else None
+                    _process_entries(user_id, None, settings, current_equity)
                 continue
 
             master_key = bot_credentials.get_master_key(user_id)
@@ -968,7 +969,7 @@ def tick(app) -> None:
                     _retry_pending_buys(user_id, client, settings, pending=pending)
                     _manage_exits(user_id, client, settings, pending_order_ids=pending_ids, pending_fetch_ok=True)
 
-            if skip_new_entries:
+            if skip_new_entries or settings.stop_loss_only_mode:
                 continue
             current_equity = _get_current_equity(user_id, settings, client) if settings.equity_sizing_enabled else None
             _process_entries(user_id, client, settings, current_equity)

@@ -258,6 +258,15 @@
         wszystkich otwartych pozycji EOD tuż przed zamknięciem sesji.
     </p>
 
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="eod-stop-loss-only" {{ "checked" if settings.stop_loss_only_mode else "" }}>
+        Tylko stop-loss (bez nowych wejść)
+    </label>
+    <p class="auth-box__hint">
+        Gdy włączone, EOD NIE otwiera żadnych nowych pozycji - jedyne co robi
+        to pilnuje stop-loss/take-profit na pozycjach już otwartych.
+    </p>
+
     <button type="button" id="btn-eod-save-settings" class="auth-form__submit auth-form__submit--sticky">
         Zapisz ustawienia
     </button>

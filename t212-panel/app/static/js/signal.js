@@ -90,6 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
             take_profit_atr_mult: document.getElementById("signal-take-profit-mult").value,
             max_concurrent_positions: document.getElementById("signal-max-positions").value,
             is_paper_trading: document.getElementById("signal-paper-trading").checked,
+            stop_loss_only_mode: document.getElementById("signal-stop-loss-only").checked,
             equity_sizing_enabled: document.getElementById("signal-equity-sizing").checked,
             fx_cost_adjustment_enabled: document.getElementById("signal-fx-cost-adjustment").checked,
             fx_fee_pct: document.getElementById("signal-fx-fee-pct").value,

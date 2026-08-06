@@ -762,6 +762,15 @@ class SignalSettings(db.Model):
     fx_cost_adjustment_enabled = db.Column(db.Boolean, nullable=False, default=True)
     fx_fee_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.0015)
 
+    # Tryb "tylko stop-loss" - ten sam mechanizm i uzasadnienie co
+    # RiskSettings.stop_loss_only_mode (Micro-Grid, 2026-08-06), rozszerzony
+    # na Sygnał 2026-08-06 (ciąg dalszy tej samej nocy - Adam podłącza
+    # PRAWDZIWE konto T212 na prod, chce mieć pewność że ŻADEN z 3 silników
+    # nie otworzy nic nowego, dopóki świadomie tego nie odblokuje). Gdy
+    # włączone, tick() pomija _process_entries całkowicie - _manage_exits
+    # (trailing stop-loss/take-profit) zostaje bez zmian. DOMYŚLNIE WYŁĄCZONE.
+    stop_loss_only_mode = db.Column(db.Boolean, nullable=False, default=False)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<SignalSettings user_id={self.user_id} active={self.is_active}>"
 
@@ -924,6 +933,11 @@ class EODSettings(db.Model):
     # najbardziej narazony - patrz docs/IDEAS_v2.md). DOMYŚLNIE WŁĄCZONE.
     fx_cost_adjustment_enabled = db.Column(db.Boolean, nullable=False, default=True)
     fx_fee_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.0015)
+
+    # Tryb "tylko stop-loss" - patrz identyczny komentarz przy
+    # RiskSettings.stop_loss_only_mode/SignalSettings.stop_loss_only_mode.
+    # DOMYŚLNIE WYŁĄCZONE.
+    stop_loss_only_mode = db.Column(db.Boolean, nullable=False, default=False)
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<EODSettings user_id={self.user_id} active={self.is_active}>"

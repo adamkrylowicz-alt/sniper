@@ -234,6 +234,7 @@ def update_settings():
     settings.is_paper_trading = bool(payload.get("is_paper_trading", settings.is_paper_trading))
     settings.fx_cost_adjustment_enabled = bool(payload.get("fx_cost_adjustment_enabled", settings.fx_cost_adjustment_enabled))
     settings.fx_fee_pct = fx_fee_pct
+    settings.stop_loss_only_mode = bool(payload.get("stop_loss_only_mode", settings.stop_loss_only_mode))
 
     # Money management √equity - ten sam wzorzec auto-capture co routes/bot.py
     # (2026-07-31), dodany tutaj 2026-08-03 (Adam: "dodaj do obu").

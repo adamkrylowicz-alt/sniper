@@ -253,6 +253,16 @@
         finansowego, to demo, ale realne API).
     </p>
 
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="signal-stop-loss-only" {{ "checked" if settings.stop_loss_only_mode else "" }}>
+        Tylko stop-loss (bez nowych wejść)
+    </label>
+    <p class="auth-box__hint">
+        Gdy włączone, Sygnał NIE otwiera żadnych nowych pozycji - jedyne co
+        robi to pilnuje stop-loss/take-profit na pozycjach już otwartych
+        (istniejące + ręcznie przekazane przyciskiem "Przekaż Sygnałowi").
+    </p>
+
     <button type="button" id="btn-signal-save-settings" class="auth-form__submit auth-form__submit--sticky">
         Zapisz ustawienia
     </button>
