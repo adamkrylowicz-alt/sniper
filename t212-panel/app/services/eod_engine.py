@@ -89,8 +89,9 @@ from .t212_client import T212APIError, T212Client
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
 
 # EOD_ENVIRONMENT jako stała USUNIĘTA 2026-08-06 - patrz identyczny komentarz
-# w bot_engine.py przy `utils.current_environment`. T212 nadal może nie
-# wspierać zleceń LIMIT/STOP na koncie live - nieobjęte tą zmianą.
+# w bot_engine.py przy `utils.current_environment`. Stara teza "T212 nie
+# wspiera LIMIT/STOP na live" OBALONA empirycznie 2026-08-06/07 - LIMIT i
+# STOP-LIMIT ręcznie potwierdzone działające na live.
 
 # PRD (pierwotnie): "Działa tylko pod koniec sesji (od ok. 16:00)". Adam
 # 2026-07-24 rozszerzył o sesję USA (16:00-22:00), a 2026-07-27 poprosił o

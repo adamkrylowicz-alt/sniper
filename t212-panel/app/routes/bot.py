@@ -8,10 +8,10 @@ otwarta, docelowo operujący prawdziwymi (choć na razie tylko demo) zleceniami.
 
 Środowisko (demo/live) jest per-user od 2026-08-06, patrz
 utils.current_environment/UserSettings.active_environment - wcześniej bot
-działał WYŁĄCZNIE na demo, bo T212 nie wspierał zleceń LIMIT (na których
-opiera się cała strategia Cancel-Replace bota) na koncie live. To ograniczenie
-mogło nadal obowiązywać - przełączenie na live tylko odblokowuje możliwość
-sprawdzenia tego, nie jest gwarancją że zadziała.
+działał WYŁĄCZNIE na demo, bo sądziliśmy że T212 nie wspiera zleceń LIMIT
+(na których opiera się cała strategia Cancel-Replace bota) na koncie live.
+Ta teza OBALONA empirycznie 2026-08-06/07 - LIMIT i STOP-LIMIT ręcznie
+potwierdzone działające na live (patrz bot_engine.py, docstring modułu).
 
 Bot ma WŁASNĄ listę aktywów (BotAsset) - CAŁKOWICIE NIEZALEŻNĄ od Smart
 Virtual Pie (PieAsset). To świadoma decyzja (nie pierwotny projekt) - patrz
@@ -580,10 +580,12 @@ def activate():
     # Środowisko per-user od 2026-08-06 (patrz utils.current_environment) -
     # bez zapisanego klucza dla AKTUALNIE wybranego środowiska (demo/live)
     # aktywacja i tak byłaby bezużyteczna, więc blokujemy od razu. UWAGA
-    # historyczna: T212 nie wspierał zleceń LIMIT/STOP na koncie live (na
-    # których opiera się cała strategia Cancel-Replace) - jeśli to nadal
-    # prawda, aktywacja na "live" i tak zawiedzie na pierwszym realnym
-    # zleceniu, tylko już nie jest blokowana na starcie.
+    # historyczna (OBALONA empirycznie 2026-08-06/07, patrz bot_engine.py):
+    # sądziliśmy że T212 nie wspiera zleceń LIMIT/STOP na koncie live (na
+    # których opiera się cała strategia Cancel-Replace) - LIMIT i STOP-LIMIT
+    # ręcznie potwierdzone działające. Aktywacja bota na "live" mimo to
+    # NADAL wymaga świadomej decyzji Adama poza samym posiadaniem klucza
+    # (patrz stop_loss_only_mode) - to nie jest już techniczne ograniczenie.
     env = current_environment(user_id)
     has_key = ApiKeySet.query.filter_by(user_id=user_id, environment=env).first() is not None
     if not has_key:

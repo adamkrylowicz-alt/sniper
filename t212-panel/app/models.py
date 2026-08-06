@@ -249,10 +249,12 @@ class UserSettings(db.Model):
     # SIGNAL_ENVIRONMENT/EOD_ENVIRONMENT (zawsze "demo" na sztywno) -
     # bot_credentials.get_environment(user_id) czyta to pole, domyślnie
     # "demo" gdy brak wiersza UserSettings (bezpieczny default, zero zmiany
-    # zachowania dla nowych userów). WAŻNE: T212 nie wspiera zleceń LIMIT/
-    # STOP na koncie live (patrz historia w bot_engine.py) - przełączenie na
-    # "live" NIE gwarantuje że boty (oparte o LIMIT/STOP) faktycznie
-    # zadziałają, wymaga ręcznej weryfikacji na koncie Adama najpierw.
+    # zachowania dla nowych userów). Stara teza "T212 nie wspiera zleceń
+    # LIMIT/STOP na koncie live" (patrz historia w bot_engine.py) OBALONA
+    # empirycznie 2026-08-06/07 - LIMIT i STOP-LIMIT ręcznie potwierdzone
+    # działające na live. Mimo to boty NIE są odblokowane na live automatycznie
+    # (patrz RiskSettings/SignalSettings/EODSettings.stop_loss_only_mode) -
+    # to osobna, świadoma decyzja, nie techniczne ograniczenie.
     active_environment = db.Column(db.String(10), nullable=False, default="demo")
 
     user = db.relationship("User", back_populates="settings")

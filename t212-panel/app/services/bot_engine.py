@@ -73,13 +73,21 @@ Silnik Micro-Grid Bota:
    to tylko odczyt stanu już złożonych zleceń, nie warto opóźniać wykrycia
    wykonania.
 
-Bot do 2026-08-06 działał WYŁĄCZNIE na demo (T212 nie wspiera zleceń LIMIT
-na koncie live - patrz `routes/bot.py::activate()`, blokada aktywacji bez
-klucza demo) - od tego dnia środowisko jest per-user (patrz
-`utils.current_environment`/`UserSettings.active_environment`), Adam
-świadomie testuje na koncie live. Ograniczenie T212 (LIMIT/STOP niedostępne
-na live) NADAL może obowiązywać - to nie zostało tu obejście problemu, tylko
-odblokowanie możliwości sprawdzenia go na żywo.
+Bot do 2026-08-06 działał WYŁĄCZNIE na demo (stara, HISTORYCZNA teza -
+patrz UPDATE niżej - że T212 nie wspiera zleceń LIMIT na koncie live,
+patrz `routes/bot.py::activate()`, blokada aktywacji bez klucza demo) - od
+tego dnia środowisko jest per-user (patrz `utils.current_environment`/
+`UserSettings.active_environment`), Adam świadomie testuje na koncie live.
+
+UPDATE 2026-08-06/07: stara teza OBALONA empirycznie, ręcznie przez Adama
+(Warp/instrument, NIE przez żaden z 3 silników bota - te wciąż mają
+`stop_loss_only_mode` jako dodatkowy bezpiecznik, patrz niżej): LIMIT BUY
+zadziałał na live 22:07:56 UTC (SPCX_US_EQ), STOP-LIMIT BUY zadziałał na
+live 23:31:01 UTC (SPCX_US_EQ, order_id 55310447353, po 3 wcześniejszych
+400 przy nierealistycznych cenach). Czysty STOP (bez limitu) NIE był
+jeszcze osobno testowany na live (tylko na demo, przed migracją) - biorąc
+pod uwagę że STOP-LIMIT (bardziej złożony typ) działa, prawdopodobnie
+zadziała też, ale to WNIOSEK, nie potwierdzony fakt.
 
 Historia buga (2026-07-20, potwierdzone realnym testem na koncie demo, DWIE
 niezależne przyczyny):
@@ -169,10 +177,12 @@ from .t212_client import T212APIError, T212Client
 # BOT_ENVIRONMENT jako stała modułowa USUNIĘTA 2026-08-06 (była zawsze
 # "demo" na sztywno) - zastąpiona per-userowym `utils.current_environment
 # (user_id)` (patrz models.py::UserSettings.active_environment), Adam:
-# "przełącz na live... i dodaj guzik przełącznik live demo". WAŻNE: T212 nie
-# wspiera zleceń LIMIT/STOP na koncie live (patrz historia niżej) - sama ta
-# zmiana NIE gwarantuje że bot faktycznie zadziała na live, tylko pozwala
-# to świadomie wypróbować zamiast twardej blokady.
+# "przełącz na live... i dodaj guzik przełącznik live demo". Stara teza
+# "T212 nie wspiera zleceń LIMIT/STOP na koncie live" (patrz historia
+# niżej) OBALONA empirycznie 2026-08-06/07 (LIMIT i STOP-LIMIT ręcznie
+# potwierdzone działające na live przez Adama, patrz docstring modułu
+# wyżej) - mimo to boty NIE są odblokowane na live automatycznie przez
+# samo działanie tych typów zleceń, to osobna, świadoma decyzja Adama.
 
 # Empirycznie zaobserwowana granica (NIE oficjalnie udokumentowana przez T212):
 # próba zakupu SPCX za 1.00 USD dała błąd "min-quantity-exceeded" - "must
