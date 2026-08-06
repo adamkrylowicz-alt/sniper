@@ -2035,25 +2035,32 @@ def tick(app) -> None:
                         _confirm_dca_fills(user_id, client, settings, pending=pending)
                         _retry_pending_buys(user_id, client, settings, pending=pending)
                         _retry_pending_sells(user_id, client, settings, pending=pending)
-                        adopted_count = _auto_adopt_foreign_positions(user_id, client, settings)
-                        if adopted_count > 0:
-                            # Świeżo przejęta pozycja (patrz komentarz przy
-                            # _manage_trailing_exit wyżej) inaczej czekałaby
-                            # na SWÓJ PIERWSZY trailing check aż do NASTĘPNEGO
-                            # ticku (do 60s) - przy szybko rosnącej cenie
-                            # oznacza to okno bez ŻADNEJ ochrony zysku mimo
-                            # że cena mogła już dawno minąć próg uzbrojenia
-                            # stopu. Znalezione na żywo 2026-08-03 (SAP: cena
-                            # wejścia 157, w chwili przejęcia już 164 - stop
-                            # uzbroił się dopiero na NASTĘPNYM ticku). Drugie
-                            # wywołanie w TYM SAMYM ticku kosztuje tyle co
-                            # nic dla pozycji już obsłużonych chwilę wcześniej
-                            # (cache portfolio/ceny), a dla świeżo przejętej
-                            # daje szansę na natychmiastowe uzbrojenie stopu.
-                            _manage_trailing_exit(user_id, client, settings)
-                        _trigger_dca_buys(user_id, client, settings, current_equity)
+                        # stop_loss_only_mode (2026-08-06, patrz models.py::RiskSettings
+                        # - "wylacz wszystko poza stoplossem") - auto-adopt i DCA to obie
+                        # AUTONOMICZNE akcje (bot sam decyduje co przejac/dokupic), wiec
+                        # obie pomijamy calkowicie w tym trybie; _manage_trailing_exit
+                        # wyzej zostaje nietkniety, wiec juz zarzadzane/recznie adoptowane
+                        # pozycje nadal dostaja przesuwany stop.
+                        if not settings.stop_loss_only_mode:
+                            adopted_count = _auto_adopt_foreign_positions(user_id, client, settings)
+                            if adopted_count > 0:
+                                # Świeżo przejęta pozycja (patrz komentarz przy
+                                # _manage_trailing_exit wyżej) inaczej czekałaby
+                                # na SWÓJ PIERWSZY trailing check aż do NASTĘPNEGO
+                                # ticku (do 60s) - przy szybko rosnącej cenie
+                                # oznacza to okno bez ŻADNEJ ochrony zysku mimo
+                                # że cena mogła już dawno minąć próg uzbrojenia
+                                # stopu. Znalezione na żywo 2026-08-03 (SAP: cena
+                                # wejścia 157, w chwili przejęcia już 164 - stop
+                                # uzbroił się dopiero na NASTĘPNYM ticku). Drugie
+                                # wywołanie w TYM SAMYM ticku kosztuje tyle co
+                                # nic dla pozycji już obsłużonych chwilę wcześniej
+                                # (cache portfolio/ceny), a dla świeżo przejętej
+                                # daje szansę na natychmiastowe uzbrojenie stopu.
+                                _manage_trailing_exit(user_id, client, settings)
+                            _trigger_dca_buys(user_id, client, settings, current_equity)
 
-            if skip_new_entries:
+            if skip_new_entries or settings.stop_loss_only_mode:
                 continue
 
             _process_entries(user_id, settings, current_equity)

@@ -279,6 +279,20 @@
         bez zmian.
     </p>
 
+    <label class="auth-form__checkbox">
+        <input type="checkbox" id="bot-stop-loss-only" {{ "checked" if settings.stop_loss_only_mode else "" }}>
+        Tylko stop-loss (bez nowych wejść i bez DCA)
+    </label>
+    <p class="auth-box__hint">
+        Gdy włączone, bot NIE otwiera nowych pozycji, NIE dokupuje (DCA) i NIE
+        przejmuje automatycznie obcych pozycji - jedyne co robi to przesuwa
+        trailing stop na pozycjach już pod jego zarządzaniem (istniejące +
+        ręcznie przekazane przyciskiem "Przekaż botowi"). Żeby wskazać botowi
+        nowe aktywo w tym trybie, użyj "Przekaż botowi" na stronie
+        instrumentu/Warp - to jedyny sposób na dodanie pozycji, gdy ta flaga
+        jest włączona.
+    </p>
+
     <h3 class="settings-subheading">Money management i FX</h3>
     <label class="auth-form__checkbox">
         <input type="checkbox" id="bot-equity-sizing" {{ "checked" if settings.equity_sizing_enabled else "" }}>

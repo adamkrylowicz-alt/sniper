@@ -107,6 +107,7 @@ document.addEventListener("DOMContentLoaded", () => {
             max_daily_loss: document.getElementById("bot-max-daily-loss").value,
             is_paper_trading: document.getElementById("bot-paper-trading").checked,
             manage_all_positions: document.getElementById("bot-manage-all").checked,
+            stop_loss_only_mode: document.getElementById("bot-stop-loss-only").checked,
             equity_sizing_enabled: document.getElementById("bot-equity-sizing").checked,
             fx_cost_adjustment_enabled: document.getElementById("bot-fx-cost-adjustment").checked,
             fx_fee_pct: document.getElementById("bot-fx-fee-pct").value,

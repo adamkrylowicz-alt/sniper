@@ -471,6 +471,18 @@ class RiskSettings(db.Model):
     fx_cost_adjustment_enabled = db.Column(db.Boolean, nullable=False, default=True)
     fx_fee_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.0015)
 
+    # Tryb "tylko stop-loss" (2026-08-06, na wyrazne zyczenie Adama - "wylacz
+    # wszystkie funkcjonalnosci bota poza jedna - ma ustawiac stoplossa na
+    # aktywa ktore mu wskaze"). Gdy wlaczony, tick() w bot_engine.py CALKOWICIE
+    # pomija _process_entries (nowe wejscia), _trigger_dca_buys (dokupywanie)
+    # i _auto_adopt_foreign_positions (automatyczne przejmowanie obcych pozycji
+    # - "wskaze" znaczy RECZNIE, patrz routes/bot.py::adopt_position) -
+    # _manage_trailing_exit zostaje BEZ ZMIAN, wiec juz zarzadzane pozycje
+    # (adoptowane recznie lub istniejace) nadal dostaja przesuwany trailing
+    # stop. DOMYSLNIE WYLACZONE - zero zmiany zachowania dopoki Adam swiadomie
+    # nie zaznaczy checkboxa w UI.
+    stop_loss_only_mode = db.Column(db.Boolean, nullable=False, default=False)
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<RiskSettings user_id={self.user_id} active={self.is_bot_active}>"
 

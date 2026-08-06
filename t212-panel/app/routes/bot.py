@@ -462,6 +462,7 @@ def update_settings():
     settings.equity_sizing_baseline = equity_sizing_baseline
     settings.fx_cost_adjustment_enabled = bool(payload.get("fx_cost_adjustment_enabled", settings.fx_cost_adjustment_enabled))
     settings.fx_fee_pct = fx_fee_pct
+    settings.stop_loss_only_mode = bool(payload.get("stop_loss_only_mode", settings.stop_loss_only_mode))
     db.session.commit()
 
     released_count = _release_auto_adopted_positions(current_user_id()) if switch_turned_off else 0
