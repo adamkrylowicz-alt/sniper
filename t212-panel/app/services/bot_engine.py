@@ -508,7 +508,7 @@ def _log(user_id: int, action_type: str, message: str, position_group_id: str | 
         return
     db.session.add(BotAuditLog(
         user_id=user_id, action_type=action_type, message=message,
-        position_group_id=position_group_id,
+        position_group_id=position_group_id, environment=current_environment(user_id),
     ))
     db.session.commit()
 

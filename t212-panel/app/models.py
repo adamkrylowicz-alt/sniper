@@ -696,6 +696,12 @@ class BotAuditLog(db.Model):
     action_type = db.Column(db.String(10), nullable=False)  # BUY/CANCEL/RELOAD/ERROR/INFO
     message = db.Column(db.Text, nullable=False)
 
+    # Patrz identyczny komentarz przy BotAsset.environment (models.py) -
+    # 2026-08-07, Adam: "w dziennikach botow zostala historia na live" -
+    # bez tego Dziennik po przełączeniu demo/live pokazywał starą historię
+    # z poprzedniego konta jako "aktualną".
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
+
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False, index=True)
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -874,6 +880,9 @@ class SignalAuditLog(db.Model):
     action_type = db.Column(db.String(10), nullable=False)  # BUY/SELL/ERROR/INFO
     message = db.Column(db.Text, nullable=False)
 
+    # Patrz identyczny komentarz przy BotAuditLog.environment.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
+
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False, index=True)
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -1040,6 +1049,9 @@ class EODAuditLog(db.Model):
 
     action_type = db.Column(db.String(10), nullable=False)  # BUY/SELL/ERROR/INFO
     message = db.Column(db.Text, nullable=False)
+
+    # Patrz identyczny komentarz przy BotAuditLog.environment.
+    environment = db.Column(db.String(10), nullable=False, default="demo", index=True)
 
     created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False, index=True)
 

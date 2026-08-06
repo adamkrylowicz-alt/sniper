@@ -48,10 +48,11 @@ def _get_owned_asset(asset_id: int) -> SignalAsset:
 def view():
     user_id = current_user_id()
     settings = _get_or_create_settings(user_id)
+    env = current_environment(user_id)
 
     logs_raw = (
         SignalAuditLog.query
-        .filter_by(user_id=user_id)
+        .filter_by(user_id=user_id, environment=env)
         .order_by(SignalAuditLog.created_at.desc())
         .limit(50)
         .all()
@@ -65,7 +66,6 @@ def view():
         for l in logs_raw
     ]
 
-    env = current_environment(user_id)
     all_assets = SignalAsset.query.filter_by(user_id=user_id, environment=env).order_by(SignalAsset.created_at.desc()).all()
     open_trades = (
         SignalTrade.query
@@ -349,7 +349,7 @@ def deactivate():
 @login_required
 def clear_log():
     user_id = current_user_id()
-    SignalAuditLog.query.filter_by(user_id=user_id).delete()
+    SignalAuditLog.query.filter_by(user_id=user_id, environment=current_environment(user_id)).delete()
     db.session.commit()
     return jsonify(ok=True)
 

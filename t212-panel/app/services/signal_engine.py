@@ -185,7 +185,10 @@ def _log(user_id: int, action_type: str, message: str) -> None:
             current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
             f"🔴 Sygnał ERROR (user {user_id}): {message}",
         )
-    entry = SignalAuditLog(user_id=user_id, action_type=action_type, message=message)
+    entry = SignalAuditLog(
+        user_id=user_id, action_type=action_type, message=message,
+        environment=current_environment(user_id),
+    )
     db.session.add(entry)
     db.session.commit()
 

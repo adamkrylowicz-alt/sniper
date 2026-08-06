@@ -57,13 +57,14 @@ def _get_owned_bot_asset(asset_id: int) -> BotAsset:
 def view():
     user_id = current_user_id()
     settings = _get_or_create_settings(user_id)
+    env = current_environment(user_id)
 
     # created_at w bazie jest w UTC (dt.datetime.utcnow() w bot_engine.py::_log) -
     # przeliczone tutaj na czas Amsterdamu (Adam zgłosił 2026-07-21: "wyswietla
     # 21 a jest 23", dziennik pokazywał surowe UTC bez konwersji/etykiety).
     logs_raw = (
         BotAuditLog.query
-        .filter_by(user_id=user_id)
+        .filter_by(user_id=user_id, environment=env)
         .order_by(BotAuditLog.created_at.desc())
         .limit(50)
         .all()
@@ -80,7 +81,6 @@ def view():
     # Hydratacja do prostych dict-ów - ten sam wzorzec co routes/pie.py::detail.
     # Pełna nazwa spółki jako główny tekst (nie sam ticker) - ten sam wzorzec
     # co Warp/Focus/Aktywa/Virtual Pie, znaleziony brakujący tutaj 2026-07-21.
-    env = current_environment(user_id)
     all_bot_assets = BotAsset.query.filter_by(user_id=user_id, environment=env).order_by(BotAsset.created_at.desc()).all()
     open_trades = (
         ActiveTrade.query
@@ -646,7 +646,7 @@ def clear_log():
     (BUY/INFO/WARN).
     """
     user_id = current_user_id()
-    BotAuditLog.query.filter_by(user_id=user_id).delete()
+    BotAuditLog.query.filter_by(user_id=user_id, environment=current_environment(user_id)).delete()
     db.session.commit()
     return jsonify(ok=True)
 

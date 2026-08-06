@@ -46,10 +46,11 @@ def _get_owned_asset(asset_id: int) -> EODAsset:
 def view():
     user_id = current_user_id()
     settings = _get_or_create_settings(user_id)
+    env = current_environment(user_id)
 
     logs_raw = (
         EODAuditLog.query
-        .filter_by(user_id=user_id)
+        .filter_by(user_id=user_id, environment=env)
         .order_by(EODAuditLog.created_at.desc())
         .limit(50)
         .all()
@@ -63,7 +64,6 @@ def view():
         for l in logs_raw
     ]
 
-    env = current_environment(user_id)
     all_assets = EODAsset.query.filter_by(user_id=user_id, environment=env).order_by(EODAsset.created_at.desc()).all()
     open_trades = (
         EODTrade.query
@@ -335,7 +335,7 @@ def deactivate():
 @login_required
 def clear_log():
     user_id = current_user_id()
-    EODAuditLog.query.filter_by(user_id=user_id).delete()
+    EODAuditLog.query.filter_by(user_id=user_id, environment=current_environment(user_id)).delete()
     db.session.commit()
     return jsonify(ok=True)
 
