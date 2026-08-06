@@ -99,15 +99,16 @@ def _bot_order_sources(user_id: int) -> dict[str, str]:
     EODTrade po każdej ręcznej zmianie, świadomie poza zakresem).
     """
     sources: dict[str, str] = {}
-    for trade in ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").all():
+    env = current_environment(user_id)
+    for trade in ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).all():
         if trade.buy_order_id:
             sources[str(trade.buy_order_id)] = "Micro-Grid"
         if trade.dca_pending_buy_order_id:
             sources[str(trade.dca_pending_buy_order_id)] = "Micro-Grid"
-    for trade in SignalTrade.query.filter_by(user_id=user_id, status="OPEN").all():
+    for trade in SignalTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).all():
         if trade.buy_order_id:
             sources[str(trade.buy_order_id)] = "Sygnał"
-    for trade in EODTrade.query.filter_by(user_id=user_id, status="OPEN").all():
+    for trade in EODTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).all():
         if trade.buy_order_id:
             sources[str(trade.buy_order_id)] = "EOD"
     return sources
@@ -433,6 +434,79 @@ def place_limit_order_route():
     )
 
 
+@scalping_bp.route("/order/stop", methods=["POST"])
+@login_required
+def place_stop_order_route():
+    """
+    Składanie NOWEGO zlecenia STOP (buy/sell), ten sam wzorzec co
+    place_limit_order_route() wyżej. Dodane 2026-08-06 (Adam testował ręcznie
+    czy T212 w ogóle jeszcze wspiera LIMIT/STOP na koncie LIVE - stary
+    komentarz w t212_client.py mówił "nie", trzeba to zweryfikować na żywo
+    zanim odblokujemy boty na live). Zwykłe, bezpośrednie zlecenie na koncie -
+    NIE dotyczy żadnego z 3 silników bota (te wystawiają STOP same, przez
+    bot_engine.py/signal_engine.py/eod_engine.py).
+
+    Przyjmuje JSON: {"ticker": ..., "side": "buy"|"sell", "quantity": "...",
+    "stop_price": "..."} - wszystko wymagane.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    ticker = payload.get("ticker")
+    side = payload.get("side")
+    raw_quantity = payload.get("quantity")
+    raw_stop_price = payload.get("stop_price")
+
+    if not ticker or side not in ("buy", "sell") or not raw_quantity or not raw_stop_price:
+        return jsonify(ok=False, error="Brak wymaganych pól (ticker/side/quantity/stop_price)."), 400
+
+    try:
+        quantity = abs(Decimal(str(raw_quantity)))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa ilość."), 400
+    if quantity <= 0:
+        return jsonify(ok=False, error="Ilość musi być dodatnia."), 400
+
+    try:
+        stop_price = Decimal(str(raw_stop_price))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa cena stop."), 400
+    if stop_price <= 0:
+        return jsonify(ok=False, error="Cena stop musi być dodatnia."), 400
+
+    guard_result = _get_guard(current_user_id()).check_before_order(ticker, quantity, stop_price)
+    if not guard_result.allowed:
+        _log_order(
+            user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+            price_snapshot=stop_price, status="blocked", block_reason=guard_result.decision.value,
+        )
+        return jsonify(
+            ok=False, blocked=True, reason=guard_result.reason, decision=guard_result.decision.value,
+        ), 200  # 200 celowo - decyzja biznesowa, nie błąd serwera (ten sam wzorzec co place_order())
+
+    try:
+        client = _get_client()
+        signed_quantity = quantity if side == "buy" else -quantity
+        result = client.place_stop_order(ticker, signed_quantity, stop_price)
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    except T212APIError as exc:
+        _log_order(
+            user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+            price_snapshot=stop_price, status="rejected", block_reason=f"T212_ERROR_{exc.status_code}",
+        )
+        return jsonify(ok=False, error=str(exc)), 502
+
+    _log_order(
+        user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+        price_snapshot=stop_price, status="sent", t212_order_id=result.order_id,
+    )
+
+    return jsonify(
+        ok=True, order_id=result.order_id, ticker=ticker, side=side,
+        quantity=str(quantity), stop_price=str(stop_price),
+    )
+
+
 @scalping_bp.route("/quote", methods=["GET"])
 @login_required
 def quote():
@@ -595,13 +669,14 @@ def trade_levels():
         return jsonify(ok=False, error="Brak tickera."), 400
 
     user_id = current_user_id()
+    env = current_environment(user_id)
     levels = []
 
-    bot_trade = ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
+    bot_trade = ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first()
     if bot_trade and bot_trade.stop_target_price is not None:
         levels.append({"type": "stop_loss", "price": float(bot_trade.stop_target_price), "source": "Micro-Grid"})
 
-    signal_trade = SignalTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
+    signal_trade = SignalTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first()
     if signal_trade:
         # BEZ take_profit - usuniety 2026-07-28 (Adam: "usun sztywny
         # take-profit, zrob pelny trailing"), signal_trade.take_profit_price
@@ -610,7 +685,7 @@ def trade_levels():
         # wykresie tylko by mylilo (wygladaloby na aktywny poziom wyjscia).
         levels.append({"type": "stop_loss", "price": float(signal_trade.stop_loss_price), "source": "Sygnał"})
 
-    eod_trade = EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN").first()
+    eod_trade = EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first()
     if eod_trade:
         levels.append({"type": "stop_loss", "price": float(eod_trade.stop_loss_price), "source": "EOD"})
         levels.append({"type": "take_profit", "price": float(eod_trade.take_profit_price), "source": "EOD"})
@@ -1016,30 +1091,31 @@ def _annotate_bot_state(user_id: int, positions: list[dict]) -> list[dict]:
     if not positions:
         return positions
     tickers = [p["ticker"] for p in positions]
+    env = current_environment(user_id)
 
     bot_assets_by_ticker = {
         a.ticker: a for a in
-        BotAsset.query.filter_by(user_id=user_id).filter(BotAsset.ticker.in_(tickers)).all()
+        BotAsset.query.filter_by(user_id=user_id, environment=env).filter(BotAsset.ticker.in_(tickers)).all()
     }
     signal_assets_by_ticker = {
         a.ticker: a for a in
-        SignalAsset.query.filter_by(user_id=user_id).filter(SignalAsset.ticker.in_(tickers)).all()
+        SignalAsset.query.filter_by(user_id=user_id, environment=env).filter(SignalAsset.ticker.in_(tickers)).all()
     }
     eod_assets_by_ticker = {
         a.ticker: a for a in
-        EODAsset.query.filter_by(user_id=user_id).filter(EODAsset.ticker.in_(tickers)).all()
+        EODAsset.query.filter_by(user_id=user_id, environment=env).filter(EODAsset.ticker.in_(tickers)).all()
     }
     bot_trades_by_ticker = {
         t.ticker: t for t in
-        ActiveTrade.query.filter_by(user_id=user_id, status="OPEN").filter(ActiveTrade.ticker.in_(tickers)).all()
+        ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).filter(ActiveTrade.ticker.in_(tickers)).all()
     }
     signal_trades_by_ticker = {
         t.ticker: t for t in
-        SignalTrade.query.filter_by(user_id=user_id, status="OPEN").filter(SignalTrade.ticker.in_(tickers)).all()
+        SignalTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).filter(SignalTrade.ticker.in_(tickers)).all()
     }
     eod_trades_by_ticker = {
         t.ticker: t for t in
-        EODTrade.query.filter_by(user_id=user_id, status="OPEN").filter(EODTrade.ticker.in_(tickers)).all()
+        EODTrade.query.filter_by(user_id=user_id, status="OPEN", environment=env).filter(EODTrade.ticker.in_(tickers)).all()
     }
 
     for p in positions:

@@ -120,6 +120,7 @@
         <div class="tile__mode-toggle" id="instrument-mode-toggle" role="group" aria-label="Tryb zlecenia">
             <button type="button" class="tile__mode-btn tile__mode-btn--active" data-mode="market">RYNEK</button>
             <button type="button" class="tile__mode-btn" data-mode="limit">LIMIT</button>
+            <button type="button" class="tile__mode-btn" data-mode="stop">STOP</button>
         </div>
         <input
             type="number"
@@ -129,6 +130,15 @@
             step="0.01"
             min="0"
             aria-label="Cena LIMIT dla nowego zlecenia"
+        >
+        <input
+            type="number"
+            id="instrument-stop-price"
+            class="tile__price instrument-detail__limit-price instrument-detail__limit-price--hidden"
+            placeholder="cena STOP"
+            step="0.01"
+            min="0"
+            aria-label="Cena STOP dla nowego zlecenia"
         >
     </div>
 
