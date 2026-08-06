@@ -834,7 +834,7 @@ async function sendOrder(side) {
 
     const marketPrice = lastQuote && lastQuote.c ? Number(lastQuote.c) : null;
     let limitPrice = null;
-    if (orderMode === "limit") {
+    if (orderMode === "limit" || orderMode === "stoplimit") {
         limitPrice = limitPriceInput.value;
         if (!limitPrice || Number(limitPrice) <= 0) {
             statusEl.textContent = "Podaj cenę LIMIT > 0";
@@ -843,7 +843,7 @@ async function sendOrder(side) {
         }
     }
     let stopPrice = null;
-    if (orderMode === "stop") {
+    if (orderMode === "stop" || orderMode === "stoplimit") {
         stopPrice = stopPriceInput.value;
         if (!stopPrice || Number(stopPrice) <= 0) {
             statusEl.textContent = "Podaj cenę STOP > 0";
@@ -864,14 +864,22 @@ async function sendOrder(side) {
     }
 
     btns.forEach((b) => (b.disabled = true));
-    statusEl.textContent = orderMode === "limit" ? "wysyłanie LIMIT…" : orderMode === "stop" ? "wysyłanie STOP…" : "wysyłanie…";
+    statusEl.textContent = orderMode === "limit" ? "wysyłanie LIMIT…"
+        : orderMode === "stop" ? "wysyłanie STOP…"
+        : orderMode === "stoplimit" ? "wysyłanie STOP-LIMIT…"
+        : "wysyłanie…";
 
     try {
-        const url = orderMode === "limit" ? "/warp/order/limit" : orderMode === "stop" ? "/warp/order/stop" : "/warp/order";
+        const url = orderMode === "limit" ? "/warp/order/limit"
+            : orderMode === "stop" ? "/warp/order/stop"
+            : orderMode === "stoplimit" ? "/warp/order/stop-limit"
+            : "/warp/order";
         const body = orderMode === "limit"
             ? { ticker, side, quantity, price: limitPrice }
             : orderMode === "stop"
             ? { ticker, side, quantity, stop_price: stopPrice }
+            : orderMode === "stoplimit"
+            ? { ticker, side, quantity, stop_price: stopPrice, limit_price: limitPrice }
             : { ticker, side, quantity, estimated_price: marketPrice };
         const resp = await fetch(url, {
             method: "POST",
@@ -884,11 +892,12 @@ async function sendOrder(side) {
             playSuccess();
             statusEl.textContent = orderMode === "limit" ? `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}`
                 : orderMode === "stop" ? `STOP OK #${data.order_id ?? "?"} @ ${data.stop_price}`
+                : orderMode === "stoplimit" ? `STOP-LIMIT OK #${data.order_id ?? "?"} @ ${data.stop_price}/${data.limit_price}`
                 : `OK #${data.order_id ?? "?"}`;
             const flash = document.getElementById("instrument-flash");
             flash.classList.add("focus-tile__flash--ok");
             setTimeout(() => flash.classList.remove("focus-tile__flash--ok"), 400);
-            if (orderMode === "limit" || orderMode === "stop") {
+            if (orderMode === "limit" || orderMode === "stop" || orderMode === "stoplimit") {
                 await loadTradeLevels(); // odswiez linie na wykresie - nowe zlecenie pojawi sie od razu
             }
         } else if (data.blocked) {
@@ -919,8 +928,8 @@ document.getElementById("instrument-mode-toggle").addEventListener("click", (e) 
     document.querySelectorAll("#instrument-mode-toggle .tile__mode-btn").forEach((b) => {
         b.classList.toggle("tile__mode-btn--active", b === btn);
     });
-    document.getElementById("instrument-limit-price").classList.toggle("instrument-detail__limit-price--hidden", orderMode !== "limit");
-    document.getElementById("instrument-stop-price").classList.toggle("instrument-detail__limit-price--hidden", orderMode !== "stop");
+    document.getElementById("instrument-limit-price").classList.toggle("instrument-detail__limit-price--hidden", orderMode !== "limit" && orderMode !== "stoplimit");
+    document.getElementById("instrument-stop-price").classList.toggle("instrument-detail__limit-price--hidden", orderMode !== "stop" && orderMode !== "stoplimit");
 });
 
 document.getElementById("btn-instrument-back").addEventListener("click", () => {

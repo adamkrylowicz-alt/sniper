@@ -137,6 +137,16 @@ async function sendOrder(tile, side) {
         setStatus(tile, "Podaj cenę LIMIT > 0 (pole ceny powyżej)");
         return;
     }
+    if (mode === "stop" && (!price || Number(price) <= 0)) {
+        setStatus(tile, "Podaj cenę STOP > 0 (pole ceny powyżej)");
+        return;
+    }
+    const stopLimitPriceInput = tile.querySelector(".tile__stoplimit-price");
+    const stopLimitPrice = stopLimitPriceInput ? stopLimitPriceInput.value : null;
+    if (mode === "stoplimit" && ((!price || Number(price) <= 0) || (!stopLimitPrice || Number(stopLimitPrice) <= 0))) {
+        setStatus(tile, "Podaj cenę STOP (pole u góry) i cenę LIMIT (pole niżej), obie > 0");
+        return;
+    }
 
     // Modal potwierdzenia - TYLKO w trybie RYNEK, gdy mamy zarówno cenę
     // ręczną, jak i skonfigurowany Hard Cap (bez tego nie ma z czego liczyć
@@ -155,12 +165,25 @@ async function sendOrder(tile, side) {
     }
 
     buttons.forEach((b) => (b.disabled = true));
-    setStatus(tile, mode === "limit" ? "wysyłanie LIMIT…" : "wysyłanie…");
+    setStatus(
+        tile,
+        mode === "limit" ? "wysyłanie LIMIT…"
+        : mode === "stop" ? "wysyłanie STOP…"
+        : mode === "stoplimit" ? "wysyłanie STOP-LIMIT…"
+        : "wysyłanie…",
+    );
 
     try {
-        const url = mode === "limit" ? "/warp/order/limit" : "/warp/order";
+        const url = mode === "limit" ? "/warp/order/limit"
+            : mode === "stop" ? "/warp/order/stop"
+            : mode === "stoplimit" ? "/warp/order/stop-limit"
+            : "/warp/order";
         const body = mode === "limit"
             ? { ticker, side, quantity, price }
+            : mode === "stop"
+            ? { ticker, side, quantity, stop_price: price }
+            : mode === "stoplimit"
+            ? { ticker, side, quantity, stop_price: price, limit_price: stopLimitPrice }
             : { ticker, side, quantity, estimated_price: price };
         const resp = await fetch(url, {
             method: "POST",
@@ -172,8 +195,14 @@ async function sendOrder(tile, side) {
         if (data.ok) {
             flashTile(tile, "ok");
             playSuccess();
-            setStatus(tile, mode === "limit" ? `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}` : `OK #${data.order_id ?? "?"}`);
-            if (mode === "limit") {
+            setStatus(
+                tile,
+                mode === "limit" ? `LIMIT OK #${data.order_id ?? "?"} @ ${data.price}`
+                : mode === "stop" ? `STOP OK #${data.order_id ?? "?"} @ ${data.stop_price}`
+                : mode === "stoplimit" ? `STOP-LIMIT OK #${data.order_id ?? "?"} @ ${data.stop_price}/${data.limit_price}`
+                : `OK #${data.order_id ?? "?"}`,
+            );
+            if (mode === "limit" || mode === "stop" || mode === "stoplimit") {
                 loadPendingOrders();
             } else {
                 loadAccount();
@@ -207,6 +236,10 @@ document.getElementById("warp-grid").addEventListener("click", (event) => {
         tile.querySelectorAll(".tile__mode-btn").forEach((b) => {
             b.classList.toggle("tile__mode-btn--active", b === modeBtn);
         });
+        const stopLimitInput = tile.querySelector(".tile__stoplimit-price");
+        if (stopLimitInput) {
+            stopLimitInput.classList.toggle("tile__stoplimit-price--hidden", modeBtn.dataset.mode !== "stoplimit");
+        }
         return;
     }
     const btn = event.target.closest(".tile__btn");

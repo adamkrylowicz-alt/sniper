@@ -104,6 +104,8 @@ _last_request_by_key: dict[str, float] = {}
 #   POST   /equity/orders/market          -> 50 / 60s
 #   POST   /equity/orders/limit           -> 1 / 2s
 #   POST   /equity/orders/stop            -> 1 / 2s
+#   POST   /equity/orders/stop_limit      -> niedokumentowany, ten sam ksztalt co stop/limit,
+#                                             ostrozny fallback na 2.2s jak siostrzane endpointy
 #   GET    /equity/account/summary        -> 1 / 5s
 #   GET    /equity/portfolio              -> niedokumentowany, zmierzony jako 1 / 5s
 #   GET    /equity/metadata/instruments   -> 1 / 50s
@@ -125,6 +127,8 @@ def _rate_limit_key_and_interval(method: str, path: str) -> tuple[str, float]:
         return "orders/limit", 2.2
     if method == "POST" and path == "/equity/orders/stop":
         return "orders/stop", 2.2
+    if method == "POST" and path == "/equity/orders/stop_limit":
+        return "orders/stop_limit", 2.2
     if method == "DELETE" and path.startswith("/equity/orders/"):
         return "orders/cancel", 1.3
     if method == "GET" and path.startswith("/equity/orders/"):
@@ -588,6 +592,49 @@ class T212Client:
             "timeValidity": time_validity,
         }
         raw = self._request("POST", "/equity/orders/stop", json=body)
+
+        return OrderResult(
+            order_id=str(raw.get("id")) if raw and raw.get("id") is not None else None,
+            ticker=ticker,
+            quantity=quantity,
+            status=raw.get("status", "UNKNOWN") if raw else "UNKNOWN",
+            raw=raw or {},
+        )
+
+    def place_stop_limit_order(
+        self,
+        ticker: str,
+        quantity: Decimal,
+        stop_price: Decimal,
+        limit_price: Decimal,
+        time_validity: str = "GOOD_TILL_CANCEL",
+    ) -> OrderResult:
+        """
+        Składa zlecenie Stop-Limit - dwuetapowe, w odróżnieniu od czystego
+        Stop (place_stop_order wyżej). Gdy Last Traded Price osiągnie
+        stop_price, T212 NIE wystawia Market Order (jak przy czystym Stop) -
+        zamiast tego wystawia LIMIT Order po limit_price. Konsekwencja: brak
+        gwarancji wykonania (jeśli cena "przeleci" przez limit_price zanim
+        zdąży się wypełnić - np. gwałtowna luka - zlecenie zostaje niewypełnione
+        i czeka dalej jak zwykły LIMIT), ale ochrona przed ekstremalnym
+        poślizgiem, jaki może dać czysty Stop->Market w bardzo zmiennym rynku.
+
+        Kierunek jak w innych metodach: znak quantity (dodatnia=buy, ujemna=sell).
+
+        Endpoint POST /equity/orders/stop_limit - NIEUDOKUMENTOWANY wprost
+        na docs.trading212.com (w odróżnieniu od /orders/stop), ale ten sam
+        wzorzec co pozostałe 3 (market/limit/stop): quantity, ticker,
+        timeValidity + kombinacja stopPrice+limitPrice zamiast pojedynczego
+        pola ceny.
+        """
+        body = {
+            "ticker": ticker,
+            "quantity": float(quantity),
+            "stopPrice": float(stop_price),
+            "limitPrice": float(limit_price),
+            "timeValidity": time_validity,
+        }
+        raw = self._request("POST", "/equity/orders/stop_limit", json=body)
 
         return OrderResult(
             order_id=str(raw.get("id")) if raw and raw.get("id") is not None else None,

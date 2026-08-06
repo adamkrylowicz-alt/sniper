@@ -507,6 +507,79 @@ def place_stop_order_route():
     )
 
 
+@scalping_bp.route("/order/stop-limit", methods=["POST"])
+@login_required
+def place_stop_limit_order_route():
+    """
+    Składanie NOWEGO zlecenia STOP-LIMIT (buy/sell), ten sam wzorzec co
+    place_stop_order_route() wyżej - jedyna różnica: DWIE ceny (stop_price -
+    próg wyzwolenia, limit_price - cena maksymalna/minimalna wykonania po
+    triggerze), patrz t212_client.py::place_stop_limit_order po pełne
+    wyjaśnienie różnicy względem czystego Stop.
+
+    Przyjmuje JSON: {"ticker": ..., "side": "buy"|"sell", "quantity": "...",
+    "stop_price": "...", "limit_price": "..."} - wszystko wymagane.
+    """
+    payload = request.get_json(silent=True) or {}
+
+    ticker = payload.get("ticker")
+    side = payload.get("side")
+    raw_quantity = payload.get("quantity")
+    raw_stop_price = payload.get("stop_price")
+    raw_limit_price = payload.get("limit_price")
+
+    if not ticker or side not in ("buy", "sell") or not raw_quantity or not raw_stop_price or not raw_limit_price:
+        return jsonify(ok=False, error="Brak wymaganych pól (ticker/side/quantity/stop_price/limit_price)."), 400
+
+    try:
+        quantity = abs(Decimal(str(raw_quantity)))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa ilość."), 400
+    if quantity <= 0:
+        return jsonify(ok=False, error="Ilość musi być dodatnia."), 400
+
+    try:
+        stop_price = Decimal(str(raw_stop_price))
+        limit_price = Decimal(str(raw_limit_price))
+    except (InvalidOperation, ValueError):
+        return jsonify(ok=False, error="Nieprawidłowa cena stop/limit."), 400
+    if stop_price <= 0 or limit_price <= 0:
+        return jsonify(ok=False, error="Ceny stop i limit muszą być dodatnie."), 400
+
+    guard_result = _get_guard(current_user_id()).check_before_order(ticker, quantity, limit_price)
+    if not guard_result.allowed:
+        _log_order(
+            user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+            price_snapshot=limit_price, status="blocked", block_reason=guard_result.decision.value,
+        )
+        return jsonify(
+            ok=False, blocked=True, reason=guard_result.reason, decision=guard_result.decision.value,
+        ), 200  # 200 celowo - decyzja biznesowa, nie błąd serwera (ten sam wzorzec co place_order())
+
+    try:
+        client = _get_client()
+        signed_quantity = quantity if side == "buy" else -quantity
+        result = client.place_stop_limit_order(ticker, signed_quantity, stop_price, limit_price)
+    except RuntimeError as exc:
+        return jsonify(ok=False, error=str(exc)), 500
+    except T212APIError as exc:
+        _log_order(
+            user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+            price_snapshot=limit_price, status="rejected", block_reason=f"T212_ERROR_{exc.status_code}",
+        )
+        return jsonify(ok=False, error=str(exc)), 502
+
+    _log_order(
+        user_id=current_user_id(), ticker=ticker, side=side, quantity=quantity,
+        price_snapshot=limit_price, status="sent", t212_order_id=result.order_id,
+    )
+
+    return jsonify(
+        ok=True, order_id=result.order_id, ticker=ticker, side=side,
+        quantity=str(quantity), stop_price=str(stop_price), limit_price=str(limit_price),
+    )
+
+
 @scalping_bp.route("/quote", methods=["GET"])
 @login_required
 def quote():

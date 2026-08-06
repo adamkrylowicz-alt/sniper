@@ -736,6 +736,27 @@ img.tile__logo {
 }
 .tile__price::placeholder { color: var(--text-muted); }
 
+.tile__stoplimit-price {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    color: var(--text-muted);
+    font-family: inherit;
+    font-size: 11px;
+    padding: 4px 6px;
+    text-align: right;
+    border-radius: 2px;
+    margin-top: 4px;
+}
+.tile__stoplimit-price:focus {
+    outline: none;
+    border-color: var(--accent-amber);
+    color: var(--text-bright);
+}
+.tile__stoplimit-price::placeholder { color: var(--text-muted); }
+.tile__stoplimit-price--hidden { display: none; }
+
 .tile__qty-row { display: flex; flex-direction: column; gap: 4px; }
 
 .tile__qty-label {
