@@ -773,7 +773,18 @@ def _retry_pending_buys(
 
     `pending`: opcjonalna, już pobrana lista z get_pending_orders() - dzielona
     z _retry_pending_sells w tym samym cyklu (rate limit demo jest ciasny).
+
+    stop_loss_only_mode (2026-08-06, znalezione na żywo - Adam: "jakie
+    gonienie ceny bot miał TYLKO SL stawiać!!!!!!!!") - cancel-then-replace
+    tutaj to REALNE nowe zlecenie kupna (inna ilość, inna cena), więc w tym
+    trybie jest tak samo zakazane jak _process_entries/_trigger_dca_buys.
+    Zablokowane na starcie funkcji (nie per-call-site) - dotyczy to WSZYSTKICH
+    wywołań, łącznie z reconcile(). Utknięte LIMIT BUY po prostu zostają
+    w kolejce T212 na starym limicie, aż się wypełnią same albo user je
+    ręcznie anuluje - żadnej automatycznej ingerencji.
     """
+    if settings.stop_loss_only_mode:
+        return
     now = dt.datetime.utcnow()
     candidates = (
         ActiveTrade.query
@@ -1422,7 +1433,15 @@ def _trigger_dca_buys(
     (dca_pending_*). NIE dotyka jeszcze głównej pozycji (quantity/
     average_price) - to robi dopiero _confirm_dca_fills() po potwierdzeniu
     wykonania (Cancel-Replace ewentualnego starego LIMIT SELL/STOP).
+
+    stop_loss_only_mode (2026-08-06) - guard WEWNĄTRZ funkcji, nie tylko przy
+    wywołaniu w tick() - reconcile() (restart appki/"Aktywuj") woła tę funkcję
+    OSOBNO i był w niej dokładnie ten sam bug co w _retry_pending_buys (Adam,
+    na żywo: "jakie gonienie ceny bot miał TYLKO SL stawiać!!!!!!!!") -
+    zawiódłby dokładnie tak samo przy restarcie mimo włączonej flagi.
     """
+    if settings.stop_loss_only_mode:
+        return
     candidates = (
         ActiveTrade.query
         .filter_by(user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True)

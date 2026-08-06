@@ -558,7 +558,13 @@ def _retry_pending_buys(
 
     `pending`: już pobrana lista z get_pending_orders[_for_tick]() - dzielona
     z `_confirm_pending_entries` w tym samym cyklu (rate limit demo ciasny).
+
+    stop_loss_only_mode (2026-08-06) - patrz identyczny guard i uzasadnienie
+    w bot_engine.py::_retry_pending_buys (znalezione na żywo na Micro-Gridzie,
+    ten sam mechanizm/ryzyko tutaj).
     """
+    if settings.stop_loss_only_mode:
+        return
     now = dt.datetime.utcnow()
     candidates = (
         EODTrade.query

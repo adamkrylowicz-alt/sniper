@@ -10,8 +10,21 @@
     {% endif %}
 
     <p class="auth-box__hint">
-        Status: DEMO {{ "✅ zapisany" if has_demo else "— brak" }} &nbsp;|&nbsp;
+        Status: DEMO {{ "✅ zapisany" if has_demo else "— brak" }}
+        {% if has_demo %}
+        <form method="post" action="{{ url_for('api_keys.delete') }}" style="display:inline">
+            <input type="hidden" name="environment" value="demo">
+            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">Usuń</button>
+        </form>
+        {% endif %}
+        &nbsp;|&nbsp;
         LIVE {{ "✅ zapisany" if has_live else "— brak" }}
+        {% if has_live %}
+        <form method="post" action="{{ url_for('api_keys.delete') }}" style="display:inline">
+            <input type="hidden" name="environment" value="live">
+            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">Usuń</button>
+        </form>
+        {% endif %}
     </p>
 
     <form method="post" action="{{ url_for('api_keys.save') }}" class="auth-form">

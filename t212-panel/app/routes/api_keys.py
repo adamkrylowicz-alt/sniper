@@ -74,3 +74,24 @@ def save():
     db.session.commit()
 
     return redirect(url_for("api_keys.view"))
+
+
+@api_keys_bp.route("/delete", methods=["POST"])
+@login_required
+def delete():
+    """
+    Kasuje zapisany klucz dla danego środowiska (demo/live) - Adam,
+    2026-08-06, przy okazji migracji prod/dev na osobne konta T212 ("dodaj
+    opcje kasowania kluczy api do trading212 demo i real"). Samo skasowanie
+    NIE dotyka is_bot_active/is_active w ustawieniach silników - jeśli bot
+    był aktywny z tym kluczem, poświadczenia w pamięci (bot_credentials)
+    zostają aż do restartu appki/deaktywacji, ale kolejny reconcile()/tick()
+    wymagający ŚWIEŻEGO odczytu klucza (np. po restarcie) po prostu nic nie
+    znajdzie - to ten sam, już istniejący fail-safe co brak klucza od zawsze.
+    """
+    user_id = current_user_id()
+    environment = request.form.get("environment")
+    if environment in ("demo", "live"):
+        ApiKeySet.query.filter_by(user_id=user_id, environment=environment).delete()
+        db.session.commit()
+    return redirect(url_for("api_keys.view"))

@@ -82,6 +82,13 @@ class Config:
     TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+    # Link "DEV" w topbarze (2026-08-06, Adam: "wyobraź sobie że cały dev to
+    # jedna nowa zakładka") - ustawiane TYLKO w .env prod, wskazuje na
+    # instancję dev (na razie LAN, docelowo subdomena publiczna przez NPM).
+    # Brak wartości (dev's .env jej nie ustawia) = zakładka po prostu się nie
+    # renderuje - dev nie pokazuje linku do samego siebie.
+    DEV_LINK_URL = os.environ.get("DEV_LINK_URL")
+
     # --- TYMCZASOWE, DO USUNIĘCIA po zbudowaniu auth.py ---------------------
     # Zanim istnieje logowanie użytkownika (i tym samym hasło do odszyfrowania
     # master_key przez cipher.py), testujemy scalping.py z kluczem demo

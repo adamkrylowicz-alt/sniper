@@ -1103,6 +1103,12 @@ img.tile__logo {
 }
 .auth-form__submit:hover { background: rgba(168, 85, 255, 0.14); box-shadow: 0 0 10px var(--accent-glow); }
 
+/* Wariant "kasowanie" (Usuń klucz API itp.) - czerwony zamiast bursztynowego
+   akcentu, inline zamiast block (obok tekstu statusu, nie osobna sekcja). */
+.auth-form__submit--danger { border-color: var(--sell-red); color: var(--sell-red); }
+.auth-form__submit--danger:hover { background: rgba(239, 68, 68, 0.14); box-shadow: 0 0 10px var(--sell-red); }
+.auth-form__submit--inline { display: inline-block; margin-top: 0; padding: 2px 10px; font-size: 11px; }
+
 /* Przypięty na stałe do dołu viewportu (nie tylko sekcji) - na życzenie
    Adama, żeby przy długiej stronie (Bot: dużo pól ustawień + dziennik pod
    spodem) nie trzeba było scrollować z powrotem do góry/środka po kliknięcie
