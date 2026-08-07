@@ -337,6 +337,22 @@ ATR_PERIOD = 14
 ATR_LOOKBACK_DAYS = ATR_PERIOD + 5  # bufor - swiece dzienne maja dziury (weekendy/swieta)
 ATR_STOP_MULTIPLIER = Decimal("1.8")
 
+# Dedykowany fallback (CELOWO nie RiskSettings.stop_loss_pct) dla pozycji
+# chronionych przez „Tylko stop-loss”/ręczną adopcję - dodane 2026-08-07,
+# Adam znalazł że adoptowana FPp_EQ miała ZERO ochrony dopóki cena nie
+# urośnie o 2*take_profit_step_pct (u niego 0.4%) - w tym trybie dca_level
+# zostaje na zawsze 0 (DCA wyłączone), więc stary wyjątek „wyczerpane DCA”
+# (dca_level == max_dca_levels-1) nigdy się nie odpala. Używany TYLKO gdy
+# ATR niedostępny (normalnie floor idzie z ATR*1.8 - realna zmienność
+# instrumentu, ten % to tylko siatka bezpieczeństwa gdy danych brak).
+# Osobna stała od stop_loss_pct (2%, używana przez bota do własnych,
+# algorytmicznych wejść/DCA, tuned/backtestowana) - inny cel: tu chodzi o
+# jednorazową ręczną ochronę konkretnej, świadomie wskazanej pozycji, nie o
+# parametr strategii scalpingowej. Adam poprosił o -5% po pytaniu „jak inni
+# robią” - rozsądny, szeroki fallback dla pojedynczej blue-chip pozycji
+# (TotalEnergies), zero wpływu na resztę bota.
+MANUAL_PROTECTION_FALLBACK_PCT = Decimal("0.05")
+
 
 def _compute_atr(candles: list[dict] | None, period: int = ATR_PERIOD) -> Decimal | None:
     """
@@ -1096,6 +1112,17 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
        2 progi zysku - bez tego taka pozycja mogła utknąć BEZ ŻADNEJ ochrony
        na czas nieokreślony (znalezione backtestem: PRXa_EQ/MCp_EQ/SAPd_EQ,
        dca_level=4, -27.7%/-18.1%/-13.7%, zero stop_target_price).
+    5b. TEN SAM wyjątek rozszerzony (dodane 2026-08-07, Adam po ręcznej
+        adopcji FPp_EQ na koncie LIVE) o `settings.stop_loss_only_mode` -
+        w tym trybie DCA jest permanentnie wyłączone, więc dca_level ZAWSZE
+        zostaje 0 i warunek "wyczerpane DCA" z punktu 5 nigdy się nie
+        spełnia - pozycja adoptowana ręcznie (bez wcześniejszej pozycji
+        bota) siedziałaby BEZ ŻADNEGO stopu do czasu aż cena sama urośnie
+        o 2 progi, dokładnie ten sam problem co w punkcie 5, tylko innym
+        mechanizmem. Fallback % dla tej gałęzi to CELOWO osobna stała
+        (MANUAL_PROTECTION_FALLBACK_PCT, -5%), nie RiskSettings.stop_loss_pct
+        (2%, tuned/backtestowany dla algorytmicznych wejść bota) - ATR*1.8
+        nadal ma priorytet gdy dostępne, ten % to tylko siatka bezpieczeństwa.
 
     Migracja ze starego dwunożnego OCO: jeśli pozycja ma jeszcze
     trade.sell_order_id (LIMIT SELL założony PRZED przeprojektowaniem
@@ -1303,10 +1330,24 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             # (dca_level == max_dca_levels-1) i jeszcze NIGDY nie uzbrojona
             # dostaje ostatnią linię obrony OD RAZU, bez czekania na 2 progi
             # zysku, które przy wyczerpanym DCA mogą nigdy nie nadejść.
-            if trade.dca_level >= settings.max_dca_levels - 1 and trade.stop_order_id is None:
+            #
+            # ROZSZERZONE 2026-08-07 (punkt 5b w docstringu wyżej) o
+            # `settings.stop_loss_only_mode` - w tym trybie dca_level ZAWSZE
+            # zostaje 0 (DCA wyłączone), więc warunek "wyczerpane DCA" sam z
+            # siebie nigdy by się nie spełnił - ręcznie zaadoptowana pozycja
+            # (np. "Przekaż botowi") zostawałaby BEZ ŻADNEGO stopu na czas
+            # nieokreślony. Fallback % OSOBNY od stop_loss_pct - patrz
+            # MANUAL_PROTECTION_FALLBACK_PCT.
+            needs_immediate_floor = (
+                trade.dca_level >= settings.max_dca_levels - 1 or settings.stop_loss_only_mode
+            )
+            if needs_immediate_floor and trade.stop_order_id is None:
                 atr_distance = _get_atr_stop_distance(trade.ticker)
+                fallback_pct = (
+                    MANUAL_PROTECTION_FALLBACK_PCT if settings.stop_loss_only_mode else settings.stop_loss_pct
+                )
                 candidate_stop = microgrid_strategy.compute_exhausted_dca_floor(
-                    current_price, atr_distance, settings.stop_loss_pct,
+                    current_price, atr_distance, fallback_pct,
                 )
                 pending.append((trade, candidate_stop, milestone_steps, current_price))
             continue
