@@ -618,6 +618,33 @@ def _portfolio_quantities(client: T212Client) -> dict[str, Decimal]:
     return {p["ticker"]: Decimal(str(p.get("quantity", 0))) for p in portfolio}
 
 
+def _portfolio_positions(client: T212Client) -> dict[str, dict]:
+    """
+    Jak _portfolio_quantities() wyżej, ale zwraca też averagePrice - dodane
+    2026-08-07 dla _manage_trailing_exit() (Adam: "popraw żeby przeliczał
+    average_price przy dokupieniu"). T212 sam liczy poprawną, uśrednioną
+    cenę zakupu po dokupieniu (uwzględnia FX/opłaty lepiej niż my byśmy
+    ręcznie przeliczali z samej ilości) - więc przy wykryciu wzrostu ilości
+    (manualne dokupienie poza botem) bierzemy JEGO averagePrice wprost,
+    zamiast liczyć własną średnią ważoną. Osobna funkcja (nie rozszerzenie
+    _portfolio_quantities) żeby nie dotykać 3 pozostałych wywołań tamtej
+    funkcji (_confirm_buy_fill/_retry_pending_buys/_confirm_dca_fills), które
+    potrzebują tylko ilości.
+    """
+    portfolio = client.get_portfolio()
+    result: dict[str, dict] = {}
+    for p in portfolio:
+        ticker = p.get("ticker")
+        if not ticker:
+            continue
+        avg_price = p.get("averagePrice")
+        result[ticker] = {
+            "quantity": Decimal(str(p.get("quantity", 0))),
+            "average_price": Decimal(str(avg_price)) if avg_price is not None else None,
+        }
+    return result
+
+
 def _bump_retry(user_id: int, trade: ActiveTrade, reason: str) -> None:
     trade.sell_retry_count += 1
     trade.next_sell_retry_at = dt.datetime.utcnow() + _next_retry_delay(trade.sell_retry_count)
@@ -1156,10 +1183,17 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
     # co _retry_pending_sells::_portfolio_quantities) - gdy się nie uda
     # (429/inny błąd), CICHY fallback: pomijamy tę detekcję na tym ticku,
     # reszta logiki działa jak dotychczas.
+    # _portfolio_positions() (nie _portfolio_quantities) - potrzebujemy też
+    # averagePrice z T212 do przeliczenia trade.average_price przy manualnym
+    # dokupieniu, patrz sync niżej (dodane 2026-08-07).
     try:
-        owned_map = _portfolio_quantities(client)
+        positions_map = _portfolio_positions(client)
     except T212APIError:
-        owned_map = None
+        positions_map = None
+    owned_map = (
+        {ticker: pos["quantity"] for ticker, pos in positions_map.items()}
+        if positions_map is not None else None
+    )
 
     # PRIORYTET wg pilności (dodane 2026-07-27, na życzenie Adama - "musisz
     # wymyślec jak zrobić żeby taka pozycja miała priorytet, to chroni
@@ -1259,12 +1293,26 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         actual_owned = owned_map.get(trade.ticker) if owned_map is not None else None
         if actual_owned is not None and actual_owned != trade.quantity:
             old_quantity = trade.quantity
+            old_average_price = trade.average_price
+            price_note = ""
+            # Przeliczenie average_price TYLKO przy wzroście (dokupienie) -
+            # dodane 2026-08-07 (Adam: "popraw żeby przeliczał average_price
+            # przy dokupieniu"). Przy spadku (częściowa sprzedaż) średnia
+            # cena POZOSTAŁYCH udziałów się nie zmienia (standardowa
+            # księgowość average-cost), więc zostaje bez zmian. Bierzemy
+            # averagePrice WPROST z T212 (już uwzględnia FX/opłaty poprawnie)
+            # zamiast liczyć własną średnią ważoną z nieznaną ceną dokupienia.
+            if actual_owned > old_quantity and positions_map is not None:
+                new_average_price = positions_map.get(trade.ticker, {}).get("average_price")
+                if new_average_price is not None and new_average_price > 0:
+                    trade.average_price = new_average_price
+                    price_note = f", average_price {old_average_price} -> {new_average_price} (dokupienie)"
             trade.quantity = actual_owned
             trade.allocated_value = (actual_owned * trade.average_price).quantize(Decimal("0.01"))
             db.session.commit()
             _log(
                 user_id, "INFO",
-                f"{trade.ticker}: ilość zsynchronizowana z T212 ({old_quantity} -> {actual_owned}) - "
+                f"{trade.ticker}: ilość zsynchronizowana z T212 ({old_quantity} -> {actual_owned}){price_note} - "
                 "wykryto ręczną zmianę pozycji poza botem (albo rozjazd po cancel/replace), trailing "
                 "STOP dalej liczony/wystawiany na aktualnej, prawdziwej ilości.",
                 trade.position_group_id,
