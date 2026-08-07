@@ -73,6 +73,18 @@ def compute_milestone_steps(ref_price: Decimal, current_price: Decimal, step: De
     return int(profit_pct / step) if profit_pct > 0 else 0
 
 
+def compute_milestone_steps_abs(ref_price: Decimal, current_price: Decimal, step_abs: Decimal) -> int:
+    """
+    Wariant compute_milestone_steps() w WALUCIE zamiast %, dodany 2026-08-07
+    do backtestu (Adam, po realnym przypadku Tesli: +2$ nie starczyło żeby
+    uzbroić/zacisnąć stop, bo próg 2*step% na drogiej akcji to więcej niż 2$)
+    - `step_abs` to stała kwota (np. 1 albo 2, w walucie tickera), NIE procent,
+    więc próg uzbrojenia nie skaluje się z ceną akcji jak przy %.
+    """
+    diff = current_price - ref_price
+    return int(diff / step_abs) if diff > 0 else 0
+
+
 def compute_exhausted_dca_floor(
     current_price: Decimal,
     atr_distance: Decimal | None,
@@ -143,6 +155,43 @@ def compute_trailing_stop(
     candidate_stop = max(existing_stop_target, continuous_target)
 
     min_requote_threshold = existing_stop_target * (1 + step * min_requote_fraction)
+    if candidate_stop < min_requote_threshold:
+        return None
+
+    return candidate_stop
+
+
+def compute_trailing_stop_abs(
+    is_first_arm: bool,
+    ref_price: Decimal,
+    current_price: Decimal,
+    step_abs: Decimal,
+    existing_stop_target: Decimal | None,
+    atr_distance: Decimal | None,
+    stop_loss_pct: Decimal,
+    min_requote_fraction: Decimal,
+) -> Decimal | None:
+    """
+    Wariant compute_trailing_stop() z KWOTĄ zamiast % dla "jak ciasno gonimy
+    szczyt" (2026-08-07, backtest na życzenie Adama - patrz
+    compute_milestone_steps_abs). Floor przy pierwszym uzbrojeniu (ATR/
+    stop_loss_pct) zostaje BEZ ZMIAN - to osobna siatka bezpieczeństwa, nie
+    to co testujemy; zmienia się tylko krok trailingu/próg requote.
+    """
+    if is_first_arm:
+        floor_anchor = max(ref_price, current_price)
+        if atr_distance is not None:
+            floor_candidate = (floor_anchor - atr_distance).quantize(Decimal("0.0001"))
+        else:
+            floor_candidate = (floor_anchor * (1 - stop_loss_pct)).quantize(Decimal("0.0001"))
+        tight_target_now = (current_price - step_abs).quantize(Decimal("0.0001"))
+        return max(floor_candidate, tight_target_now)
+
+    assert existing_stop_target is not None, "already-armed trade must have a stop_target_price"
+    continuous_target = (current_price - step_abs).quantize(Decimal("0.0001"))
+    candidate_stop = max(existing_stop_target, continuous_target)
+
+    min_requote_threshold = existing_stop_target + step_abs * min_requote_fraction
     if candidate_stop < min_requote_threshold:
         return None
 

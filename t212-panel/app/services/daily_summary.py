@@ -24,17 +24,36 @@ from __future__ import annotations
 
 import datetime as dt
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 
 import pytz
+from flask import current_app
 
 from ..extensions import db
 from ..models import ActiveTrade, EODSettings, EODTrade, RiskSettings, SignalSettings, SignalTrade, User, UserSettings
 from ..routes.api_keys import get_decrypted_credentials
-from ..utils import current_environment
+from ..utils import current_environment, telegram_env_tag
 from . import bot_credentials, price_feed, telegram_notify
 from .t212_client import T212APIError, T212Client
 
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
+
+# Archiwum wysłanych raportów dziennych (dodane 2026-08-07, Adam: "niech się
+# te raporty z telegrama gdzieś zapisują w archiwum") - do tej pory treść
+# raportu istniała TYLKO jako wysłana wiadomość Telegram, nigdzie lokalnie -
+# nie dało się później sprawdzić "co dokładnie wysłał raport z X", trzeba
+# było przeliczać od nowa z bazy (i to tylko dla danych które NIE wygasają,
+# jak zrealizowane 24h - już następnego dnia bezpowrotnie tracone). Plik
+# tekstowy, append-only, jeden wpis na wysłany raport - świadomie NIE baza
+# (to log do przeglądania, nie coś co appka odpytuje).
+DAILY_REPORTS_ARCHIVE_FILENAME = "daily_reports_archive.log"
+
+
+def _archive_report(text: str) -> None:
+    path = Path(current_app.instance_path) / DAILY_REPORTS_ARCHIVE_FILENAME
+    timestamp = dt.datetime.now(_AMSTERDAM_TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{'=' * 60}\n{timestamp}\n{'=' * 60}\n{text}\n\n")
 
 
 def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper") -> dict:
@@ -150,7 +169,7 @@ def send_daily_summary(app, label: str) -> None:
             total_unrealized = micro["unrealized"] + (signal["unrealized"] if signal else Decimal("0")) + (eod["unrealized"] if eod else Decimal("0"))
 
             now_local = dt.datetime.now(_AMSTERDAM_TZ).strftime("%d.%m %H:%M")
-            lines = [f"📊 SNAJPER — podsumowanie {label} ({now_local})", ""]
+            lines = [f"📊 [{telegram_env_tag(user.id)}] SNAJPER — podsumowanie {label} ({now_local})", ""]
 
             if account_total is not None:
                 account_line = f"Całość konta: {account_total:.2f}€"
@@ -177,4 +196,6 @@ def send_daily_summary(app, label: str) -> None:
             lines.append("")
             lines.append(f"RAZEM 24h: {total_realized + total_unrealized:+.2f}€ (zrealizowane {total_realized:+.2f}€ + niezrealizowane {total_unrealized:+.2f}€)")
 
-            telegram_notify.send_telegram_message(token, chat_id, "\n".join(lines))
+            report_text = "\n".join(lines)
+            _archive_report(report_text)
+            telegram_notify.send_telegram_message(token, chat_id, report_text)

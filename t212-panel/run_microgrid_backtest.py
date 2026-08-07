@@ -124,6 +124,13 @@ def main() -> None:
     parser.add_argument("--dca-trigger-pct", type=Decimal, default=Decimal("0.05"))
     parser.add_argument("--dca-scenario", default="1,1,1,1,1")
     parser.add_argument("--take-profit-step-pct", type=Decimal, default=Decimal("0.003"))
+    parser.add_argument(
+        "--take-profit-step-abs", type=Decimal, default=None,
+        help="Testowy wariant (2026-08-07): próg uzbrojenia/trailing w KWOCIE "
+             "(np. 1 albo 2, w walucie tickera) zamiast w %. Gdy podane, "
+             "NADPISUJE --take-profit-step-pct dla tego przebiegu - patrz "
+             "microgrid_strategy.compute_milestone_steps_abs/compute_trailing_stop_abs.",
+    )
     parser.add_argument("--stop-loss-pct", type=Decimal, default=Decimal("0.02"))
     parser.add_argument("--force-refresh", action="store_true")
     parser.add_argument("--csv", default=None)
@@ -165,6 +172,7 @@ def main() -> None:
         max_dca_levels=args.max_dca_levels, dca_trigger_pct=args.dca_trigger_pct,
         dca_scenario=args.dca_scenario, take_profit_step_pct=args.take_profit_step_pct,
         stop_loss_pct=args.stop_loss_pct, equity_sizing_enabled=args.equity_scaling,
+        take_profit_step_abs=args.take_profit_step_abs,
     )
 
     with app_context():

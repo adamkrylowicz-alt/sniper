@@ -169,7 +169,7 @@ from ..extensions import db
 from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from ..utils import current_environment
+from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
 from . import bot_credentials, bot_entry_filters, diagnostics, mailer, price_feed, price_watchdog, telegram_notify
 from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
@@ -270,6 +270,21 @@ from .market_hours import (  # noqa: E402
 # spójności.
 FX_FEE_PCT = Decimal("0.0015")
 FX_ROUND_TRIP_PCT = FX_FEE_PCT * 2
+
+# Francuski podatek od transakcji finansowych (FTT/TTF) - dodane 2026-08-07
+# (Adam: "trzeba to doliczać do kosztów żeby nie tracić"). W ODRÓŻNIENIU od
+# FX_ROUND_TRIP_PCT wyżej - nalicza się TYLKO przy KUPNIE (nie x2, sprzedaż
+# jest wolna od podatku), więc bez FX_ROUND_TRIP_PCT-owego podwojenia. Stawka
+# 0.4% (podniesiona z 0.3% w kwietniu 2025, potwierdzone wyszukiwaniem
+# 2026-08-07 - Keytrade Bank/shares.io) dotyczy zakupu akcji francuskich
+# spółek o kapitalizacji >1mld EUR przez T212. CELOWO twarda lista tickerów
+# (nie heurystyka po samym sufiksie giełdy Paryż "p_EQ") - nie każda spółka
+# na Euronext Paris ma kapitalizację >1mld€, więc zgadywanie po sufiksie
+# dawałoby fałszywe pozytywy. Rozszerzać ręcznie w miarę dodawania kolejnych
+# francuskich spółek do list botów (FPp_EQ=TotalEnergies, SUp_EQ=Schneider
+# Electric - oba potwierdzone jako CAC 40, kwalifikują się).
+FR_FTT_PCT = Decimal("0.004")
+FR_FTT_TICKERS = frozenset({"FPp_EQ", "SUp_EQ"})
 
 # Ciagly trailing (przeprojektowane 2026-07-22, patrz _manage_trailing_exit) -
 # minimalna poprawa wzgledem AKTUALNEGO stop_target_price zeby w ogole
@@ -491,6 +506,140 @@ def _next_retry_delay(retry_count: int) -> dt.timedelta:
 _entry_fail_backoff: dict[tuple[int, str], tuple[int, dt.datetime]] = {}
 ENTRY_FAIL_BACKOFF_MINUTES = (2, 5, 15, 30, 60)
 
+# Cooldown dla sygnałów "kup ręcznie" na Telegramie (stop_loss_only_mode,
+# dodane 2026-08-07) - bez tego ten sam najlepszy kandydat wysyłałby
+# identyczny sygnał co tick (60s) dopóki Adam go ręcznie nie kupi/przekaże
+# botowi (dopiero wtedy staje się "już otwarty" i znika z eligible). W
+# pamięci procesu, per (user_id, ticker), restart zeruje - akceptowalne,
+# najwyżej jeden dodatkowy sygnał zaraz po restarcie.
+_entry_signal_sent_at: dict[tuple[int, str], dt.datetime] = {}
+ENTRY_SIGNAL_COOLDOWN_MINUTES = 60
+
+# "nie" na Telegramie (Adam, 2026-08-07: "jak napiszę nie niech mi go nie
+# podpowiada przez 5min") - odrzucenie AKTUALNIE zasugerowanego kandydata na
+# krótko, żeby _process_entries zaproponował na kolejnym ticku NASTĘPNEGO w
+# kolejności zamiast wisieć na tym samym (60-minutowy ENTRY_SIGNAL_COOLDOWN
+# wyżej to co innego - chroni przed spamem TEGO SAMEGO tickera, nie daje
+# szansy zobaczyć alternatywy). _last_signal_ticker pamięta co ostatnio
+# poszło na Telegram, żeby telegram_commands.py::poll_and_handle wiedziało
+# do czego "nie" się odnosi (Telegram nie ma tu wątków/reply-context).
+_last_signal_ticker: dict[int, str] = {}
+_entry_signal_rejected_until: dict[tuple[int, str], dt.datetime] = {}
+ENTRY_SIGNAL_REJECT_MINUTES = 5
+
+
+def reject_current_signal(user_id: int) -> str | None:
+    """
+    Wołane z telegram_commands.py gdy Adam odpisze "nie" - wyklucza ostatnio
+    zasugerowanego tickera z eligible (patrz _process_entries) na
+    ENTRY_SIGNAL_REJECT_MINUTES. Zwraca display name odrzuconego tickera do
+    potwierdzenia na Telegramie, albo None gdy nic nie było ostatnio
+    zasugerowane (np. "nie" napisane bez wcześniejszego sygnału).
+    """
+    ticker = _last_signal_ticker.get(user_id)
+    if ticker is None:
+        return None
+    _entry_signal_rejected_until[(user_id, ticker)] = dt.datetime.utcnow() + dt.timedelta(minutes=ENTRY_SIGNAL_REJECT_MINUTES)
+    return ticker_display_name(ticker)
+
+
+def adopt_confirmed_signal(user_id: int) -> tuple[bool, str]:
+    """
+    Wołane z telegram_commands.py gdy Adam odpisze "kupiłem" po sygnale
+    (2026-08-07: "bot dał sygnał, kupiłem, niech on to zrozumie słowo
+    kupiłem") - to samo co przycisk "Przekaż botowi" (routes/bot.py::
+    adopt_position), tylko bez requestu/sesji przeglądarki (Telegram poll
+    nie ma flask.g) - stąd master_key z bot_credentials, nie
+    current_master_key(). Ticker brany z _last_signal_ticker (ten sam
+    mechanizm co reject_current_signal) - "kupiłem" bez wcześniejszego
+    sygnału nie ma do czego się odnieść. BotAsset MUSI już istnieć (sygnał
+    leci tylko dla tickerów z listy bota), więc w odróżnieniu od
+    routes/bot.py::adopt_position nie ma tu gałęzi "podaj entry_amount".
+    """
+    ticker = _last_signal_ticker.get(user_id)
+    if ticker is None:
+        return False, "Nie było żadnego świeżego sygnału do potwierdzenia."
+
+    env = current_environment(user_id)
+    instrument = Instrument.query.get(ticker)
+    if instrument is None:
+        return False, f"{ticker} nie znaleziony w lokalnej bazie instrumentów."
+
+    if ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first() is not None:
+        return False, f"{ticker_display_name(ticker)} jest już zarządzany przez bota."
+
+    other = held_by_other_engine(user_id, ticker, "bot")
+    if other is not None:
+        return False, f"{ticker_display_name(ticker)} jest już zarządzany przez {other} - zwolnij go tam najpierw."
+
+    master_key = bot_credentials.get_master_key(user_id)
+    if master_key is None:
+        return False, "Bot nie ma aktywnych poświadczeń (aktywuj go w appce)."
+    creds = get_decrypted_credentials(user_id, master_key, env)
+    if creds is None:
+        return False, "Brak zapisanego klucza API."
+    client = T212Client(
+        api_key=creds["api_key"], api_secret=creds["api_secret"], environment=env,
+        engine="bot", user_id=user_id,
+    )
+
+    try:
+        position = client.get_position(ticker)
+    except T212APIError as exc:
+        return False, f"Błąd T212: {exc}"
+
+    if position is None:
+        return False, f"Nie widzę {ticker_display_name(ticker)} w portfelu T212 - kupno jeszcze się nie rozliczyło? Spróbuj za chwilę."
+
+    try:
+        quantity = Decimal(str(position["quantity"]))
+        avg_price = Decimal(str(position["averagePrice"]))
+    except (KeyError, InvalidOperation, TypeError):
+        return False, "Nieprawidłowe dane pozycji zwrócone przez T212."
+
+    if quantity <= 0:
+        return False, f"{ticker_display_name(ticker)}: ilość w portfelu wynosi 0."
+
+    asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first()
+    if asset is None:
+        return False, f"{ticker} nie jest już na liście bota (usunięty?) - dodaj go ręcznie w appce."
+
+    position_group_id = str(uuid.uuid4())
+    trade = ActiveTrade(
+        user_id=user_id, bot_asset_id=asset.id, position_group_id=position_group_id,
+        ticker=ticker, currency=instrument.currency_code or "USD",
+        buy_order_id=f"ADOPTED-TG-{uuid.uuid4()}",
+        buy_price=avg_price, quantity=quantity, allocated_value=quantity * avg_price,
+        average_price=avg_price, dca_level=0, grid_anchor_price=avg_price,
+        baseline_owned_quantity=Decimal("0"),
+        status="OPEN", is_paper=False, buy_confirmed=True,
+        environment=env,
+    )
+    db.session.add(trade)
+    db.session.commit()
+
+    _log(
+        user_id, "INFO",
+        f"{ticker}: pozycja adoptowana ręcznie z portfela T212 przez Telegram ({quantity} @ ~{avg_price}) - "
+        "od teraz zarządzana przez trailing exit bota.",
+        position_group_id,
+    )
+
+    settings = RiskSettings.query.filter_by(user_id=user_id).first()
+    if settings is not None:
+        try:
+            _manage_trailing_exit(user_id, client, settings)
+        except Exception as exc:  # noqa: BLE001 - najlepsza proba, nie krytyczne
+            _log(
+                user_id, "ERROR",
+                f"{ticker}: natychmiastowy trailing check po adopcji (Telegram) nie powiódł się ({exc}).",
+                position_group_id,
+            )
+
+    _entry_signal_sent_at.pop((user_id, ticker), None)
+    _last_signal_ticker.pop(user_id, None)
+    return True, f"{ticker_display_name(ticker)}: przejąłem ({quantity} @ ~{avg_price}). Pilnuję teraz trailing stopu."
+
 
 def _next_entry_fail_delay(consecutive_fails: int) -> dt.timedelta:
     idx = min(consecutive_fails - 1, len(ENTRY_FAIL_BACKOFF_MINUTES) - 1)
@@ -529,7 +678,7 @@ def _log(user_id: int, action_type: str, message: str, position_group_id: str | 
         _log_error_to_file(user_id, message)
         telegram_notify.send_telegram_message(
             current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
-            f"🔴 Micro-Grid ERROR (user {user_id}): {message}",
+            f"🔴 [{telegram_env_tag(user_id)}] Micro-Grid ERROR (user {user_id}): {humanize_ticker_prefix(message)}",
         )
         return
     db.session.add(BotAuditLog(
@@ -1369,6 +1518,13 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         ref_price = trade.average_price
         if trade.currency == "USD" and settings.fx_cost_adjustment_enabled:
             ref_price = trade.average_price * (1 + settings.fx_fee_pct * 2)
+        # Francuski FTT (2026-08-07, patrz FR_FTT_PCT/FR_FTT_TICKERS wyżej) -
+        # jednorazowo (kupno, nie x2 jak FX round-trip), NIEZALEŻNIE od
+        # powyższego bloku FX (obie stawki mogą się nałożyć, jeśli kiedyś
+        # trafi się francuski ticker rozliczany nie w EUR - dziś nie ma
+        # takiego przypadku, ale nie ma powodu tego wykluczać na sztywno).
+        if trade.ticker in FR_FTT_TICKERS:
+            ref_price = ref_price * (1 + FR_FTT_PCT)
 
         milestone_steps = microgrid_strategy.compute_milestone_steps(ref_price, current_price, step)
         if milestone_steps < 2:
@@ -2202,9 +2358,15 @@ def tick(app) -> None:
                                 _manage_trailing_exit(user_id, client, settings)
                             _trigger_dca_buys(user_id, client, settings, current_equity)
 
-            if skip_new_entries or settings.stop_loss_only_mode:
+            if skip_new_entries:
                 continue
 
+            # stop_loss_only_mode (2026-08-07, Adam po serii nieudanych zleceń
+            # z powodu za małego entry_amount: "niech tylko wysyła sygnały co
+            # kupić, ja kupię ręcznie i mu przekażę do zarządzania") - w tym
+            # trybie _process_entries dalej OCENIA kandydatów (scoring), ale
+            # NIE wystawia żadnego zlecenia - patrz gałąź stop_loss_only_mode
+            # na końcu tamtej funkcji, wysyła zamiast tego sygnał na Telegram.
             _process_entries(user_id, settings, current_equity)
 
 
@@ -2268,6 +2430,9 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
         backoff = _entry_fail_backoff.get((user_id, asset.ticker))
         if backoff is not None and now < backoff[1]:
             continue  # asset "w pauzie" po serii nieudanych prób
+        rejected_until = _entry_signal_rejected_until.get((user_id, asset.ticker))
+        if rejected_until is not None and now < rejected_until:
+            continue  # Adam odpowiedział "nie" na sygnał - patrz reject_current_signal()
         eligible.append(asset)
 
     if not eligible:
@@ -2313,6 +2478,35 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
         f"Wejścia: {stats.summary()}. Najlepszy kandydat: {best_ticker} "
         f"(score {scored[0][1]:.3f}).",
     )
+
+    # stop_loss_only_mode (2026-08-07, Adam: "niech tylko wysyła sygnały co
+    # kupić, ja kupię ręcznie i mu przekażę do zarządzania") - scoring wyżej
+    # liczy się jak zwykle, ale ZAMIAST wysyłać zlecenie do T212 (realne
+    # pieniądze, konto live) tylko informujemy na Telegramie o najlepszym
+    # kandydacie. Adam kupuje ręcznie w T212/appce, potem "Przekaż botowi"
+    # (routes/bot.py::adopt_position) oddaje pozycję pod trailing stop -
+    # dokładnie ta sama ścieżka co ręczna adopcja dziś. Cooldown (patrz
+    # ENTRY_SIGNAL_COOLDOWN_MINUTES) - bez niego identyczny sygnał leciałby
+    # co tick (60s) dopóki ticker nie zniknie z eligible (czyli dopóki ktoś
+    # go faktycznie nie kupi/przekaże).
+    if settings.stop_loss_only_mode:
+        best_asset = scored[0][0]
+        key = (user_id, best_ticker)
+        now = dt.datetime.utcnow()
+        last_sent = _entry_signal_sent_at.get(key)
+        if last_sent is None or (now - last_sent) >= dt.timedelta(minutes=ENTRY_SIGNAL_COOLDOWN_MINUTES):
+            _entry_signal_sent_at[key] = now
+            _last_signal_ticker[user_id] = best_ticker
+            name = ticker_display_name(best_ticker)
+            telegram_notify.send_telegram_message(
+                current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
+                f"🟢 [{telegram_env_tag(user_id)}] Micro-Grid SYGNAŁ (user {user_id}): {name} ({best_ticker}) - "
+                f"score {scored[0][1]:.3f}, sugerowana kwota wejścia {best_asset.entry_amount}"
+                f" {best_asset.currency}. Kup ręcznie, potem \"Przekaż botowi\" na stronie "
+                f"instrumentu, żeby przejął trailing stop. Odpisz \"nie\", żeby nie "
+                f"podpowiadał tego przez {ENTRY_SIGNAL_REJECT_MINUTES} min.",
+            )
+        return
 
     # Krok 3: próbujemy od najlepszego. NAJWYŻEJ JEDNO wejście na tick, ale
     # tylko jeśli faktycznie dotarło do T212 (return dopiero gdy

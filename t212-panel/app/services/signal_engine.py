@@ -75,7 +75,7 @@ from ..extensions import db
 from ..models import SignalAsset, SignalAuditLog, SignalSettings, SignalTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from ..utils import current_environment
+from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag
 from . import bot_credentials, diagnostics, market_hours, price_feed, price_watchdog, telegram_notify
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import signal_strategy
@@ -184,7 +184,7 @@ def _log(user_id: int, action_type: str, message: str) -> None:
         current_app.logger.error("[signal user=%s] %s", user_id, message)
         telegram_notify.send_telegram_message(
             current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
-            f"🔴 Sygnał ERROR (user {user_id}): {message}",
+            f"🔴 [{telegram_env_tag(user_id)}] Sygnał ERROR (user {user_id}): {humanize_ticker_prefix(message)}",
         )
     entry = SignalAuditLog(
         user_id=user_id, action_type=action_type, message=message,

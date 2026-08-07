@@ -97,6 +97,12 @@ class SettingsStub:
     stop_loss_pct: Decimal
     max_spread_pct: Decimal = Decimal("0")  # bez znaczenia - quote_getter=None -> fail-open i tak
     equity_sizing_enabled: bool = False
+    # Wariant testowy 2026-08-07 (Adam, po realnym przypadku Tesli - patrz
+    # microgrid_strategy.compute_milestone_steps_abs) - gdy USTAWIONE, próg
+    # uzbrojenia/trailing liczony jest w KWOCIE (np. 1 albo 2 w walucie
+    # tickera) zamiast w %, patrz gałąź niżej w run_microgrid_backtest().
+    # None (domyślnie) = stare zachowanie, zero zmiany.
+    take_profit_step_abs: Decimal | None = None
 
 
 @dataclass
@@ -265,7 +271,12 @@ def run_microgrid_backtest(
                 pos.average_price * (1 + FX_ROUND_TRIP_PCT) if pos.currency == "USD"
                 else pos.average_price
             )
-            milestone_steps = microgrid_strategy.compute_milestone_steps(ref_price, price, settings.take_profit_step_pct)
+            if settings.take_profit_step_abs is not None:
+                milestone_steps = microgrid_strategy.compute_milestone_steps_abs(
+                    ref_price, price, settings.take_profit_step_abs,
+                )
+            else:
+                milestone_steps = microgrid_strategy.compute_milestone_steps(ref_price, price, settings.take_profit_step_pct)
             if milestone_steps >= 2:
                 is_first_arm = pos.stop_target_price is None
                 atr_distance = None
@@ -273,12 +284,20 @@ def run_microgrid_backtest(
                     atr = _compute_atr(windows[ticker], ATR_PERIOD)
                     if atr is not None:
                         atr_distance = atr * ATR_STOP_MULTIPLIER
-                candidate_stop = microgrid_strategy.compute_trailing_stop(
-                    is_first_arm=is_first_arm, ref_price=ref_price, current_price=price,
-                    step=settings.take_profit_step_pct, existing_stop_target=pos.stop_target_price,
-                    atr_distance=atr_distance, stop_loss_pct=settings.stop_loss_pct,
-                    min_requote_fraction=MIN_TRAIL_REQUOTE_FRACTION,
-                )
+                if settings.take_profit_step_abs is not None:
+                    candidate_stop = microgrid_strategy.compute_trailing_stop_abs(
+                        is_first_arm=is_first_arm, ref_price=ref_price, current_price=price,
+                        step_abs=settings.take_profit_step_abs, existing_stop_target=pos.stop_target_price,
+                        atr_distance=atr_distance, stop_loss_pct=settings.stop_loss_pct,
+                        min_requote_fraction=MIN_TRAIL_REQUOTE_FRACTION,
+                    )
+                else:
+                    candidate_stop = microgrid_strategy.compute_trailing_stop(
+                        is_first_arm=is_first_arm, ref_price=ref_price, current_price=price,
+                        step=settings.take_profit_step_pct, existing_stop_target=pos.stop_target_price,
+                        atr_distance=atr_distance, stop_loss_pct=settings.stop_loss_pct,
+                        min_requote_fraction=MIN_TRAIL_REQUOTE_FRACTION,
+                    )
                 if candidate_stop is not None:
                     pos.stop_target_price = candidate_stop
                     pos.trail_milestone_steps = milestone_steps

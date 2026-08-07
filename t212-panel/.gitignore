@@ -1,0 +1,21 @@
+# Sekrety i stan per-instalacja - nigdy nie commitować
+.env
+instance/
+
+# Cache danych backtestów (regenerowalne przez fetch_candles, duże, per-uruchomienie)
+backtest/data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+*.egg-info/
+.venv/
+venv/
+
+# Logi
+*.log
+
+# Edytory/OS
+.DS_Store

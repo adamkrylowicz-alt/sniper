@@ -91,6 +91,46 @@ def friendly_name(name: str | None) -> str | None:
     return _LEGAL_SUFFIX_RE.sub("", name).strip()
 
 
+def ticker_display_name(ticker: str) -> str:
+    """
+    Nazwa spółki zamiast surowego tickera T212 (np. "V_US_EQ" -> "Visa") -
+    patrz friendly_name() wyżej. Fallback na surowy ticker gdy instrument
+    nie jest w lokalnym cache Instrument (nie powinno się zdarzyć dla
+    własnej listy bota, ale bez zgadywania). Przeniesione z
+    telegram_commands.py::_display_name 2026-08-07, żeby ten sam wzorzec
+    dało się użyć też w alertach ERROR silników (bot/eod/signal _log()) -
+    dotąd te alerty dalej waliły surowym tickerem na Telegramie mimo że
+    /status już to rozwiązywał.
+    """
+    from .models import Instrument
+    instrument = Instrument.query.get(ticker)
+    if instrument is None or not instrument.name:
+        return ticker
+    return friendly_name(instrument.name) or ticker
+
+
+_TICKER_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*(?:_[A-Za-z0-9]+)*):\s")
+
+
+def humanize_ticker_prefix(message: str) -> str:
+    """
+    Podmienia WIODĄCY ticker w komunikacie (wzorzec "TICKER: reszta", np.
+    "V_US_EQ: zakup nieudany...") na czytelną nazwę spółki - patrz
+    ticker_display_name(). Bez dopasowania (nie zaczyna się od tickera, albo
+    ticker nieznany w lokalnym cache) zwraca message bez zmian - celowo NIE
+    zgaduje, żeby nie namieszać w komunikatach bez tickera (np.
+    "Reconciliation: ...").
+    """
+    m = _TICKER_PREFIX_RE.match(message)
+    if not m:
+        return message
+    ticker = m.group(1)
+    name = ticker_display_name(ticker)
+    if name == ticker:
+        return message
+    return name + message[len(ticker):]
+
+
 def current_environment(user_id: int) -> str:
     """
     Zwraca "demo" albo "live" dla danego użytkownika - patrz
@@ -105,6 +145,20 @@ def current_environment(user_id: int) -> str:
 
     settings = UserSettings.query.filter_by(user_id=user_id).first()
     return settings.active_environment if settings else "demo"
+
+
+def telegram_env_tag(user_id: int) -> str:
+    """
+    Krótki, wizualnie mocny tag środowiska do KAŻDEJ wiadomości Telegram
+    (Adam, 2026-08-07: "zrób coś żeby rozróżniać konto dev od real w
+    telegramie") - dev/prod dzielą tego samego bota Telegram (@Snajper2026_
+    bot) i ten sam chat_id, więc bez tego nie dało się na pierwszy rzut oka
+    odróżnić, czy alert/sygnał dotyczy prawdziwych pieniędzy czy demo. Patrz
+    current_environment() wyżej - "live" tu ZAWSZE znaczy realne pieniądze
+    (patrz [[feedback_snajper_is_paper_trading_not_demo_flag]] w pamięci
+    Claude - is_paper_trading to coś innego, nie mylić).
+    """
+    return "💰 LIVE" if current_environment(user_id) == "live" else "🧪 DEMO"
 
 
 def avatar_hue(ticker: str) -> int:

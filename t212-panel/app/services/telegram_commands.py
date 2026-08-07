@@ -27,29 +27,14 @@ import datetime as dt
 
 import pytz
 
-from ..models import ActiveTrade, EODSettings, EODTrade, Instrument, RiskSettings, SignalSettings, SignalTrade
-from ..utils import friendly_name
-from . import daily_summary, telegram_notify
+from ..models import ActiveTrade, EODSettings, EODTrade, RiskSettings, SignalSettings, SignalTrade
+from ..utils import telegram_env_tag, ticker_display_name as _display_name
+from . import bot_engine, daily_summary, telegram_notify
 
 _last_update_id: int | None = None
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
 
 ENGINE_ICONS = {"Micro-Grid": "🔷", "Sygnał": "⚡", "EOD": "🌙"}
-
-
-def _display_name(ticker: str) -> str:
-    """
-    Nazwa spółki zamiast surowego tickera T212 (Adam, 2026-08-05: "wysylalo
-    nazwy a nie tickery... nie rozeznaje sie za bardzo") - ten sam wzorzec co
-    reszta appki (routes/*.py::friendly_name, ucina formalne końcówki typu
-    "Inc"/"SE"). Fallback na surowy ticker gdy instrument nie jest w
-    lokalnym cache (nie powinno się zdarzyć dla własnej listy bota, ale bez
-    zgadywania).
-    """
-    instrument = Instrument.query.get(ticker)
-    if instrument is None or not instrument.name:
-        return ticker
-    return friendly_name(instrument.name) or ticker
 
 
 def _status_message(user_id: int) -> str:
@@ -63,7 +48,7 @@ def _status_message(user_id: int) -> str:
     unrealized per silnik + rozpiska KAŻDEJ otwartej pozycji z jej P&L.
     """
     now = dt.datetime.now(_AMSTERDAM_TZ).strftime("%d.%m %H:%M")
-    lines = [f"🤖 SNAJPER STATUS ({now})", ""]
+    lines = [f"🤖 [{telegram_env_tag(user_id)}] SNAJPER STATUS ({now})", ""]
 
     account_total = daily_summary._account_total(user_id)
     if account_total is not None:
@@ -148,3 +133,29 @@ def poll_and_handle(app) -> None:
                 if user is None:
                     continue
                 telegram_notify.send_telegram_message(token, chat_id, _status_message(user.id))
+
+            elif text.lower() in ("kupiłem", "kupilem", "kupiłam", "kupilam"):
+                # Potwierdzenie ręcznego kupna po sygnale (Adam, 2026-08-07:
+                # "bot dał sygnał, kupiłem, niech on to zrozumie słowo
+                # kupiłem") - patrz bot_engine.py::adopt_confirmed_signal,
+                # to samo co przycisk "Przekaż botowi", tylko z Telegrama.
+                risk = RiskSettings.query.first()
+                if risk is None:
+                    continue
+                ok, msg = bot_engine.adopt_confirmed_signal(risk.user_id)
+                telegram_notify.send_telegram_message(token, chat_id, ("✅ " if ok else "⚠️ ") + msg)
+
+            elif text.lower() in ("nie", "nie.", "no"):
+                # Odrzucenie aktualnie sugerowanego sygnału wejścia (Adam,
+                # 2026-08-07) - patrz bot_engine.py::reject_current_signal.
+                risk = RiskSettings.query.first()
+                if risk is None:
+                    continue
+                rejected = bot_engine.reject_current_signal(risk.user_id)
+                if rejected is None:
+                    telegram_notify.send_telegram_message(token, chat_id, "Nie było żadnego świeżego sygnału do odrzucenia.")
+                else:
+                    telegram_notify.send_telegram_message(
+                        token, chat_id,
+                        f"OK, nie podpowiem {rejected} przez {bot_engine.ENTRY_SIGNAL_REJECT_MINUTES} min.",
+                    )
