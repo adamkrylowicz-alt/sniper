@@ -33,6 +33,39 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
     --accent-blue: #4A9EFF;
     --currency-eur: #FF9F45;
     --currency-usd: #4EA1FF;
+
+    /* Skala odstępów (2026-08-08, redesign "Signal Room" - patrz notatka
+       autorska u góry pliku) - jeden wspólny rytm zamiast osobnych, przypadkowych
+       wartości (12px/14px/16px/20px w kółko) rozsianych po całym pliku. */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+
+    /* Skala typograficzna - poprzednio prawie wszystko siedziało w wąskim
+       paśmie 10-13px bez żadnej hierarchii (nagłówek sekcji i drobny label
+       miały ten sam rozmiar). Bright/dużo-cyfr dostaje więcej powietrza -
+       to terminal tradingowy, liczby mają mieć prezencję. */
+    --text-2xs: 10px;
+    --text-xs: 11px;
+    --text-sm: 12px;
+    --text-base: 13px;
+    --text-md: 15px;
+    --text-lg: 19px;
+    --text-xl: 24px;
+
+    --radius-sm: 3px;
+    --radius-md: 6px;
+
+    /* Cień kart - dotąd jedynym śladem głębi był inset top-highlight (patrz
+       niżej); karty pływały płasko na tle bez żadnego odseparowania. */
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px -12px rgba(0, 0, 0, 0.5);
+}
+html[data-theme="light"] {
+    --shadow-card: 0 1px 2px rgba(20, 24, 27, 0.06), 0 8px 20px -14px rgba(20, 24, 27, 0.12);
 }
 
 /* Motyw jasny - nadpisuje te same zmienne na <html data-theme="light">.
@@ -91,6 +124,13 @@ html, body {
    glab, przypieta do viewportu (position: fixed), z maska zanikajaca ku
    dolowi zeby nie bila po oczach pod panelami. Tylko dark mode - na jasnym
    tle wygladalby jak brud/artefakt, nie efekt. */
+/* Wariant B (2026-08-08, patrz redesign wyżej) - płaska, wygaszona siatka
+   zamiast dawnej perspektywy 3D. Ta wersja (rotateX 62deg, scale 2.4) na
+   realnych stronach z treścią przebijała się przez karty/tekst/przyciski -
+   znalezione na żywo przez Adama ("bardzo chujowy UI"), potwierdzone
+   zrzutami ekranu przed/po. Zamysł "podłogi control roomu" zostaje, ale bez
+   agresji: brak transformacji perspektywy, gęstsza ale dużo cichsza siatka,
+   maska kołowa zamiast liniowej żeby zanikała szybciej od górnej krawędzi. */
 body::before {
     content: "";
     position: fixed;
@@ -98,13 +138,11 @@ body::before {
     z-index: -1;
     pointer-events: none;
     background-image:
-        linear-gradient(rgba(168, 85, 255, 0.3) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(168, 85, 255, 0.3) 1px, transparent 1px);
-    background-size: 44px 44px;
-    transform: perspective(420px) rotateX(62deg) scale(2.4);
-    transform-origin: 50% 0%;
-    mask-image: linear-gradient(to bottom, black, transparent 80%);
-    -webkit-mask-image: linear-gradient(to bottom, black, transparent 80%);
+        linear-gradient(rgba(168, 85, 255, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(168, 85, 255, 0.06) 1px, transparent 1px);
+    background-size: 32px 32px;
+    mask-image: radial-gradient(ellipse at 50% 0%, black, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 0%, black, transparent 70%);
 }
 html[data-theme="light"] body::before {
     display: none;
@@ -292,7 +330,7 @@ tekst błędu, obok osobno siatka.
 /* --- Nowy układ 3-kolumnowy Warp Mode: sidebar | grid | sidebar --- */
 .warp-layout {
     display: flex;
-    gap: 16px;
+    gap: var(--space-5);
     align-items: flex-start;
     width: 100%;
     max-width: 1100px;
@@ -303,7 +341,7 @@ tekst błędu, obok osobno siatka.
     flex: 0 0 200px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: var(--space-4);
 }
 
 .warp-center {
@@ -316,40 +354,48 @@ tekst błędu, obok osobno siatka.
 .sidebar-widget {
     background: var(--panel);
     border: 1px solid var(--hairline);
-    padding: 12px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-4);
 }
 
 .sidebar-widget__title {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 10px;
-    letter-spacing: 0.08em;
+    gap: var(--space-2);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.1em;
     color: var(--text-muted);
-    margin-bottom: 8px;
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+    border-bottom: 1px solid var(--hairline);
 }
 .sidebar-widget__title .icon { color: var(--accent-amber); width: 13px; height: 13px; }
 
 .sidebar-widget__balance {
-    font-size: 13px;
+    font-size: var(--text-xl);
     font-weight: 600;
+    font-variant-numeric: tabular-nums;
     color: var(--text-bright);
-    margin-bottom: 8px;
+    margin-bottom: var(--space-3);
 }
 
 .sidebar-widget__link {
     display: block;
-    font-size: 10px;
+    font-size: var(--text-xs);
+    font-weight: 600;
     color: var(--accent-amber);
     text-decoration: none;
-    margin-top: 8px;
+    margin-top: var(--space-3);
 }
 .sidebar-widget__link:hover { text-decoration: underline; }
 
 .sidebar-widget__empty {
-    font-size: 11px;
+    font-size: var(--text-sm);
     color: var(--text-muted);
     margin: 0;
+    padding: var(--space-2) 0;
 }
 
 .sidebar-widget__actions {
@@ -616,10 +662,13 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
 .tile {
     position: relative;
     background: var(--panel);
-    padding: 14px;
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-4);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--space-3);
     min-height: 340px; /* Bylo STALE 280px, potem 340px - kazda proba
                        zgadniecia "wlasciwej" liczby px konczyla sie tym
                        samym: dodanie wiersza LIMIT (2026-07-30) znowu
@@ -999,12 +1048,14 @@ img.tile__logo {
 .auth-box {
     width: 100%;
     max-width: 340px;
-    margin: 40px auto;
+    margin: var(--space-6) auto;
     background: var(--panel);
     border: 1px solid var(--hairline);
-    padding: 28px;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    padding: var(--space-6);
 }
-.auth-box--wide { max-width: 480px; }
+.auth-box--wide { max-width: 620px; }
 
 .auth-box__title {
     font-size: 15px;
@@ -1093,13 +1144,14 @@ img.tile__logo {
 }
 .auth-box__footer a:hover { text-decoration: underline; }
 
-.auth-form { display: flex; flex-direction: column; gap: 4px; }
+.auth-form { display: flex; flex-direction: column; gap: var(--space-1); }
 
 .auth-form__label {
-    font-size: 11px;
+    font-size: var(--text-xs);
+    font-weight: 600;
     color: var(--text-muted);
     letter-spacing: 0.05em;
-    margin-top: 12px;
+    margin-top: var(--space-3);
 }
 
 .auth-form__input {
@@ -1107,30 +1159,33 @@ img.tile__logo {
     border: 1px solid var(--hairline);
     color: var(--text-bright);
     font-family: inherit;
-    font-size: 13px;
-    padding: 8px 10px;
-    border-radius: 2px;
+    font-size: var(--text-base);
+    padding: var(--space-3) var(--space-3);
+    border-radius: var(--radius-sm);
+    transition: border-color 0.15s, box-shadow 0.15s;
 }
 .auth-form__input:focus {
     outline: none;
     border-color: var(--accent-amber);
+    box-shadow: 0 0 0 3px rgba(168, 85, 255, 0.15);
 }
 
 .auth-form__submit {
-    margin-top: 20px;
+    margin-top: var(--space-5);
     background: transparent;
     border: 1px solid var(--accent-amber);
     color: var(--accent-amber);
     font-family: inherit;
     font-weight: 600;
-    font-size: 13px;
+    font-size: var(--text-base);
     letter-spacing: 0.06em;
-    padding: 10px 0;
+    padding: var(--space-3) 0;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: var(--radius-sm);
     text-align: center;
     text-decoration: none;
     display: block;
+    transition: background 0.15s, box-shadow 0.15s;
 }
 .auth-form__submit:hover { background: rgba(168, 85, 255, 0.14); box-shadow: 0 0 10px var(--accent-glow); }
 

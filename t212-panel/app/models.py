@@ -418,6 +418,16 @@ class RiskSettings(db.Model):
 
     max_spread_pct = db.Column(db.Numeric(6, 4), nullable=False, default=0.05)
 
+    # Legacy kolumna (2026-08-08) - USUNIĘTA z aktywnego użytku 2026-07-21 na
+    # rzecz trailing stopu (patrz komentarz niżej), ale zostaje w schemacie
+    # bazy jako NOT NULL bez defaultu (SQLite 3.34 na tym NAS-ie nie wspiera
+    # DROP COLUMN, dodane dopiero w 3.35) - bez tego mapowania każdy NOWY
+    # insert RiskSettings (czyli KAŻDY świeżo zarejestrowany user) wybuchał
+    # IntegrityError, bo SQLAlchemy nie znało tej kolumny i nie podawało dla
+    # niej żadnej wartości. Znalezione na żywo 2026-08-08 przy rejestracji
+    # konta testowego na dev - /bot/ dawało 500.
+    take_profit_usd = db.Column(db.Numeric(6, 4), nullable=False, default=0.05)
+
     # Trailing STOP (zamiast dawnego sztywnego take_profit_usd, 2026-07-21) -
     # patrz services/bot_engine.py::_manage_trailing_exit. Procent, nie stała
     # kwota - żeby krok/stop skalowały się z ceną instrumentu (Adam: sztywna
