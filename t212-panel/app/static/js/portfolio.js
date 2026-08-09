@@ -60,7 +60,7 @@ function renderAccountSummary(data) {
     const pnlEl = document.getElementById("account-baseline-pnl");
     if (!totalEl || !labelEl || !pnlEl) return;
 
-    totalEl.textContent = data.account_total != null ? `${data.account_total.toFixed(2)} €` : "…";
+    totalEl.dataset.real = data.account_total != null ? `${data.account_total.toFixed(2)} €` : "…";
 
     const baselineNote = data.account_baseline_equity != null
         ? ` (${Math.round(data.account_baseline_equity)}€${data.account_baseline_at ? ", " + data.account_baseline_at : ""})`
@@ -68,12 +68,13 @@ function renderAccountSummary(data) {
     labelEl.textContent = `vs punkt startowy${baselineNote}`;
 
     if (data.account_pnl != null) {
-        pnlEl.textContent = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)`;
+        pnlEl.dataset.real = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)`;
         pnlEl.className = `instrument-detail__position-value ${pplClass(data.account_pnl)}`;
     } else {
-        pnlEl.textContent = "…";
+        pnlEl.dataset.real = "…";
         pnlEl.className = "instrument-detail__position-value";
     }
+    applyMoneyHiding();  // patrz common.js - globalny mechanizm hide/show wartości pieniężnych
 }
 
 async function resetAccountBaseline() {
@@ -99,6 +100,8 @@ async function resetAccountBaseline() {
 }
 
 document.getElementById("account-baseline-reset-btn")?.addEventListener("click", resetAccountBaseline);
+// Przycisk hide/show (.js-money-toggle-btn) i pierwsze zastosowanie stanu
+// obsłużone globalnie przez common.js::applyMoneyHiding - nic tu do zrobienia.
 
 // "bot"/"signal"/"eod" -> etykieta w UI, jeden na wszystkie 3 przyciski
 // adopcji + odznaka "Zarządzane przez X" (patrz routes/scalping.py::
@@ -169,15 +172,12 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
         <div class="portfolio-summary portfolio-summary--pulse">
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Wartość portfela</span>
-                <span class="instrument-detail__position-value">${totalValue.toFixed(2)}</span>
+                <span class="instrument-detail__position-value js-money" data-real="${totalValue.toFixed(2)}"></span>
                 <span class="portfolio-freshness portfolio-freshness--live">Aktualne</span>
             </div>
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Zysk / strata</span>
-                <span class="instrument-detail__position-value ${pplClass(totalPpl)}">
-                    ${totalPpl >= 0 ? "+" : ""}${totalPpl.toFixed(2)}
-                    (${totalPplPct >= 0 ? "+" : ""}${totalPplPct.toFixed(1)}%)
-                </span>
+                <span class="instrument-detail__position-value js-money ${pplClass(totalPpl)}" data-real="${totalPpl >= 0 ? "+" : ""}${totalPpl.toFixed(2)} (${totalPplPct >= 0 ? "+" : ""}${totalPplPct.toFixed(1)}%)"></span>
             </div>
         </div>
         <table class="history-table" id="portfolio-table">
@@ -195,6 +195,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
             </thead>
             <tbody>${rows}</tbody>
         </table>`;
+    applyMoneyHiding();  // patrz common.js - totalValue/totalPpl wyżej mają świeże data-real, trzeba je od razu ukryć jeśli tryb aktywny
 }
 
 /*

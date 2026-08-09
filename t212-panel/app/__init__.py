@@ -183,6 +183,20 @@ def _register_scheduler(app: Flask) -> None:
         trigger="cron", hour=22, minute=5, timezone="Europe/Amsterdam",
         id="telegram_evening_summary", replace_existing=True,
     )
+    # Podsumowania tygodniowe/miesięczne (Adam, 2026-08-09) - ten sam
+    # send_daily_summary co wyżej, tylko szersze okno (days=7/30, patrz
+    # daily_summary.py::_engine_pnl_24h) i rzadszy harmonogram. Poniedziałek
+    # 08:00 (podsumowuje ubiegły tydzień przed otwarciem), 1. dnia miesiąca 08:05.
+    scheduler.add_job(
+        func=lambda: daily_summary.send_daily_summary(app, "tygodniowy", days=7),
+        trigger="cron", day_of_week="mon", hour=8, minute=0, timezone="Europe/Amsterdam",
+        id="telegram_weekly_summary", replace_existing=True,
+    )
+    scheduler.add_job(
+        func=lambda: daily_summary.send_daily_summary(app, "miesięczny", days=30),
+        trigger="cron", day=1, hour=8, minute=5, timezone="Europe/Amsterdam",
+        id="telegram_monthly_summary", replace_existing=True,
+    )
     # Obsługa komend przychodzących z Telegrama (Adam: "dodaj /status") -
     # krótki poll co 15s (patrz docstring telegram_commands.py - appka nie
     # ma publicznego HTTPS do webhooka Telegrama, więc polling jest prostszym

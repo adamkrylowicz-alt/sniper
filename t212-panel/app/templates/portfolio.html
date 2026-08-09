@@ -8,7 +8,7 @@
     <div class="portfolio-summary" id="account-summary">
         <div class="portfolio-summary__cell">
             <span class="instrument-detail__position-label">Całość konta (gotówka + pozycje)</span>
-            <span class="instrument-detail__position-value" id="account-total-value">
+            <span class="instrument-detail__position-value js-money" id="account-total-value">
                 {{ "%.2f"|format(account.account_total) + " €" if account.account_total is not none else "…" }}
             </span>
         </div>
@@ -19,7 +19,7 @@
                 ({{ "%.0f"|format(account.account_baseline_equity) }}€{% if account.account_baseline_at %}, {{ account.account_baseline_at }}{% endif %})
                 {% endif %}
             </span>
-            <span class="instrument-detail__position-value{% if account.account_pnl is not none %} {{ 'focus-tile__pnl--profit' if account.account_pnl >= 0 else 'focus-tile__pnl--loss' }}{% endif %}" id="account-baseline-pnl">
+            <span class="instrument-detail__position-value js-money{% if account.account_pnl is not none %} {{ 'focus-tile__pnl--profit' if account.account_pnl >= 0 else 'focus-tile__pnl--loss' }}{% endif %}" id="account-baseline-pnl">
                 {% if account.account_pnl is not none %}
                 {{ "+" if account.account_pnl >= 0 else "" }}{{ "%.2f"|format(account.account_pnl) }} € ({{ "+" if account.account_pnl_pct >= 0 else "" }}{{ "%.1f"|format(account.account_pnl_pct) }}%)
                 {% else %}
@@ -28,6 +28,7 @@
             </span>
         </div>
         <div class="portfolio-summary__cell portfolio-summary__cell--action">
+            <button type="button" class="account-bar__btn js-money-toggle-btn" title="Ukryj wartości (np. przed screen-share)">👁️</button>
             <button type="button" class="account-bar__btn" id="account-baseline-reset-btn" title="Zapisz aktualną wartość konta jako nowy punkt odniesienia - np. po ręcznym resecie konta demo">
                 Resetuj punkt startowy
             </button>
@@ -45,12 +46,12 @@
         <div class="portfolio-summary">
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Wartość portfela</span>
-                <span class="instrument-detail__position-value">{{ "%.2f"|format(total_value) }}</span>
+                <span class="instrument-detail__position-value js-money">{{ "%.2f"|format(total_value) }}</span>
                 <span class="portfolio-freshness portfolio-freshness--cached" id="portfolio-freshness">Z cache</span>
             </div>
             <div class="portfolio-summary__cell">
                 <span class="instrument-detail__position-label">Zysk / strata</span>
-                <span class="instrument-detail__position-value {{ 'focus-tile__pnl--profit' if total_ppl >= 0 else 'focus-tile__pnl--loss' }}">
+                <span class="instrument-detail__position-value js-money {{ 'focus-tile__pnl--profit' if total_ppl >= 0 else 'focus-tile__pnl--loss' }}">
                     {{ "+" if total_ppl >= 0 else "" }}{{ "%.2f"|format(total_ppl) }}
                     ({{ "+" if total_ppl_pct >= 0 else "" }}{{ "%.1f"|format(total_ppl_pct) }}%)
                 </span>

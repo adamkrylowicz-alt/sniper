@@ -56,14 +56,19 @@ def _archive_report(text: str) -> None:
         f.write(f"{'=' * 60}\n{timestamp}\n{'=' * 60}\n{text}\n\n")
 
 
-def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper") -> dict:
+def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper", days: int = 1) -> dict:
     """
     Wspólna logika dla 3 silników - `trade_model` to ActiveTrade/SignalTrade/
     EODTrade, wszystkie mają identyczny kształt pól (buy_price/close_price/
     quantity/average_price dla Micro-Gridu, buy_price dla reszty - patrz
     niżej rozróżnienie kosztu bazowego).
+
+    `days` (Adam, 2026-08-09: raport tygodniowy/miesięczny + `/status 7d`) -
+    okno dla zrealizowanego P&L (`closed_at >= cutoff`); niezrealizowane
+    zawsze dotyczy WSZYSTKICH aktualnie otwartych pozycji, niezależnie od
+    okna (to "teraz", nie coś co się mieści w oknie).
     """
-    cutoff = dt.datetime.utcnow() - dt.timedelta(hours=24)
+    cutoff = dt.datetime.utcnow() - dt.timedelta(days=days)
     env = current_environment(user_id)
     closed = (
         trade_model.query
@@ -139,10 +144,13 @@ def _account_total(user_id: int) -> Decimal | None:
         return None
 
 
-def send_daily_summary(app, label: str) -> None:
+def send_daily_summary(app, label: str, days: int = 1) -> None:
     """
-    `label`: "poranny" albo "wieczorny" - tylko do treści komunikatu.
-    Wołane z app/__init__.py::_register_scheduler (dwa osobne cron joby).
+    `label`: "poranny", "wieczorny", "tygodniowy" albo "miesięczny" - tylko
+    do treści komunikatu. `days`: okno zrealizowanego P&L (patrz
+    `_engine_pnl_24h`) - 1 dla porannego/wieczornego (bez zmian), 7/30 dla
+    nowych cron jobów tygodniowego/miesięcznego (Adam, 2026-08-09).
+    Wołane z app/__init__.py::_register_scheduler (cztery cron joby).
     """
     with app.app_context():
         token = app.config.get("TELEGRAM_BOT_TOKEN")
@@ -155,11 +163,11 @@ def send_daily_summary(app, label: str) -> None:
             if user is None:
                 continue
 
-            micro = _engine_pnl_24h(user.id, ActiveTrade)
+            micro = _engine_pnl_24h(user.id, ActiveTrade, days=days)
             signal_settings = SignalSettings.query.filter_by(user_id=user.id).first()
             eod_settings = EODSettings.query.filter_by(user_id=user.id).first()
-            signal = _engine_pnl_24h(user.id, SignalTrade) if signal_settings else None
-            eod = _engine_pnl_24h(user.id, EODTrade) if eod_settings else None
+            signal = _engine_pnl_24h(user.id, SignalTrade, days=days) if signal_settings else None
+            eod = _engine_pnl_24h(user.id, EODTrade, days=days) if eod_settings else None
 
             account_total = _account_total(user.id)
             user_settings = UserSettings.query.filter_by(user_id=user.id).first()
@@ -180,12 +188,14 @@ def send_daily_summary(app, label: str) -> None:
                 lines.append(account_line)
                 lines.append("")
 
+            window_label = "24h" if days == 1 else f"{days}d"
+
             def _engine_line(name: str, data: dict | None) -> str:
                 if data is None:
                     return f"{name}: nieaktywny"
                 extra = f", {data['realized_unknown']} bez znanej ceny" if data["realized_unknown"] else ""
                 return (
-                    f"{name}: zrealizowane 24h {data['realized']:+.2f}€ "
+                    f"{name}: zrealizowane {window_label} {data['realized']:+.2f}€ "
                     f"({data['realized_n']} zamkniętych{extra}), "
                     f"niezrealizowane {data['unrealized']:+.2f}€ ({data['open_n']} otwartych)"
                 )
@@ -194,7 +204,7 @@ def send_daily_summary(app, label: str) -> None:
             lines.append(_engine_line("Sygnał", signal))
             lines.append(_engine_line("EOD", eod))
             lines.append("")
-            lines.append(f"RAZEM 24h: {total_realized + total_unrealized:+.2f}€ (zrealizowane {total_realized:+.2f}€ + niezrealizowane {total_unrealized:+.2f}€)")
+            lines.append(f"RAZEM {window_label}: {total_realized + total_unrealized:+.2f}€ (zrealizowane {total_realized:+.2f}€ + niezrealizowane {total_unrealized:+.2f}€)")
 
             report_text = "\n".join(lines)
             _archive_report(report_text)

@@ -265,6 +265,9 @@ function formatMoney(value) {
 function updatePnlBadge(tile, position) {
     const badge = tile.querySelector(".tile__pnl");
     if (!position) {
+        // "brak pozycji" NIE jest wartością pieniężną - bez klasy js-money,
+        // żeby hide/show (patrz common.js) jej nie dotykał.
+        delete badge.dataset.real;
         badge.textContent = "brak pozycji";
         badge.className = "tile__pnl tile__pnl--empty";
         return;
@@ -272,8 +275,8 @@ function updatePnlBadge(tile, position) {
     const ppl = Number(position.ppl);
     const qty = position.quantity;
     const sign = ppl >= 0 ? "+" : "";
-    badge.textContent = `${qty} szt. · ${sign}${formatMoney(ppl)}`;
-    badge.className = "tile__pnl " + (ppl >= 0 ? "tile__pnl--profit" : "tile__pnl--loss");
+    badge.dataset.real = `${qty} szt. · ${sign}${formatMoney(ppl)}`;
+    badge.className = "tile__pnl js-money " + (ppl >= 0 ? "tile__pnl--profit" : "tile__pnl--loss");
 }
 
 // Throttle dla loadAccount() - odkryliśmy (11.07.2026, log z NAS-a), że rate
@@ -310,12 +313,21 @@ async function loadAccount(force = false) {
         // kilku możliwych pól zamiast zakładać jedno konkretne.
         const cash = data.cash || {};
         const free = cash.free ?? cash.total ?? null;
+        const balanceEl = document.getElementById("account-balance");
         if (data.cash_error) {
-            document.getElementById("account-balance").textContent =
-                "saldo: niedostępne (brak uprawnień klucza API)";
+            // Komunikat o błędzie NIE jest wartością pieniężną - zdejmij js-money
+            // (patrz updatePnlBadge, identyczny powód), inaczej hide/show
+            // podmieniłby go na kropki zamiast realnego opisu błędu.
+            balanceEl.classList.remove("js-money");
+            delete balanceEl.dataset.real;
+            balanceEl.textContent = "saldo: niedostępne (brak uprawnień klucza API)";
+        } else if (free !== null) {
+            balanceEl.classList.add("js-money");
+            balanceEl.dataset.real = `saldo: ${formatMoney(free)}`;
         } else {
-            document.getElementById("account-balance").textContent =
-                free !== null ? `saldo: ${formatMoney(free)}` : "saldo: brak danych";
+            balanceEl.classList.remove("js-money");
+            delete balanceEl.dataset.real;
+            balanceEl.textContent = "saldo: brak danych";
         }
 
         const positionsByTicker = {};
@@ -324,6 +336,7 @@ async function loadAccount(force = false) {
         document.querySelectorAll(".tile").forEach((tile) => {
             updatePnlBadge(tile, positionsByTicker[tile.dataset.ticker] || null);
         });
+        applyMoneyHiding();  // patrz common.js - saldo/badge'e wyżej mają świeże dataset.real
 
         setAccountStatus("");
     } catch (err) {

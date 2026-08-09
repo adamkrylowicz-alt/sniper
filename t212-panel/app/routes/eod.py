@@ -343,46 +343,19 @@ def clear_log():
 @eod_bp.route("/positions/<int:trade_id>/close", methods=["POST"])
 @login_required
 def close_position(trade_id):
-    """Ręczne zamknięcie pozycji (siatka bezpieczeństwa na czas testów na żywo) - ten sam wzorzec co routes/signal.py::close_position."""
+    """
+    Ręczne zamknięcie pozycji (siatka bezpieczeństwa na czas testów na żywo).
+    Logika przeniesiona do eod_engine.close_trade_manual (2026-08-09) żeby
+    Telegram `/close` mogło jej użyć bez duplikowania.
+    """
     user_id = current_user_id()
     trade = EODTrade.query.filter_by(
         id=trade_id, user_id=user_id, status="OPEN", environment=current_environment(user_id),
     ).first_or_404()
 
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
-    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
-
-    if trade.is_paper:
-        eod_engine._finalize_closed_trade(user_id, trade, "manual", fill_price=price or trade.buy_price)
-        return jsonify(ok=True)
-
-    if not trade.buy_confirmed:
-        return jsonify(ok=False, error="Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."), 400
-
-    creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
-    if creds is None:
-        return jsonify(ok=False, error="Brak zapisanego klucza API demo (Ustawienia -> Klucze API)."), 400
-    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id))
-
-    if trade.stop_order_id:
-        try:
-            client.cancel_order(trade.stop_order_id)
-        except T212APIError as exc:
-            return jsonify(ok=False, error=f"Nie udało się anulować stop-loss przed ręczną sprzedażą - {exc}"), 502
-
-    try:
-        sell_result = client.place_market_order(trade.ticker, -trade.quantity)
-    except T212APIError as exc:
-        return jsonify(ok=False, error=f"Sprzedaż Market nie powiodła się - {exc}. STOP już zdjęty, pozycja NIECHRONIONA."), 502
-
-    from .scalping import _log_order
-    _log_order(
-        user_id=user_id, ticker=trade.ticker, side="sell", quantity=trade.quantity,
-        price_snapshot=price, status="sent", t212_order_id=sell_result.order_id,
-    )
-    eod_engine._finalize_closed_trade(user_id, trade, "manual", fill_price=price or trade.buy_price)
+    ok, message = eod_engine.close_trade_manual(user_id, trade)
+    if not ok:
+        return jsonify(ok=False, error=message), 400
     return jsonify(ok=True)
 
 

@@ -79,8 +79,8 @@ from ..extensions import db
 from ..models import EODAsset, EODAuditLog, EODSettings, EODTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag
-from . import bot_credentials, diagnostics, market_hours, price_feed, price_watchdog, telegram_notify
+from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
+from . import bot_credentials, diagnostics, market_hours, position_alerts, price_feed, price_watchdog, telegram_notify
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import eod_strategy
 from .strategy.microgrid_strategy import compute_equity_scaled_amount
@@ -173,6 +173,22 @@ def _should_force_close(settings: EODSettings) -> bool:
     return now_local.time() >= FORCE_CLOSE_TIME
 
 
+_block_reason_notice_at: dict[tuple[int, str], dt.datetime] = {}
+_BLOCK_REASON_COOLDOWN_MINUTES = 30
+
+
+def _log_block_reason_throttled(user_id: int, key: str, message: str) -> None:
+    """Patrz bot_engine.py::_log_block_reason_throttled - identyczny wzorzec,
+    dedupe dla raportu /why (telegram_commands.py) na 2026-08-09."""
+    now = dt.datetime.utcnow()
+    notice_key = (user_id, key)
+    last = _block_reason_notice_at.get(notice_key)
+    if last is not None and now - last < dt.timedelta(minutes=_BLOCK_REASON_COOLDOWN_MINUTES):
+        return
+    _block_reason_notice_at[notice_key] = now
+    _log(user_id, "INFO", message)
+
+
 def _log(user_id: int, action_type: str, message: str) -> None:
     # Dodane 2026-07-30: kopia KAŻDEGO wpisu do ukrytego logu diagnostycznego
     # (diagnostics.py) - nie zmienia nic z poniższego (EODAuditLog/Dziennik
@@ -249,6 +265,54 @@ def _finalize_closed_trade(user_id: int, trade: EODTrade, via: str, fill_price: 
         f"{trade.ticker}: pozycja EOD zamknięta ({via}) @ ~{fill_price}, "
         f"P/L ~{pnl:.2f} {trade.currency}.",
     )
+
+
+def close_trade_manual(user_id: int, trade: EODTrade) -> tuple[bool, str]:
+    """
+    Ręczne zamknięcie pozycji - wydzielone z routes/eod.py::close_position
+    (Adam, 2026-08-09: dodanie `/close` na Telegramie), ten sam wzorzec co
+    signal_engine.py::close_trade_manual (identyczny kształt, osobna kopia
+    bo osobny silnik/model - patrz komentarz tam).
+    """
+    api_key = current_app.config.get("FINNHUB_API_KEY")
+    alpaca_key = current_app.config.get("ALPACA_API_KEY")
+    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+    name = ticker_display_name(trade.ticker)
+
+    if trade.is_paper:
+        _finalize_closed_trade(user_id, trade, "manual", fill_price=price or trade.buy_price)
+        return True, f"{name}: zamknięte (paper) @ ~{price or trade.buy_price}."
+
+    if not trade.buy_confirmed:
+        return False, f"{name}: zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona."
+
+    master_key = bot_credentials.get_master_key(user_id)
+    if master_key is None:
+        return False, "EOD nie ma aktywnych poświadczeń (aktywuj go w appce)."
+    env = current_environment(user_id)
+    creds = get_decrypted_credentials(user_id, master_key, env)
+    if creds is None:
+        return False, "Brak zapisanego klucza API."
+    client = T212Client(api_key=creds["api_key"], api_secret=creds["api_secret"], environment=env, engine="eod", user_id=user_id)
+
+    if trade.stop_order_id:
+        try:
+            client.cancel_order(trade.stop_order_id)
+        except T212APIError as exc:
+            return False, f"{name}: nie udało się anulować stop-loss przed ręczną sprzedażą - {exc}"
+
+    try:
+        sell_result = client.place_market_order(trade.ticker, -trade.quantity)
+    except T212APIError as exc:
+        return False, f"{name}: sprzedaż Market nie powiodła się - {exc}. STOP już zdjęty, pozycja NIECHRONIONA."
+
+    _log_order(
+        user_id=user_id, ticker=trade.ticker, side="sell", quantity=trade.quantity,
+        price_snapshot=price, status="sent", t212_order_id=sell_result.order_id,
+    )
+    _finalize_closed_trade(user_id, trade, "manual", fill_price=price or trade.buy_price)
+    return True, f"{name}: zamknięte @ ~{price or trade.buy_price}."
 
 
 def _get_current_equity(
@@ -395,6 +459,10 @@ def _process_entries(
     # szerokim spadku rynku. EODSettings.max_concurrent_positions - edytowalne
     # w UI, domyślnie 2 (patrz migrate_add_max_concurrent_positions.py).
     if len(open_tickers) >= settings.max_concurrent_positions:
+        _log_block_reason_throttled(
+            user_id, "max_concurrent",
+            f"Wejścia: limit pozycji osiągnięty ({len(open_tickers)}/{settings.max_concurrent_positions}) - nic nowego dziś.",
+        )
         return  # limit otwartych pozycji osiągnięty - nic nowego dziś
 
     api_key = current_app.config.get("FINNHUB_API_KEY")
@@ -809,6 +877,7 @@ def _manage_exits(
                 )
             continue
         price_watchdog.note_price_result("eod", trade.ticker, True)
+        position_alerts.check_move_alert(user_id, "eod", trade.ticker, trade.buy_price, price, trade.currency)
         if price < trade.take_profit_price:
             _trail_stop_loss(user_id, client, trade, settings, price)
             continue

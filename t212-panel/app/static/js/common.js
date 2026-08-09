@@ -310,6 +310,48 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 /*
+Ukryj/pokaż wartości pieniężne (Adam, 2026-08-09: przycisk na Aktywach
+chował TYLKO "Całość konta", ani "Wartość portfela" pod spodem, ani nic na
+Warp Mode) - GLOBALNY przełącznik, jeden localStorage-owy stan dzielony
+między wszystkimi stronami, zamiast osobnej kopii logiki per strona.
+
+Konwencja: każda strona OZNACZA swoje elementy klasą "js-money" (statycznie
+w HTML, albo dynamicznie przy (re)renderze przez JS - patrz portfolio.js/
+warp.js) i ustawia im `dataset.real` na aktualną, prawdziwą wartość
+tekstową. applyMoneyHiding() (wołana po KAŻDEJ zmianie tych elementów, bo
+niektóre są całkowicie podmieniane przez innerHTML) tylko decyduje co
+finalnie wyświetlić - stan "ukryte" przetrwa więc każde auto-odświeżenie
+bez ponownego chowania. Przyciski przełączające mają klasę
+"js-money-toggle-btn" (może być więcej niż jeden na stronie, np. Aktywa +
+Warp) - wszystkie reagują na wspólny stan.
+*/
+const MONEY_HIDDEN_KEY = "snajper-hide-money";
+const MONEY_HIDDEN_PLACEHOLDER = "•••••";
+let moneyHidden = localStorage.getItem(MONEY_HIDDEN_KEY) === "1";
+
+function applyMoneyHiding() {
+    document.querySelectorAll(".js-money").forEach((el) => {
+        if (el.dataset.real === undefined) el.dataset.real = el.textContent.trim();
+        el.textContent = moneyHidden ? MONEY_HIDDEN_PLACEHOLDER : el.dataset.real;
+    });
+    document.querySelectorAll(".js-money-toggle-btn").forEach((btn) => {
+        btn.textContent = moneyHidden ? "🙈" : "👁️";
+        btn.title = moneyHidden ? "Pokaż wartości" : "Ukryj wartości (np. przed screen-share)";
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll(".js-money-toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            moneyHidden = !moneyHidden;
+            localStorage.setItem(MONEY_HIDDEN_KEY, moneyHidden ? "1" : "0");
+            applyMoneyHiding();
+        });
+    });
+    applyMoneyHiding();
+});
+
+/*
 Suwak glosnosci powiadomien dzwiekowych w Ustawieniach - patrz
 settings_index.html. Element istnieje TYLKO na tej stronie, stad guard
 "if (!slider) return" (ten sam wzorzec co theme-toggle wyzej, wspolny

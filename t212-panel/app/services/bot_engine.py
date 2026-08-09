@@ -170,7 +170,7 @@ from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSetting
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
-from . import bot_credentials, bot_entry_filters, diagnostics, mailer, price_feed, price_watchdog, telegram_notify
+from . import bot_credentials, bot_entry_filters, diagnostics, mailer, position_alerts, price_feed, price_watchdog, telegram_notify
 from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
 
@@ -641,6 +641,49 @@ def adopt_confirmed_signal(user_id: int) -> tuple[bool, str]:
     return True, f"{ticker_display_name(ticker)}: przejąłem ({quantity} @ ~{avg_price}). Pilnuję teraz trailing stopu."
 
 
+def close_active_trade_manual(user_id: int, client: T212Client, trade: ActiveTrade, price) -> None:
+    """
+    Zamknięcie pozycji Micro-Grid NA ŻĄDANIE (Telegram `/close`, Adam
+    2026-08-09) - w odróżnieniu od `_finalize_closed_trade` (dla
+    AUTOMATYCZNYCH wypełnień STOP-a, oczekuje `filled_via`
+    "take-profit"/"stop-loss" i szuka "osieroconej drugiej nogi" do
+    anulowania) tutaj JEDYNA aktywna noga (`stop_order_id`) jest anulowana
+    TUTAJ, więc po Market-sellu nie ma już czego szukać - stąd bezpośredni
+    zapis statusu zamiast wołania `_finalize_closed_trade` z niepasującym
+    `filled_via`. Wzorowane na routes/signal.py::close_position (ten sam
+    kształt: cancel stop -> market sell -> log -> finalize), ale klient
+    T212 tu przychodzi już zbudowany przez wywołującego (Telegram nie ma
+    sesji Flask - patrz adopt_confirmed_signal dla identycznego wzorca
+    pozyskania poświadczeń przez bot_credentials.get_master_key).
+    """
+    if trade.stop_order_id:
+        try:
+            client.cancel_order(trade.stop_order_id)
+        except T212APIError as exc:
+            _log(
+                user_id, "INFO",
+                f"{trade.ticker}: anulowanie stop-lossa przed ręczną sprzedażą nie powiodło się "
+                f"(mógł się już wykonać) - {exc}",
+                trade.position_group_id,
+            )
+
+    sell_result = client.place_market_order(trade.ticker, -trade.quantity)
+    price_decimal = Decimal(str(price)) if price is not None else None
+    _log_order(
+        user_id=user_id, ticker=trade.ticker, side="sell", quantity=trade.quantity,
+        price_snapshot=price_decimal, status="sent", t212_order_id=sell_result.order_id,
+    )
+    _log(
+        user_id, "INFO",
+        f"{trade.ticker}: zamknięte ręcznie przez Telegram ({trade.quantity} @ ~{price_decimal}).",
+        trade.position_group_id,
+    )
+    trade.close_price = price_decimal
+    trade.status = "CLOSED"
+    trade.closed_at = dt.datetime.utcnow()
+    db.session.commit()
+
+
 def _next_entry_fail_delay(consecutive_fails: int) -> dt.timedelta:
     idx = min(consecutive_fails - 1, len(ENTRY_FAIL_BACKOFF_MINUTES) - 1)
     return dt.timedelta(minutes=ENTRY_FAIL_BACKOFF_MINUTES[idx])
@@ -659,6 +702,28 @@ def _log_error_to_file(user_id: int, message: str) -> None:
     timestamp = dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     with open(path, "a", encoding="utf-8") as f:
         f.write(f"{timestamp} UTC | user={user_id} | {message}\n")
+
+
+_block_reason_notice_at: dict[tuple[int, str], dt.datetime] = {}
+_BLOCK_REASON_COOLDOWN_MINUTES = 30
+
+
+def _log_block_reason_throttled(user_id: int, key: str, message: str) -> None:
+    """
+    Dopisane 2026-08-09 (raport /why na Telegramie, patrz
+    telegram_commands.py) - powody blokady wejścia (limit pozycji, cudza
+    pozycja, backoff) potrafią trwać wiele ticków z rzędu; bez throttlingu
+    zwykłe _log() zalałoby BotAuditLog identycznym wpisem co 60s. Loguje raz
+    na _BLOCK_REASON_COOLDOWN_MINUTES per (user_id, key), potem cisza aż do
+    odnowienia okna.
+    """
+    now = dt.datetime.utcnow()
+    notice_key = (user_id, key)
+    last = _block_reason_notice_at.get(notice_key)
+    if last is not None and now - last < dt.timedelta(minutes=_BLOCK_REASON_COOLDOWN_MINUTES):
+        return
+    _block_reason_notice_at[notice_key] = now
+    _log(user_id, "INFO", message)
 
 
 def _log(user_id: int, action_type: str, message: str, position_group_id: str | None = None) -> None:
@@ -1505,6 +1570,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
                 )
             continue  # brak ceny - spróbujemy przy kolejnym ticku, nic pilnego do zrobienia
         price_watchdog.note_price_result("bot", trade.ticker, True)
+        position_alerts.check_move_alert(user_id, "bot", trade.ticker, trade.buy_price, current_price, trade.currency)
 
         # Dla USD: liczymy progi/STOP względem ref_price (average_price
         # podbite o round-trip FX), nie surowej average_price - koszt
@@ -2410,6 +2476,10 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
     env = current_environment(user_id)
     open_count = ActiveTrade.query.filter_by(user_id=user_id, status="OPEN", is_paper=False, environment=env).count()
     if open_count >= settings.max_concurrent_positions:
+        _log_block_reason_throttled(
+            user_id, "max_concurrent",
+            f"Wejścia: limit pozycji osiągnięty ({open_count}/{settings.max_concurrent_positions}) - nic nowego dziś.",
+        )
         return  # limit otwartych pozycji osiągnięty (patrz RiskSettings.max_concurrent_positions) - nic nowego dziś
 
     now = dt.datetime.utcnow()
@@ -2427,15 +2497,21 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
         if other is not None:
             # Cudza pozycja (Sygnał/EOD) na tym samym tickerze - pomijamy,
             # zeby nie powtorzyc kolizji SUp_EQ (patrz market_hours.py::
-            # held_by_other_engine). Do ukrytego logu, nie do Dziennika -
-            # to techniczny szczegol, nie cos co user musi widziec w UI.
-            diagnostics.log_diag(
-                user_id, "bot",
+            # held_by_other_engine). Throttlowany _log (2026-08-09, raport
+            # /why) - _log() i tak dokłada kopię do ukrytego diag-logu
+            # (patrz jej docstring), więc to zastępuje dawne bezpośrednie
+            # diagnostics.log_diag, nie dubluje.
+            _log_block_reason_throttled(
+                user_id, f"held_by_other:{asset.ticker}",
                 f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
             )
             continue
         backoff = _entry_fail_backoff.get((user_id, asset.ticker))
         if backoff is not None and now < backoff[1]:
+            _log_block_reason_throttled(
+                user_id, f"backoff:{asset.ticker}",
+                f"{asset.ticker}: pominięte wejście - w backoffie po nieudanych próbach do {backoff[1].strftime('%H:%M')} UTC.",
+            )
             continue  # asset "w pauzie" po serii nieudanych prób
         rejected_until = _entry_signal_rejected_until.get((user_id, asset.ticker))
         if rejected_until is not None and now < rejected_until:
