@@ -43,6 +43,8 @@ def run_signal_backtest(
     require_uptrend: bool = True,
     confirm_days: int = 0,
     entry_multiplier: list[Decimal] | None = None,
+    vol_target_atr_pct: Decimal | None = None,
+    vol_sizing_clamp: tuple[Decimal, Decimal] = (Decimal("0.5"), Decimal("2.0")),
 ) -> None:
     """
     Odtwarza logikę Sygnału dzień po dniu na `candles` (o/h/l/c, rosnąco).
@@ -76,6 +78,17 @@ def run_signal_backtest(
     1.0). Domyślnie None - stare zachowanie, entry_amount bez zmian.
     Mnożnik 0.0 = quantity wyjdzie 0 -> EntryValidationError -> brak wejścia
     tego dnia (ten sam efekt co "Red" w artykule, zero nowego kodu na to).
+
+    `vol_target_atr_pct` (dodane 2026-08-10, eksperyment - pomysł #5 z listy
+    usprawnień: "sizing pozycji - stały entry_amount, brak Kelly/vol-adjusted
+    sizing, mniejsza pozycja gdy ATR wysoki"): gdy podane, mnoży
+    `entry_amount` przez `vol_target_atr_pct / (atr/price)`, przycięte do
+    `vol_sizing_clamp` (domyślnie 0.5x-2.0x - bez klamry jeden bardzo spokojny
+    dzień dałby absurdalnie dużą pozycję). ATR/price WYSOKI (chwiejny rynek)
+    -> mnożnik <1 (mniejsza pozycja). ATR/price NISKI (spokojny rynek) ->
+    mnożnik >1 (większa pozycja), do górnej klamry. Domyślnie None - stare
+    zachowanie, entry_amount bez zmian. Mnoży się RAZEM z `entry_multiplier`
+    (filtr reżimu) gdy oba podane - kolejność mnożenia bez znaczenia.
     """
     min_bars = max(MA_PERIOD, RSI_PERIOD + 1, ATR_PERIOD + 1)
     use_arming_gate = arm_profit_atr_mult is not None and trail_atr_mult is not None
@@ -138,7 +151,12 @@ def run_signal_backtest(
                 if signal_streak > confirm_days:
                     day_entry_amount = entry_amount
                     if entry_multiplier is not None and day < len(entry_multiplier):
-                        day_entry_amount = entry_amount * entry_multiplier[day]
+                        day_entry_amount *= entry_multiplier[day]
+                    if vol_target_atr_pct is not None and price > 0 and atr > 0:
+                        atr_pct = atr / price
+                        vol_mult = vol_target_atr_pct / atr_pct
+                        vol_mult = max(vol_sizing_clamp[0], min(vol_sizing_clamp[1], vol_mult))
+                        day_entry_amount *= vol_mult
                     try:
                         decision = signal_strategy.compute_entry(
                             day_entry_amount, price, atr, stop_loss_atr_mult, take_profit_atr_mult,
