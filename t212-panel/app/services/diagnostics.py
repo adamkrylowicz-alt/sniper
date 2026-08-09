@@ -28,6 +28,29 @@ from flask import current_app
 
 DIAGNOSTICS_LOG_FILENAME = "bot_diagnostics.log"
 
+_throttle_notice_at: dict[tuple[int, str], dt.datetime] = {}
+
+
+def should_log_throttled(user_id: int, key: str, cooldown_minutes: int = 30) -> bool:
+    """
+    Dedupe dla powtarzających się powodów blokady wejścia (limit pozycji,
+    cudza pozycja, backoff) które normalnie zalałyby log identycznym wpisem
+    co tick (bot_engine.py/eod_engine.py/signal_engine.py::_process_entries,
+    dodane 2026-08-09 dla raportu /why na Telegramie - patrz
+    telegram_commands.py). Zwraca True (i zapamiętuje moment) raz na
+    `cooldown_minutes` per (user_id, key), potem False aż do odnowienia
+    okna. Scalone tu 2026-08-09 z 3 identycznych kopii w każdym silniku -
+    WOŁAJĄCY musi sam prefiksować `key` nazwą silnika (np. "bot:max_concurrent")
+    żeby dzielony słownik nie mylił tego samego klucza z różnych silników.
+    """
+    now = dt.datetime.utcnow()
+    notice_key = (user_id, key)
+    last = _throttle_notice_at.get(notice_key)
+    if last is not None and now - last < dt.timedelta(minutes=cooldown_minutes):
+        return False
+    _throttle_notice_at[notice_key] = now
+    return True
+
 
 def log_diag(user_id: int | None, engine: str, message: str) -> None:
     """

@@ -175,20 +175,13 @@ def _next_confirm_fail_delay(consecutive_fails: int) -> dt.timedelta:
     return dt.timedelta(minutes=CONFIRM_FAIL_BACKOFF_MINUTES[idx])
 
 
-_block_reason_notice_at: dict[tuple[int, str], dt.datetime] = {}
-_BLOCK_REASON_COOLDOWN_MINUTES = 30
-
-
 def _log_block_reason_throttled(user_id: int, key: str, message: str) -> None:
-    """Patrz bot_engine.py::_log_block_reason_throttled - identyczny wzorzec,
-    dedupe dla raportu /why (telegram_commands.py) na 2026-08-09."""
-    now = dt.datetime.utcnow()
-    notice_key = (user_id, key)
-    last = _block_reason_notice_at.get(notice_key)
-    if last is not None and now - last < dt.timedelta(minutes=_BLOCK_REASON_COOLDOWN_MINUTES):
-        return
-    _block_reason_notice_at[notice_key] = now
-    _log(user_id, "INFO", message)
+    """Dedupe (30 min/klucz) dla raportu /why (telegram_commands.py,
+    2026-08-09) - patrz diagnostics.should_log_throttled, scalone tam z 3
+    identycznych kopii. Prefiks "signal:" żeby nie kolidować z tymi samymi
+    kluczami w bot_engine.py/eod_engine.py na dzielonym słowniku."""
+    if diagnostics.should_log_throttled(user_id, f"signal:{key}"):
+        _log(user_id, "INFO", message)
 
 
 def _log(user_id: int, action_type: str, message: str) -> None:

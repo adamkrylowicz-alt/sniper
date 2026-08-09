@@ -704,26 +704,19 @@ def _log_error_to_file(user_id: int, message: str) -> None:
         f.write(f"{timestamp} UTC | user={user_id} | {message}\n")
 
 
-_block_reason_notice_at: dict[tuple[int, str], dt.datetime] = {}
-_BLOCK_REASON_COOLDOWN_MINUTES = 30
-
-
 def _log_block_reason_throttled(user_id: int, key: str, message: str) -> None:
     """
     Dopisane 2026-08-09 (raport /why na Telegramie, patrz
     telegram_commands.py) - powody blokady wejścia (limit pozycji, cudza
     pozycja, backoff) potrafią trwać wiele ticków z rzędu; bez throttlingu
-    zwykłe _log() zalałoby BotAuditLog identycznym wpisem co 60s. Loguje raz
-    na _BLOCK_REASON_COOLDOWN_MINUTES per (user_id, key), potem cisza aż do
-    odnowienia okna.
+    zwykłe _log() zalałoby BotAuditLog identycznym wpisem co 60s. Dedupe
+    (30 min/klucz) scalony w diagnostics.should_log_throttled - była to
+    identyczna kopia w bot_engine.py/eod_engine.py/signal_engine.py, prefiks
+    "bot:" żeby nie kolidować z tymi samymi kluczami ("max_concurrent" itd.)
+    w pozostałych dwóch silnikach na dzielonym słowniku.
     """
-    now = dt.datetime.utcnow()
-    notice_key = (user_id, key)
-    last = _block_reason_notice_at.get(notice_key)
-    if last is not None and now - last < dt.timedelta(minutes=_BLOCK_REASON_COOLDOWN_MINUTES):
-        return
-    _block_reason_notice_at[notice_key] = now
-    _log(user_id, "INFO", message)
+    if diagnostics.should_log_throttled(user_id, f"bot:{key}"):
+        _log(user_id, "INFO", message)
 
 
 def _log(user_id: int, action_type: str, message: str, position_group_id: str | None = None) -> None:
