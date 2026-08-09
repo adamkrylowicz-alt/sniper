@@ -40,6 +40,7 @@ from multiprocessing import Pool
 
 from backtest.data import app_context, fetch_candles
 from backtest.portfolio import Portfolio
+from backtest.shuffle import shuffle_candles
 from backtest.signal_runner import run_signal_backtest
 
 DEFAULT_TICKERS = (
@@ -50,30 +51,6 @@ DEFAULT_TICKERS = (
     "NOTd1_EQ,NVDA_US_EQ,ORCL_US_EQ,ORp_EQ,PRXa_EQ,PYPL_US_EQ,RHOd_EQ,RWEd_EQ,SAFp_EQ,SANe_EQ,"
     "SAPd_EQ,SIEd_EQ,SPCX_US_EQ,SUp_EQ,TSLA_US_EQ,UNIAa_EQ,VOWd_EQ,V_US_EQ,WMT_US_EQ,XOM_US_EQ"
 )
-
-
-def shuffle_candles(candles: list[dict], rng: random.Random) -> list[dict]:
-    """Tasuje KOLEJNOSC dni, zachowujac ksztalt kazdej swiecy (o/h/l/c wzgledem
-    poprzedniego zamkniecia) - patrz docstring modulu. Nierownosci h>=max(o,c)
-    i l<=min(o,c) zachowane automatycznie (skalowanie przez ten sam dodatni
-    wspolczynnik nie zmienia relacji)."""
-    if len(candles) < 2:
-        return list(candles)
-    anchor = candles[0]
-    ratios = []
-    prev_c = candles[0]["c"]
-    for day in candles[1:]:
-        ratios.append((day["o"] / prev_c, day["h"] / prev_c, day["l"] / prev_c, day["c"] / prev_c))
-        prev_c = day["c"]
-    rng.shuffle(ratios)
-
-    out = [anchor]
-    prev_c = anchor["c"]
-    for ro, rh, rl, rc in ratios:
-        new_c = prev_c * rc
-        out.append({"o": prev_c * ro, "h": prev_c * rh, "l": prev_c * rl, "c": new_c})
-        prev_c = new_c
-    return out
 
 
 def total_pnl(
