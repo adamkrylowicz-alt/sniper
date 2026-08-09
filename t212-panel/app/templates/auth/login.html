@@ -3,6 +3,7 @@
 
 {% block content %}
 <div class="auth-box">
+    <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Snajper" class="auth-box__logo">
     <h1 class="auth-box__title">LOGOWANIE</h1>
 
     {% if error %}
