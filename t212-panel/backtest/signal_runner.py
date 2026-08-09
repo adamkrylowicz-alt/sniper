@@ -41,6 +41,7 @@ def run_signal_backtest(
     arm_profit_atr_mult: Decimal | None = None,
     trail_atr_mult: Decimal | None = None,
     require_uptrend: bool = True,
+    confirm_days: int = 0,
 ) -> None:
     """
     Odtwarza logikę Sygnału dzień po dniu na `candles` (o/h/l/c, rosnąco).
@@ -52,9 +53,23 @@ def run_signal_backtest(
     dopiero wtedy zaciska się do `trail_atr_mult*ATR`) zamiast starego,
     zawsze-ciasnego `compute_trailing_stop`. Domyślnie (None) - stare
     zachowanie bez zmian, żeby nie ruszać istniejących wywołań/wyników.
+
+    `confirm_days` (dodane 2026-08-09, eksperyment - Adam obejrzał tutorial
+    o płatnym wskaźniku "Algo Sniper", który wymaga że sygnał musi się
+    utrzymać/potwierdzić na KOLEJNEJ świecy przed wejściem, zamiast wchodzić
+    natychmiast na świecy sygnałowej - dokładnie jak produkcyjny
+    `signal_engine.py::_process_entries`, który wchodzi na PIERWSZYM ticku
+    gdzie RSI<próg+cena>SMA się spełni). Domyślnie 0 - stare zachowanie
+    (wejście na dzień N, ten sam dzień gdy warunek się spełnił). >0: warunek
+    musi trzymać się `confirm_days` DODATKOWYCH dni z rzędu, wejście dopiero
+    na close ostatniego z nich - jeśli w międzyczasie warunek przestanie być
+    prawdziwy choć na jeden dzień, licznik resetuje się do zera (sygnał
+    uznany za nieważny, trzeba złapać nowy od początku, nie kontynuować
+    przerwanego).
     """
     min_bars = max(MA_PERIOD, RSI_PERIOD + 1, ATR_PERIOD + 1)
     use_arming_gate = arm_profit_atr_mult is not None and trail_atr_mult is not None
+    signal_streak = 0
 
     # Optymalizacja wydajności (dodana 2026-07-30, potrzebna pod grid search
     # parametrów - "sprawdź inny próg RSI i co tylko tam chcesz"): oryginalna
@@ -104,14 +119,21 @@ def run_signal_backtest(
             sma = _compute_sma(closes, MA_PERIOD)
             atr = _compute_atr(window, ATR_PERIOD)
             trend_ok = (price > sma) if require_uptrend else True
-            if rsi is not None and sma is not None and atr is not None and rsi < rsi_threshold and trend_ok:
-                try:
-                    decision = signal_strategy.compute_entry(
-                        entry_amount, price, atr, stop_loss_atr_mult, take_profit_atr_mult,
-                    )
-                except signal_strategy.EntryValidationError:
-                    decision = None
-                if decision is not None:
-                    portfolio.buy(ticker, day, price, decision.quantity, decision.stop_loss_price)
+            condition_met = rsi is not None and sma is not None and atr is not None and rsi < rsi_threshold and trend_ok
+
+            if not condition_met:
+                signal_streak = 0
+            else:
+                signal_streak += 1
+                if signal_streak > confirm_days:
+                    try:
+                        decision = signal_strategy.compute_entry(
+                            entry_amount, price, atr, stop_loss_atr_mult, take_profit_atr_mult,
+                        )
+                    except signal_strategy.EntryValidationError:
+                        decision = None
+                    if decision is not None:
+                        portfolio.buy(ticker, day, price, decision.quantity, decision.stop_loss_price)
+                    signal_streak = 0
 
         portfolio.mark_to_market({ticker: price})
