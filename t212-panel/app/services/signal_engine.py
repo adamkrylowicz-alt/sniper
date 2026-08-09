@@ -76,7 +76,7 @@ from ..models import SignalAsset, SignalAuditLog, SignalSettings, SignalTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
-from . import bot_credentials, diagnostics, market_hours, position_alerts, price_feed, price_watchdog, telegram_notify
+from . import bot_credentials, diagnostics, market_hours, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import signal_strategy
 from .strategy.microgrid_strategy import compute_equity_scaled_amount
@@ -529,6 +529,16 @@ def _process_entries(
             diagnostics.log_diag(
                 user_id, "signal",
                 f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
+            )
+            continue
+        sector_collision = sector_diversity.held_sector_ticker(user_id, env, asset.ticker)
+        if sector_collision is not None:
+            # Koncentracja sektorowa (2026-08-10) - patrz docstring
+            # sector_diversity.py, znalezione na żywo (Sygnał, 4/6 pozycji w
+            # tym samym sektorze). Skanuje wszystkie 3 silniki.
+            diagnostics.log_diag(
+                user_id, "signal",
+                f"{asset.ticker}: pominięte wejście - już otwarta pozycja w tym samym sektorze ({sector_collision}).",
             )
             continue
         if not market_hours.is_market_open(asset.currency):

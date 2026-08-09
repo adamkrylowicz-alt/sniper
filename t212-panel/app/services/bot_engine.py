@@ -170,7 +170,7 @@ from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSetting
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
-from . import bot_credentials, bot_entry_filters, diagnostics, mailer, position_alerts, price_feed, price_watchdog, telegram_notify
+from . import bot_credentials, bot_entry_filters, diagnostics, mailer, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
 from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
 
@@ -2497,6 +2497,17 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
             _log_block_reason_throttled(
                 user_id, f"held_by_other:{asset.ticker}",
                 f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
+            )
+            continue
+        sector_collision = sector_diversity.held_sector_ticker(user_id, env, asset.ticker)
+        if sector_collision is not None:
+            # Koncentracja sektorowa (2026-08-10) - patrz docstring
+            # sector_diversity.py, znalezione na żywo (Sygnał, 4/6 pozycji w
+            # tym samym sektorze). Skanuje wszystkie 3 silniki, więc kolizja
+            # może pochodzić z DOWOLNEGO z nich, nie tylko Micro-Gridu.
+            _log_block_reason_throttled(
+                user_id, f"sector:{asset.ticker}",
+                f"{asset.ticker}: pominięte wejście - już otwarta pozycja w tym samym sektorze ({sector_collision}).",
             )
             continue
         backoff = _entry_fail_backoff.get((user_id, asset.ticker))
