@@ -42,6 +42,7 @@ def run_signal_backtest(
     trail_atr_mult: Decimal | None = None,
     require_uptrend: bool = True,
     confirm_days: int = 0,
+    entry_multiplier: list[Decimal] | None = None,
 ) -> None:
     """
     Odtwarza logikę Sygnału dzień po dniu na `candles` (o/h/l/c, rosnąco).
@@ -66,6 +67,15 @@ def run_signal_backtest(
     prawdziwy choć na jeden dzień, licznik resetuje się do zera (sygnał
     uznany za nieważny, trzeba złapać nowy od początku, nie kontynuować
     przerwanego).
+
+    `entry_multiplier` (dodane 2026-08-09, eksperyment - patrz backtest/
+    regime.py::fetch_regime_multipliers, filtr reżimu rynkowego z financial-
+    hacker.com "The Market Regime Filter"): lista mnożników `entry_amount`
+    indeksowana TYM SAMYM `day` co pętla niżej (musi mieć długość >=
+    len(candles), inaczej brak mnożnika dla danego dnia = traktowane jak
+    1.0). Domyślnie None - stare zachowanie, entry_amount bez zmian.
+    Mnożnik 0.0 = quantity wyjdzie 0 -> EntryValidationError -> brak wejścia
+    tego dnia (ten sam efekt co "Red" w artykule, zero nowego kodu na to).
     """
     min_bars = max(MA_PERIOD, RSI_PERIOD + 1, ATR_PERIOD + 1)
     use_arming_gate = arm_profit_atr_mult is not None and trail_atr_mult is not None
@@ -126,9 +136,12 @@ def run_signal_backtest(
             else:
                 signal_streak += 1
                 if signal_streak > confirm_days:
+                    day_entry_amount = entry_amount
+                    if entry_multiplier is not None and day < len(entry_multiplier):
+                        day_entry_amount = entry_amount * entry_multiplier[day]
                     try:
                         decision = signal_strategy.compute_entry(
-                            entry_amount, price, atr, stop_loss_atr_mult, take_profit_atr_mult,
+                            day_entry_amount, price, atr, stop_loss_atr_mult, take_profit_atr_mult,
                         )
                     except signal_strategy.EntryValidationError:
                         decision = None
