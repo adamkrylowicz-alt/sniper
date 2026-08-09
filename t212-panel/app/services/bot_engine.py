@@ -2138,6 +2138,13 @@ def reconcile(user_id: int) -> None:
         return
 
     settings = RiskSettings.query.filter_by(user_id=user_id).first()
+    if not settings or not settings.is_bot_active:
+        # Symetrycznie do tick() - bez tego gate'a user z autostartem w
+        # bot_autostart_keys.json, ale świadomie WYŁĄCZONYM botem w UI,
+        # dostawał pełne reconcile() (w tym realne zlecenia) przy KAŻDYM
+        # restarcie appki. Znalezione 2026-08-06 przy incydencie migracji
+        # prod->dev, patrz IDEAS_v2.md.
+        return
 
     client = T212Client(
         api_key=creds["api_key"], api_secret=creds["api_secret"], environment=current_environment(user_id),

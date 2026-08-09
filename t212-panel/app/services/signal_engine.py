@@ -889,7 +889,9 @@ def reconcile(user_id: int) -> None:
         _log(user_id, "ERROR", "Reconciliation: brak zapisanego klucza API demo, pomijam.")
         return
     settings = SignalSettings.query.filter_by(user_id=user_id).first()
-    if settings is None:
+    if not settings or not settings.is_active:
+        # Symetrycznie do tick() - patrz identyczny fix w bot_engine.py
+        # (2026-08-09, IDEAS_v2.md TODO z 2026-08-06).
         return
 
     _manage_paper_exits(user_id, settings)

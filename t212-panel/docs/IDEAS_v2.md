@@ -1666,7 +1666,7 @@ najczęstsze). Do rozważenia w przyszłości, jeśli 72h cooldown okaże się z
 krótki na żywo (np. gdyby ticker wszedł w wielodniowy, powolny spadek z
 kolejnymi pojedynczymi stop-lossami co kilka dni).
 
-## TODO (2026-08-06, noc): reconcile() we wszystkich 3 silnikach nie sprawdza is_bot_active/is_active
+## ZROBIONE (2026-08-09): reconcile() we wszystkich 3 silnikach nie sprawdza is_bot_active/is_active
 
 Znalezione przy okazji incydentu z autostart plikiem na prod (patrz
 CLAUDE.md, wpis "przełącznik środowiska demo/live... + INCYDENT"):
@@ -1688,3 +1688,14 @@ na instancji, gdzie bot jest świadomie wyłączony w UI - usunąć plik ręczni
 bezpośrednią zmianę w bazie zamiast przez UI (tak jak przy migracji
 prod->dev tego dnia - deaktywowałem flagi w bazie, ale zapomniałem usunąć
 plik autostartu, co spowodowało incydent).
+
+**ZROBIONE 2026-08-09**: dodany gate `if not settings or not settings.is_bot_active/is_active: return`
+na początku `reconcile()` w `bot_engine.py`/`signal_engine.py`/`eod_engine.py`,
+tuż po pobraniu `settings`, symetrycznie do `tick()`. Zweryfikowane dwoma
+mockowanymi testami (nie ruszały realnego API) - (1) bot wyłączony +
+dostępne poświadczenia -> `reconcile()` wychodzi natychmiast, zero wywołań
+`_auto_adopt_foreign_positions`/`_manage_trailing_exit`/`_trigger_dca_buys`
+(wymuszone przez `AssertionError` gdyby któraś się wykonała); (2) bot
+włączony -> `reconcile()` normalnie dochodzi do `_auto_adopt_foreign_positions`,
+gate nie blokuje aktywnego bota. Zastosowane i zrestartowane na dev, czysty
+start (`curl` -> 302, brak tracebacku). Migracja na prod: patrz CLAUDE.md.
