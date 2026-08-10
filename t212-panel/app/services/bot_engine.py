@@ -1372,7 +1372,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         ActiveTrade.query
         .filter_by(
             user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True, sell_blocked=False,
-            environment=current_environment(user_id),
+            sl_suspended_for_weekend=False, environment=current_environment(user_id),
         )
         .filter(db.or_(ActiveTrade.next_sell_retry_at.is_(None), ActiveTrade.next_sell_retry_at <= now))
         .all()

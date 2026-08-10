@@ -117,7 +117,7 @@ def _register_scheduler(app: Flask) -> None:
     if Config.DEBUG and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
         return
 
-    from .services import bot_credentials, bot_engine, daily_summary, eod_engine, signal_engine, telegram_commands
+    from .services import bot_credentials, bot_engine, daily_summary, eod_engine, signal_engine, telegram_commands, weekend_guard
 
     # Autostart TYMCZASOWY "DO ODWOŁANIA" (Adam, 2026-07-27) - patrz pelny
     # docstring w services/bot_credentials.py. Odtwarza poswiadczenia
@@ -204,6 +204,22 @@ def _register_scheduler(app: Flask) -> None:
     scheduler.add_job(
         func=lambda: telegram_commands.poll_and_handle(app),
         trigger="interval", seconds=15, id="telegram_commands_poll", replace_existing=True,
+    )
+    # Weekendowe zawieszenie SL (Adam, 2026-08-10 - patrz services/
+    # weekend_guard.py) - piątek 21:00 anuluje żywe zlecenia STOP dla
+    # wszystkich 3 silników (luka na otwarciu USA po weekendzie mogłaby
+    # wyciąć pozycję po najgorszej cenie na chwilowym squeeze'u), poniedziałek
+    # 11:00 przywraca je z powrotem. Manualny override: /slpause i /slresume
+    # na Telegramie (telegram_commands.py) wołają te same dwie funkcje.
+    scheduler.add_job(
+        func=lambda: weekend_guard.suspend_all(app),
+        trigger="cron", day_of_week="fri", hour=21, minute=0, timezone="Europe/Amsterdam",
+        id="weekend_sl_suspend", replace_existing=True,
+    )
+    scheduler.add_job(
+        func=lambda: weekend_guard.restore_all(app),
+        trigger="cron", day_of_week="mon", hour=11, minute=0, timezone="Europe/Amsterdam",
+        id="weekend_sl_restore", replace_existing=True,
     )
     scheduler.start()
 

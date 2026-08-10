@@ -224,6 +224,9 @@ def run_microgrid_backtest(
     candles_by_ticker: dict[str, list[dict]],
     portfolio: GridPortfolio,
     settings: SettingsStub,
+    skip_gap_through_stop: bool = False,
+    realistic_gap_fill: bool = False,
+    gap_threshold_pct: Decimal = Decimal("0.01"),
 ) -> None:
     """
     Odtwarza kolejność bot_engine.py::tick() dzień po dniu: exit -> DCA -> jedno
@@ -243,6 +246,32 @@ def run_microgrid_backtest(
     offset = total_days - len(jego świec)) - ticker bez jeszcze własnej
     historii tego dnia jest pomijany (nie ma jak wejść w pozycję, której
     jeszcze nie mógł mieć), zamiast obcinać wszystkim innym horyzont.
+
+    `skip_gap_through_stop` (dodane 2026-08-10, eksperyment - Adam: luka na
+    otwarciu weekendowym może "wyciąć" SL, chce to przeczekać zamiast
+    realizować stratę na chwilowym dołku): gdy dzień otwiera się PONIŻEJ
+    stop_target_price O WIĘCEJ NIŻ `gap_threshold_pct` (patrz niżej - zwykła
+    noc-do-nocy zmienność NIE liczy się jako "luka", tylko realny skok),
+    ta sama noga NIE jest zamykana tego dnia - pozycja jedzie dalej,
+    zwykły trailing/floor wraca następnego dnia. Domyślnie False - stare
+    zachowanie bez zmian.
+
+    `gap_threshold_pct` (domyślnie 1%) - próg wielkości luki żeby w ogóle
+    liczyła się jako "luka" (dla `skip_gap_through_stop`/`realistic_gap_fill`).
+    WAŻNE odkrycie przy budowie tego eksperymentu: przy dzisiejszym
+    take_profit_step_pct=0.2% stop siedzi TAK ciasno że zwykła, codzienna
+    zmienność nocna (mediana ~0.4% na AAPL, 70% dni ma gap >0.2%) prawie
+    ZAWSZE technicznie "gapuje przez" stop - bez tego progu test mierzyłby
+    głównie zwykły szum, nie prawdziwe zdarzenia weekendowe/newsowe.
+
+    `realistic_gap_fill` (dodane razem z powyższym, OSOBNA flaga - domyślnie
+    False, zero zmiany zachowania dla żadnego innego wołającego tej funkcji):
+    gdy True, fill = min(stop_target_price, day_open) zamiast zawsze
+    idealnego stop_target_price - rzeczywisty resting STOP na T212 wypełnia
+    się na dostępnej cenie, nie tam gdzie stał, gdy rynek otwiera się
+    poniżej niego. Osobna flaga (nie połączona z `skip_gap_through_stop`)
+    żeby dało się uczciwie porównać "uszanuj stop" vs "przeczekaj lukę" z
+    tym samym, realistycznym modelem wypełnień po obu stronach.
     """
     min_bars = ATR_PERIOD + 1
     tickers = [a.ticker for a in assets]
@@ -253,6 +282,7 @@ def run_microgrid_backtest(
     for calendar_day in range(min_bars, total_days):
         day_prices: dict[str, Decimal] = {}
         day_lows: dict[str, Decimal] = {}
+        day_opens: dict[str, Decimal] = {}
         windows: dict[str, list[dict]] = {}
         for ticker in tickers:
             local_day = calendar_day - offsets[ticker]
@@ -262,6 +292,7 @@ def run_microgrid_backtest(
             windows[ticker] = window
             day_prices[ticker] = Decimal(str(window[-1]["c"]))
             day_lows[ticker] = Decimal(str(window[-1]["l"]))
+            day_opens[ticker] = Decimal(str(window[-1]["o"]))
 
         # --- 1. Exit (trailing STOP) dla wszystkich otwartych pozycji ---
         for ticker in list(portfolio.open_positions.keys()):
@@ -314,7 +345,14 @@ def run_microgrid_backtest(
                 )
 
             if pos.stop_target_price is not None and day_lows[ticker] <= pos.stop_target_price:
-                portfolio.close(ticker, calendar_day, pos.stop_target_price, "trailing-stop")
+                gapped_through = day_opens[ticker] < pos.stop_target_price * (1 - gap_threshold_pct)
+                if skip_gap_through_stop and gapped_through:
+                    pass  # przeczekujemy luke, patrz docstring skip_gap_through_stop
+                else:
+                    fill_price = pos.stop_target_price
+                    if realistic_gap_fill and gapped_through:
+                        fill_price = day_opens[ticker]
+                    portfolio.close(ticker, calendar_day, fill_price, "trailing-stop")
 
         # --- 2. DCA dla pozycji, ktore przezyly krok 1 ---
         for ticker in list(portfolio.open_positions.keys()):

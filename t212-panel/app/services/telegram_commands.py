@@ -36,7 +36,7 @@ from ..models import (
 )
 from ..routes.api_keys import get_decrypted_credentials
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name as _display_name
-from . import bot_credentials, bot_engine, daily_summary, eod_engine, price_feed, signal_engine, telegram_notify
+from . import bot_credentials, bot_engine, daily_summary, eod_engine, price_feed, signal_engine, telegram_notify, weekend_guard
 from .t212_client import T212APIError, T212Client
 
 # Pozycje czekające na potwierdzenie /close (Adam, 2026-08-09) - "tak" w
@@ -85,6 +85,9 @@ _HELP_TEXT = """🤖 SNAJPER - dostępne komendy
 /close TICKER - zamyka pozycję (Market Sell) po potwierdzeniu
 /close all - zamyka WSZYSTKIE otwarte pozycje po potwierdzeniu
 tak - potwierdza ostatni /close (2 min na odpowiedź, potem wygasa)
+
+/slpause - zdejmuje SL ze wszystkich pozycji już teraz (auto: pt 21:00)
+/slresume - przywraca SL już teraz (auto: pon 11:00)
 
 kupiłem - potwierdza ręczne kupno po sygnale, przekazuje botowi
 nie - odrzuca aktualnie sugerowany sygnał wejścia na 5 min
@@ -419,6 +422,17 @@ def poll_and_handle(app) -> None:
                 icon = ENGINE_ICONS.get(name, "")
                 state = "wznowiony ✅" if resume else "spauzowany ⛔"
                 telegram_notify.send_telegram_message(token, chat_id, f"{icon} {name}: {state}.")
+
+            elif text.lower() == "/slpause":
+                # Ręczny override harmonogramu weekendowego (Adam, 2026-08-10 -
+                # patrz weekend_guard.py) - normalnie automatyczne pt 21:00/
+                # pon 11:00, ale Adam może chcieć zdjąć SL wcześniej (np. przed
+                # ważnym newsem w tygodniu). Wysyła własne potwierdzenie na
+                # Telegram (patrz suspend_all), więc tu nic dodatkowego.
+                weekend_guard.suspend_all(app)
+
+            elif text.lower() == "/slresume":
+                weekend_guard.restore_all(app)
 
             elif text.lower() in ("kupiłem", "kupilem", "kupiłam", "kupilam"):
                 # Potwierdzenie ręcznego kupna po sygnale (Adam, 2026-08-07:

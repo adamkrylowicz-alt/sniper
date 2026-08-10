@@ -629,6 +629,14 @@ class ActiveTrade(db.Model):
     # STOP-a to Market Order po przebiciu tej ceny, więc może się nieznacznie
     # różnić (poślizg) - to przybliżenie, nie gwarancja co do grosza.
     stop_target_price = db.Column(db.Numeric(12, 4), nullable=True)
+    # Weekendowe zawieszenie SL (Adam, 2026-08-10 - patrz
+    # services/weekend_guard.py) - True MIĘDZY anulowaniem prawdziwego
+    # zlecenia (pt 21:00) a jego przywróceniem (pon 11:00). Odróżnia
+    # "świadomie zawieszone" (stop_order_id=None, TO pole True) od "jeszcze
+    # nigdy nie uzbrojone" (stop_order_id=None, TO pole False) - bez tego
+    # rozróżnienia zwykły tick natychmiast uzbroiłby nowy stop, cofając
+    # zawieszenie w 60s (patrz _manage_trailing_exit - filtruje po tym polu).
+    sl_suspended_for_weekend = db.Column(db.Boolean, nullable=False, default=False)
     # Zapisywane przy zamknięciu pozycji (_finalize_closed_trade) - kopia
     # stop_target_price z chwili zamknięcia, żeby zysk/strata zrealizowana
     # dało się policzyć bez grzebania w (skasowanym w międzyczasie 21.07)
@@ -871,6 +879,9 @@ class SignalTrade(db.Model):
     stop_loss_price = db.Column(db.Numeric(12, 4), nullable=False)
     take_profit_price = db.Column(db.Numeric(12, 4), nullable=False)
     stop_order_id = db.Column(db.String(64), nullable=True)
+    # Weekendowe zawieszenie SL - patrz identyczny komentarz na
+    # ActiveTrade.sl_suspended_for_weekend / services/weekend_guard.py.
+    sl_suspended_for_weekend = db.Column(db.Boolean, nullable=False, default=False)
 
     status = db.Column(db.String(10), nullable=False, default="OPEN")
     is_paper = db.Column(db.Boolean, nullable=False, default=False)
@@ -1041,6 +1052,9 @@ class EODTrade(db.Model):
     stop_loss_price = db.Column(db.Numeric(12, 4), nullable=False)
     take_profit_price = db.Column(db.Numeric(12, 4), nullable=False)
     stop_order_id = db.Column(db.String(64), nullable=True)
+    # Weekendowe zawieszenie SL - patrz identyczny komentarz na
+    # ActiveTrade.sl_suspended_for_weekend / services/weekend_guard.py.
+    sl_suspended_for_weekend = db.Column(db.Boolean, nullable=False, default=False)
 
     status = db.Column(db.String(10), nullable=False, default="OPEN")
     is_paper = db.Column(db.Boolean, nullable=False, default=False)

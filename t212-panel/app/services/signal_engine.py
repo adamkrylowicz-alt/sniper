@@ -853,7 +853,7 @@ def _manage_exits(
 ) -> None:
     open_trades = SignalTrade.query.filter_by(
         user_id=user_id, status="OPEN", is_paper=False, buy_confirmed=True,
-        environment=current_environment(user_id),
+        sl_suspended_for_weekend=False, environment=current_environment(user_id),
     ).all()
     if not open_trades:
         return
