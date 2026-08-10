@@ -221,6 +221,18 @@ def _register_scheduler(app: Flask) -> None:
         trigger="cron", day_of_week="mon", hour=11, minute=0, timezone="Europe/Amsterdam",
         id="weekend_sl_restore", replace_existing=True,
     )
+    # DOGONIENIE przy starcie (dodane 2026-08-10, znalezione na żywo - Adam
+    # zauważył że SL były nadal aktywne mimo bycia w oknie, bo appka
+    # wystartowała z tym kodem DOPIERO PO tym jak cron "piątek 21:00" już
+    # minął w tym tygodniu - job cyklu nie odpala się retroaktywnie, tylko
+    # dokładnie w zaplanowanym momencie) - jeśli restart/start appki
+    # wypada JUŻ W TRAKCIE okna (np. wdrożenie w sobotę/niedzielę/
+    # poniedziałek przed 11:00), zawieś od razu zamiast czekać do
+    # następnego piątku. suspend_all() jest idempotentne (filtruje
+    # sl_suspended_for_weekend=False), bezpieczne wołać nawet gdy część
+    # pozycji już zawieszona wcześniej.
+    if weekend_guard.in_suspension_window():
+        weekend_guard.suspend_all(app)
     scheduler.start()
 
 
