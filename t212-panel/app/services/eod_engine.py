@@ -783,6 +783,29 @@ def _trail_stop_loss(
     if candidate_stop is None:
         return  # nic do poprawy - juz na tym poziomie/wyzej, albo poprawa za mala na Cancel-Replace
 
+    # Cudzy (nie-botowy) SELL na tickerze - patrz identyczny komentarz i
+    # incydent w bot_engine.py::_manage_trailing_exit (2026-08-10, Adam po
+    # TotalEnergies/SUp_EQ). get_pending_orders() dzieli 50s cache z resztą
+    # ticku, więc to zwykle cache hit, nie dodatkowy request.
+    try:
+        live_orders = client.get_pending_orders()
+    except T212APIError:
+        live_orders = []
+    foreign_order = next(
+        (o for o in live_orders if o.get("ticker") == trade.ticker and o.get("side") == "SELL"), None,
+    )
+    if foreign_order is not None and str(foreign_order.get("id")) != trade.stop_order_id:
+        trade.stop_order_id = None
+        trade.status = "RELEASED"
+        db.session.commit()
+        _log(
+            user_id, "WARN",
+            f"{trade.ticker}: wykryto na T212 zlecenie SELL ({foreign_order.get('id')}) spoza bota "
+            f"(initiatedFrom={foreign_order.get('initiatedFrom')}) - pozycja zwolniona spod zarządzania "
+            "automatycznie, żeby bot nie dobijał się o nią co tick. Udziały zostają na koncie.",
+        )
+        return
+
     if trade.stop_order_id:
         try:
             client.cancel_order(trade.stop_order_id)

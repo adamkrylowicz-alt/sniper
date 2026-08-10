@@ -28,6 +28,7 @@ Dotyczy WSZYSTKICH 3 silników naraz (Micro-Grid/Sygnał/EOD) - Adam
 from __future__ import annotations
 
 import datetime as dt
+from decimal import Decimal
 
 import pytz
 
@@ -163,10 +164,35 @@ def restore_all(app) -> None:
                     try:
                         result = client.place_stop_order(trade.ticker, -trade.quantity, stop_price)
                     except T212APIError as exc:
+                        real_qty = None
+                        try:
+                            position = client.get_position(trade.ticker)
+                            if position is not None:
+                                real_qty = Decimal(str(position.get("quantity")))
+                        except T212APIError:
+                            pass
+                        if real_qty is not None and 0 < real_qty < trade.quantity:
+                            try:
+                                result = client.place_stop_order(trade.ticker, -real_qty, stop_price)
+                            except T212APIError as exc2:
+                                exc = exc2
+                            else:
+                                trade.stop_order_id = result.order_id
+                                trade.sl_suspended_for_weekend = False
+                                restored.append((name, trade.ticker))
+                                db.session.add(audit_model(
+                                    user_id=user_id, action_type="INFO", environment=env,
+                                    message=f"{trade.ticker}: SL przywrócony po weekendzie na {stop_price:.4f} "
+                                    f"(ilość skorygowana do prawdziwej z T212: {real_qty}, w bazie było {trade.quantity}).",
+                                ))
+                                continue
+                        trade.sl_suspended_for_weekend = False
                         failed.append((name, trade.ticker, str(exc)))
                         db.session.add(audit_model(
                             user_id=user_id, action_type="ERROR", environment=env,
-                            message=f"{trade.ticker}: nie udało się przywrócić SL po weekendzie - {exc}. POZYCJA NIECHRONIONA, sprawdź ręcznie.",
+                            message=f"{trade.ticker}: nie udało się przywrócić SL po weekendzie - {exc}. "
+                            "Odblokowana do zwykłego ticku (rekoncyliacja/ponowne uzbrojenie w ciągu ~1 min), "
+                            "sprawdź na wszelki wypadek ręcznie.",
                         ))
                         continue
                     trade.stop_order_id = result.order_id

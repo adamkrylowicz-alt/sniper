@@ -1675,7 +1675,50 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         reverse=True,
     )
 
+    # Cudze (nie-botowe) SELL-e na tickerze (2026-08-10, Adam po incydencie
+    # TotalEnergies/SUp_EQ - ręcznie wystawiony limit sell z appki T212 na
+    # telefonie, bot dobijał się co tick, żeby wystawić WŁASNY, kolidujący
+    # STOP, dostając w kółko selling-equity-not-owned zamiast się zorientować
+    # że user już samodzielnie sprzedaje: "bot powinien odczytać że to ręcznie
+    # wystawiony SL i odpuścić, a nie się dobijać jak T-800"). Sprawdzane
+    # RAZ na cały tick (współdzielony 50s cache T212Client, patrz
+    # get_pending_orders() - nie kosztuje dodatkowego requestu poza pierwszym
+    # w tym ticku), nie per-trade. Zlecenie uznajemy za "cudze" gdy jego id
+    # NIE jest żadnym ze śledzonych przez tego trade'a (stop/sell/DCA-buy) -
+    # solidniejsze niż poleganie na polu initiatedFrom (mogłoby się kiedyś
+    # zmienić/nie zawsze być tym czego oczekujemy).
+    try:
+        live_orders = client.get_pending_orders()
+    except T212APIError:
+        live_orders = []  # cache miss/siec akurat nawaliła - bez tej ochrony na TEN jeden tick, nie blokujemy całej fazy 2
+    foreign_sell_by_ticker: dict[str, dict] = {}
+    for o in live_orders:
+        if o.get("side") != "SELL":
+            continue
+        foreign_sell_by_ticker.setdefault(o.get("ticker"), o)
+
     for trade, candidate_stop, milestone_steps, current_price in pending:
+        foreign_order = foreign_sell_by_ticker.get(trade.ticker)
+        if foreign_order is not None and str(foreign_order.get("id")) not in (
+            trade.stop_order_id, trade.sell_order_id, trade.dca_pending_buy_order_id,
+        ):
+            trade.stop_order_id = None
+            trade.sell_order_id = None
+            trade.dca_pending_buy_order_id = None
+            trade.dca_pending_quantity = None
+            trade.dca_pending_price = None
+            trade.dca_pending_baseline_quantity = None
+            trade.status = "RELEASED"
+            db.session.commit()
+            _log(
+                user_id, "WARN",
+                f"{trade.ticker}: wykryto na T212 zlecenie SELL ({foreign_order.get('id')}) spoza bota "
+                f"(initiatedFrom={foreign_order.get('initiatedFrom')}) - pozycja zwolniona spod zarządzania "
+                "automatycznie, żeby bot nie dobijał się o nią co tick. Udziały zostają na koncie.",
+                trade.position_group_id,
+            )
+            continue
+
         if trade.stop_order_id:
             try:
                 client.cancel_order(trade.stop_order_id)
