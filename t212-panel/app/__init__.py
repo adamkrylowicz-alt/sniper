@@ -260,8 +260,11 @@ def _register_context_processors(app: Flask) -> None:
         # do kazdej zakladki osobno. Tylko lokalny COUNT w bazie, ZERO
         # zapytan do T212 - bezpieczne nawet przy ciasnym rate limicie demo.
         open_position_counts = {"bot": 0, "signal": 0, "eod": 0, "aktywa": 0}
+        is_admin = False
         if session_data is not None:
-            from .models import ActiveTrade, EODTrade, SignalTrade, UserSettings
+            from .models import ActiveTrade, EODTrade, SignalTrade, User, UserSettings
+            user = User.query.get(session_data.user_id)
+            is_admin = bool(user is not None and user.is_admin)
             settings = UserSettings.query.filter_by(user_id=session_data.user_id).first()
             if settings is not None and settings.dark_mode is False:
                 theme = "light"
@@ -293,6 +296,7 @@ def _register_context_processors(app: Flask) -> None:
 
         return {
             "is_authenticated": session_data is not None,
+            "is_admin": is_admin,
             "current_theme": theme,
             "open_position_counts": open_position_counts,
             "active_environment": active_environment,
