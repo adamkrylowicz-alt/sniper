@@ -227,6 +227,7 @@ def run_microgrid_backtest(
     skip_gap_through_stop: bool = False,
     realistic_gap_fill: bool = False,
     gap_threshold_pct: Decimal = Decimal("0.01"),
+    atr_mult_by_ticker: dict[str, Decimal] | None = None,
 ) -> None:
     """
     Odtwarza kolejność bot_engine.py::tick() dzień po dniu: exit -> DCA -> jedno
@@ -255,6 +256,15 @@ def run_microgrid_backtest(
     ta sama noga NIE jest zamykana tego dnia - pozycja jedzie dalej,
     zwykły trailing/floor wraca następnego dnia. Domyślnie False - stare
     zachowanie bez zmian.
+
+    `atr_mult_by_ticker` (dodane 2026-08-10, eksperyment - Adam: "ustalać
+    strategię dla każdego aktywa osobno?" po zauważeniu że floor Tesli
+    siedzi ~10% pod ceną a Home Depot ~0.3%): zamiast RĘCZNEGO tagowania
+    136 tickerów, mnożnik ATR skalowany AUTOMATYCZNIE z własnej zmienności
+    każdego tickera (patrz run_atr_scaling_backtest.py). Domyślnie None -
+    stare zachowanie, wszystkie tickery dzielą jeden globalny
+    `ATR_STOP_MULTIPLIER` (import z bot_engine.py). Gdy podane, ticker BEZ
+    wpisu w słowniku nadal dostaje globalną wartość (fail-open).
 
     `gap_threshold_pct` (domyślnie 1%) - próg wielkości luki żeby w ogóle
     liczyła się jako "luka" (dla `skip_gap_through_stop`/`realistic_gap_fill`).
@@ -302,6 +312,10 @@ def run_microgrid_backtest(
                 pos.average_price * (1 + FX_ROUND_TRIP_PCT) if pos.currency == "USD"
                 else pos.average_price
             )
+            effective_atr_mult = (
+                atr_mult_by_ticker.get(ticker, ATR_STOP_MULTIPLIER) if atr_mult_by_ticker is not None
+                else ATR_STOP_MULTIPLIER
+            )
             if settings.take_profit_step_abs is not None:
                 milestone_steps = microgrid_strategy.compute_milestone_steps_abs(
                     ref_price, price, settings.take_profit_step_abs,
@@ -314,7 +328,7 @@ def run_microgrid_backtest(
                 if is_first_arm:
                     atr = _compute_atr(windows[ticker], ATR_PERIOD)
                     if atr is not None:
-                        atr_distance = atr * ATR_STOP_MULTIPLIER
+                        atr_distance = atr * effective_atr_mult
                 if settings.take_profit_step_abs is not None:
                     candidate_stop = microgrid_strategy.compute_trailing_stop_abs(
                         is_first_arm=is_first_arm, ref_price=ref_price, current_price=price,
@@ -339,7 +353,7 @@ def run_microgrid_backtest(
                 # 2026-07-28 po tym jak PIERWSZY przebieg tego backtestu
                 # pokazał PRXa_EQ/MCp_EQ/SAPd_EQ utknięte bez ochrony).
                 atr = _compute_atr(windows[ticker], ATR_PERIOD)
-                atr_distance = atr * ATR_STOP_MULTIPLIER if atr is not None else None
+                atr_distance = atr * effective_atr_mult if atr is not None else None
                 pos.stop_target_price = microgrid_strategy.compute_exhausted_dca_floor(
                     price, atr_distance, settings.stop_loss_pct,
                 )
