@@ -23,6 +23,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from ..extensions import db
+from ..i18n import current_lang, t
 from ..models import Instrument, Pie, PieAsset
 from ..services import price_feed
 from ..services.market_hours import is_market_open as _market_open
@@ -63,7 +64,7 @@ def list_view():
 def create():
     name = (request.form.get("name") or "").strip()
     if not name:
-        flash("Podaj nazwę koszyka.")
+        flash(t("Podaj nazwę koszyka.", current_lang()))
         return redirect(url_for("pie.list_view"))
 
     pie = Pie(user_id=current_user_id(), name=name, environment=current_environment(current_user_id()))
@@ -120,7 +121,7 @@ def delete(pie_id):
     name = pie.name
     db.session.delete(pie)  # cascade="all, delete-orphan" na Pie.assets kasuje PieAsset-y
     db.session.commit()
-    flash(f"Usunięto koszyk {name}.")
+    flash(f"{t('Usunięto koszyk', current_lang())} {name}.")
     return redirect(url_for("pie.list_view"))
 
 
@@ -138,16 +139,16 @@ def add_asset(pie_id):
     ticker = (request.form.get("ticker") or "").strip()
 
     if not ticker:
-        flash("Brak tickera.")
+        flash(t("Brak tickera.", current_lang()))
         return redirect(url_for("pie.detail", pie_id=pie.id))
 
     instrument = Instrument.query.get(ticker)
     if instrument is None:
-        flash(f"{ticker} nie znaleziony w lokalnej bazie instrumentów - odśwież ją w Ustawieniach.")
+        flash(f"{ticker} {t('nie znaleziony w lokalnej bazie instrumentów - odśwież ją w Ustawieniach.', current_lang())}")
         return redirect(url_for("pie.detail", pie_id=pie.id))
 
     if PieAsset.query.filter_by(pie_id=pie.id, ticker=ticker).first() is not None:
-        flash(f"{ticker} jest już w tym koszyku.")
+        flash(f"{ticker} {t('jest już w tym koszyku.', current_lang())}")
         return redirect(url_for("pie.detail", pie_id=pie.id))
 
     asset = PieAsset(

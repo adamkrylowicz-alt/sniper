@@ -245,6 +245,8 @@ def _register_context_processors(app: Flask) -> None:
     UWAGA: to tylko odczyt (bool), NIE robi login_required - widoki nadal
     same chronią się dekoratorem gdzie trzeba.
     """
+    from .i18n import DEFAULT_LANGUAGE, LANG_COOKIE_NAME, SUPPORTED_LANGUAGES, all_translations
+    from .i18n import t as translate
     from .services.session_store import SESSION_COOKIE_NAME, get_session
 
     @app.context_processor
@@ -255,6 +257,13 @@ def _register_context_processors(app: Flask) -> None:
 
         theme = "dark"  # domyślny motyw dla niezalogowanych / braku ustawień
         active_environment = "demo"  # ten sam bezpieczny default co UserSettings.active_environment
+        # Język: ciasteczko (ustawiane przez /lang/toggle) wygrywa zawsze gdy
+        # obecne - działa też PRZED zalogowaniem (np. ekran logowania dla
+        # obcokrajowca). Bez ciasteczka - język z UserSettings, a dla
+        # niezalogowanych/nowych userów domyślny polski.
+        lang = request.cookies.get(LANG_COOKIE_NAME)
+        if lang not in SUPPORTED_LANGUAGES:
+            lang = None
         # Liczniki otwartych pozycji per silnik - Adam 2026-07-28: "w
         # zakladkach pododawaj liczbe porzadkowa zeby bylo latwo widziec ile
         # pozycji jest otwartych" - pokazywane jako plakietka przy Bot/
@@ -269,6 +278,8 @@ def _register_context_processors(app: Flask) -> None:
                 theme = "light"
             if settings is not None:
                 active_environment = settings.active_environment
+                if lang is None:
+                    lang = settings.language
 
             # "Aktywa" (scalping.py::portfolio_view) - WSZYSTKIE pozycje z
             # T212 (nie tylko botowe), stad nie liczba z lokalnej bazy jak
@@ -288,11 +299,17 @@ def _register_context_processors(app: Flask) -> None:
                 "aktywa": len(cached_portfolio["positions"]) if cached_portfolio else 0,
             }
 
+        if lang is None:
+            lang = DEFAULT_LANGUAGE
+
         return {
             "is_authenticated": session_data is not None,
             "current_theme": theme,
             "open_position_counts": open_position_counts,
             "active_environment": active_environment,
+            "current_lang": lang,
+            "t": lambda text: translate(text, lang),
+            "i18n_json": all_translations(lang),
         }
 
 
@@ -313,6 +330,7 @@ def _register_blueprints(app: Flask) -> None:
     from .routes.instrument import instrument_bp
     from .routes.signal import signal_bp
     from .routes.eod import eod_bp
+    from .routes.i18n import i18n_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(scalping_bp)
@@ -324,3 +342,4 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(instrument_bp)
     app.register_blueprint(signal_bp)
     app.register_blueprint(eod_bp)
+    app.register_blueprint(i18n_bp)

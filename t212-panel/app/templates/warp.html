@@ -11,29 +11,29 @@
                     <rect x="2" y="6" width="20" height="14" rx="2"/>
                     <path d="M2 10h20"/><circle cx="17" cy="15" r="1.5" fill="currentColor" stroke="none"/>
                 </svg>
-                SALDO
+                {{ t("SALDO") }}
             </div>
-            <div class="sidebar-widget__balance" id="account-balance">saldo: —</div>
-            <button type="button" class="account-bar__btn js-money-toggle-btn" title="Ukryj wartości (np. przed screen-share)" style="margin-bottom: 8px;">👁️</button>
+            <div class="sidebar-widget__balance" id="account-balance">{{ t("saldo: —") }}</div>
+            <button type="button" class="account-bar__btn js-money-toggle-btn" title="{{ t('Ukryj wartości (np. przed screen-share)') }}" style="margin-bottom: 8px;">👁️</button>
             <button id="btn-refresh" class="account-bar__btn">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>
                 </svg>
-                Odśwież
+                {{ t("Odśwież") }}
             </button>
 
             <div class="sidebar-widget__actions" style="margin-top: 10px;">
-                <button id="btn-cancel-buy" class="account-bar__btn account-bar__btn--buy" title="Anuluj wszystkie oczekujące zlecenia KUP">
+                <button id="btn-cancel-buy" class="account-bar__btn account-bar__btn--buy" title="{{ t('Anuluj wszystkie oczekujące zlecenia KUP') }}">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
                     </svg>
-                    Anuluj KUP
+                    {{ t("Anuluj KUP") }}
                 </button>
-                <button id="btn-cancel-sell" class="account-bar__btn account-bar__btn--sell" title="Anuluj wszystkie oczekujące zlecenia SPRZEDAJ">
+                <button id="btn-cancel-sell" class="account-bar__btn account-bar__btn--sell" title="{{ t('Anuluj wszystkie oczekujące zlecenia SPRZEDAJ') }}">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <circle cx="12" cy="12" r="10"/><path d="M15 9l-6 6M9 9l6 6"/>
                     </svg>
-                    Anuluj SPRZEDAJ
+                    {{ t("Anuluj SPRZEDAJ") }}
                 </button>
             </div>
 
@@ -41,14 +41,14 @@
         </div>
 
         <div class="sidebar-widget">
-            <div class="sidebar-widget__title">ULUBIONE</div>
+            <div class="sidebar-widget__title">{{ t("ULUBIONE") }}</div>
             {% if not favorites %}
-            <p class="sidebar-widget__empty">Brak ulubionych.</p>
+            <p class="sidebar-widget__empty">{{ t("Brak ulubionych.") }}</p>
             {% else %}
             <div class="sidebar-favorites">
                 {% for f in favorites %}
                 <div class="sidebar-favorites__item {{ 'sidebar-favorites__item--active' if f.in_grid else '' }}">
-                    <a href="{{ url_for('instrument.detail', ticker=f.ticker) }}" class="sidebar-favorites__link" title="Szczegóły {{ f.ticker.split('_')[0] }}">
+                    <a href="{{ url_for('instrument.detail', ticker=f.ticker) }}" class="sidebar-favorites__link" title="{{ t('Szczegóły') }} {{ f.ticker.split('_')[0] }}">
                         {% if f.logo_filename %}
                         <img class="sidebar-favorites__avatar sidebar-favorites__avatar--logo"
                              src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
@@ -62,7 +62,7 @@
                             <span class="sidebar-favorites__name">
                                 {% if f.market_open is not none %}
                                 <span class="market-dot {{ 'market-dot--open' if f.market_open else 'market-dot--closed' }}"
-                                      title="{{ 'Giełda otwarta' if f.market_open else 'Giełda zamknięta' }}"></span>
+                                      title="{{ t('Giełda otwarta') if f.market_open else t('Giełda zamknięta') }}"></span>
                                 {% endif %}
                                 {{ f.name or f.ticker }}
                             </span>
@@ -74,7 +74,7 @@
                         class="sidebar-favorites__toggle {{ 'sidebar-favorites__toggle--active' if f.in_grid else '' }}"
                         data-ticker="{{ f.ticker }}"
                         data-in-grid="{{ 'true' if f.in_grid else 'false' }}"
-                        title="{{ 'W siatce - kliknij aby usunąć' if f.in_grid else 'Kliknij aby dodać do siatki' }}"
+                        title="{{ t('W siatce - kliknij aby usunąć') if f.in_grid else t('Kliknij aby dodać do siatki') }}"
                     >
                         <svg class="icon" viewBox="0 0 24 24" fill="{{ 'currentColor' if f.in_grid else 'none' }}" stroke="currentColor" stroke-width="2">
                             <path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.7 7.1-.6z"/>
@@ -85,26 +85,26 @@
             </div>
             {% endif %}
             <p class="sidebar-widget__hint" id="grid-toggle-status"></p>
-            <a href="{{ url_for('settings.watchlist_view') }}" class="sidebar-widget__link">Zarządzaj →</a>
+            <a href="{{ url_for('settings.watchlist_view') }}" class="sidebar-widget__link">{{ t("Zarządzaj") }} →</a>
         </div>
 
         <div class="sidebar-widget">
-            <div class="sidebar-widget__title">HISTORIA</div>
+            <div class="sidebar-widget__title">{{ t("HISTORIA") }}</div>
             {% if not recent_orders %}
-            <p class="sidebar-widget__empty">Brak zleceń.</p>
+            <p class="sidebar-widget__empty">{{ t("Brak zleceń.") }}</p>
             {% else %}
             <ul class="sidebar-mini-list sidebar-mini-list--history">
                 {% for o in recent_orders %}
                 <li>
                     <span class="history-table__side history-table__side--{{ o.side }}">
-                        {{ "K" if o.side == "buy" else "S" }}
+                        {{ t("K") if o.side == "buy" else t("S") }}
                     </span>
                     {{ o.ticker.split('_')[0] }} · {{ o.quantity }}
                 </li>
                 {% endfor %}
             </ul>
             {% endif %}
-            <a href="{{ url_for('scalping.history_view') }}" class="sidebar-widget__link">Zobacz całą →</a>
+            <a href="{{ url_for('scalping.history_view') }}" class="sidebar-widget__link">{{ t("Zobacz całą") }} →</a>
         </div>
     </aside>
 
@@ -113,11 +113,10 @@
             {% if not tickers %}
             <div style="grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--hairline); display: flex; align-items: center; justify-content: center; text-align: center; padding: 32px 24px;">
                 <div>
-                    <p style="color: var(--text-bright); font-weight: 600; margin: 0 0 8px;">Siatka jest pusta</p>
+                    <p style="color: var(--text-bright); font-weight: 600; margin: 0 0 8px;">{{ t("Siatka jest pusta") }}</p>
                     <p class="sidebar-widget__empty" style="margin: 0;">
-                        Wybierz aktywa w widgecie ULUBIONE po lewej (albo dodaj nowe w
-                        <a href="{{ url_for('settings.watchlist_view') }}">Ustawienia → Watchlist</a>),
-                        żeby pojawiły się tutaj jako kafelki.
+                        {{ t("Wybierz aktywa w widgecie ULUBIONE po lewej (albo dodaj nowe w") }}
+                        <a href="{{ url_for('settings.watchlist_view') }}">{{ t("Ustawienia") }} → Watchlist</a>{{ t("), żeby pojawiły się tutaj jako kafelki.") }}
                     </p>
                 </div>
             </div>
@@ -140,7 +139,7 @@
                             <span class="tile__name">
                                 {% if tile.market_open is not none %}
                                 <span class="market-dot {{ 'market-dot--open' if tile.market_open else 'market-dot--closed' }}"
-                                      title="{{ 'Giełda otwarta' if tile.market_open else 'Giełda zamknięta' }}"></span>
+                                      title="{{ t('Giełda otwarta') if tile.market_open else t('Giełda zamknięta') }}"></span>
                                 {% endif %}
                                 {{ tile.name or tile.ticker.split('_')[0] }}
                             </span>
@@ -150,45 +149,45 @@
                     <input
                         type="number"
                         class="tile__price"
-                        placeholder="cena live (edytowalna)"
+                        placeholder="{{ t('cena live (edytowalna)') }}"
                         step="0.01"
                         min="0"
-                        aria-label="Cena wpisana ręcznie dla {{ tile.ticker }}"
+                        aria-label="{{ t('Cena wpisana ręcznie dla') }} {{ tile.ticker }}"
                     >
                 </div>
 
                 <div class="tile__pnl" aria-live="polite"></div>
 
                 <div class="tile__qty-row">
-                    <span class="tile__qty-label">ILOŚĆ</span>
-                    <div class="tile__qty-presets" role="group" aria-label="Presety ilości dla {{ tile.ticker }}">
+                    <span class="tile__qty-label">{{ t("ILOŚĆ") }}</span>
+                    <div class="tile__qty-presets" role="group" aria-label="{{ t('Presety ilości dla') }} {{ tile.ticker }}">
                         <button type="button" class="tile__preset" data-qty="0.1">0.1</button>
                         <button type="button" class="tile__preset" data-qty="0.5">0.5</button>
                         <button type="button" class="tile__preset tile__preset--active" data-qty="1">1</button>
-                        <button type="button" class="tile__preset tile__preset--custom" data-qty="custom">wł.</button>
+                        <button type="button" class="tile__preset tile__preset--custom" data-qty="custom">{{ t("wł.") }}</button>
                     </div>
                     <input
                         type="number"
                         class="tile__qty-custom-input tile__qty-custom-input--hidden"
                         min="0"
                         step="0.0001"
-                        aria-label="Własna ilość dla {{ tile.ticker }}"
+                        aria-label="{{ t('Własna ilość dla') }} {{ tile.ticker }}"
                     >
                 </div>
 
-                <div class="tile__mode-toggle" role="group" aria-label="Tryb zlecenia dla {{ tile.ticker }}">
-                    <button type="button" class="tile__mode-btn tile__mode-btn--active" data-mode="market">RYNEK</button>
-                    <button type="button" class="tile__mode-btn" data-mode="limit">LIMIT</button>
-                    <button type="button" class="tile__mode-btn" data-mode="stop">STOP</button>
-                    <button type="button" class="tile__mode-btn" data-mode="stoplimit">STOP-LIMIT</button>
+                <div class="tile__mode-toggle" role="group" aria-label="{{ t('Tryb zlecenia dla') }} {{ tile.ticker }}">
+                    <button type="button" class="tile__mode-btn tile__mode-btn--active" data-mode="market">{{ t("RYNEK") }}</button>
+                    <button type="button" class="tile__mode-btn" data-mode="limit">{{ t("LIMIT") }}</button>
+                    <button type="button" class="tile__mode-btn" data-mode="stop">{{ t("STOP") }}</button>
+                    <button type="button" class="tile__mode-btn" data-mode="stoplimit">{{ t("STOP-LIMIT") }}</button>
                 </div>
                 <input
                     type="number"
                     class="tile__stoplimit-price tile__stoplimit-price--hidden"
-                    placeholder="cena LIMIT (po triggerze) - pole u góry to STOP"
+                    placeholder="{{ t('cena LIMIT (po triggerze) - pole u góry to STOP') }}"
                     step="0.01"
                     min="0"
-                    aria-label="Cena LIMIT po triggerze STOP dla {{ tile.ticker }}"
+                    aria-label="{{ t('Cena LIMIT po triggerze STOP dla') }} {{ tile.ticker }}"
                 >
 
                 <div class="tile__flash"></div>
@@ -199,13 +198,13 @@
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                             <path d="M12 19V5M5 12l7-7 7 7"/>
                         </svg>
-                        KUP
+                        {{ t("KUP") }}
                     </button>
                     <button class="tile__btn tile__btn--sell" data-side="sell">
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                             <path d="M12 5v14M5 12l7 7 7-7"/>
                         </svg>
-                        SPRZEDAJ
+                        {{ t("SPRZEDAJ") }}
                     </button>
                 </div>
             </div>
@@ -216,9 +215,9 @@
 
     <aside class="warp-sidebar warp-sidebar--right">
         <div class="sidebar-widget">
-            <div class="sidebar-widget__title">OTWARTE ZLECENIA</div>
+            <div class="sidebar-widget__title">{{ t("OTWARTE ZLECENIA") }}</div>
             <div id="pending-orders-list" class="pending-orders-list">
-                <p class="sidebar-widget__empty">ładowanie…</p>
+                <p class="sidebar-widget__empty">{{ t("ładowanie…") }}</p>
             </div>
         </div>
     </aside>

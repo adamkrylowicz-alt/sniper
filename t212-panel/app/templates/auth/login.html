@@ -1,36 +1,36 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Logowanie{% endblock %}
+{% block title %}SNAJPER — {{ t("Logowanie") }}{% endblock %}
 
 {% block content %}
 <div class="auth-box">
     <img src="{{ url_for('static', filename='img/logo.png') }}" alt="Snajper" class="auth-box__logo">
-    <h1 class="auth-box__title">LOGOWANIE</h1>
+    <h1 class="auth-box__title">{{ t("LOGOWANIE") }}</h1>
 
     {% if error %}
-    <div class="auth-box__error">{{ error }}</div>
+    <div class="auth-box__error">{{ t(error) }}</div>
     {% endif %}
 
     <form method="post" class="auth-form">
         <input type="hidden" name="next" value="{{ next or '' }}">
 
-        <label class="auth-form__label" for="username">Użytkownik</label>
+        <label class="auth-form__label" for="username">{{ t("Użytkownik") }}</label>
         <input class="auth-form__input" type="text" id="username" name="username" required autofocus>
 
-        <label class="auth-form__label" for="password">Hasło</label>
+        <label class="auth-form__label" for="password">{{ t("Hasło") }}</label>
         <input class="auth-form__input" type="password" id="password" name="password" required>
 
         <label class="auth-form__checkbox">
             <input type="checkbox" name="remember_me">
-            Zapamiętaj mnie (30 dni)
+            {{ t("Zapamiętaj mnie (30 dni)") }}
         </label>
 
-        <button class="auth-form__submit" type="submit">ZALOGUJ</button>
+        <button class="auth-form__submit" type="submit">{{ t("ZALOGUJ") }}</button>
     </form>
 
     <p class="auth-box__footer">
-        Nie masz konta? <a href="{{ url_for('auth.register_view') }}">Zarejestruj się</a>
+        {{ t("Nie masz konta?") }} <a href="{{ url_for('auth.register_view') }}">{{ t("Zarejestruj się") }}</a>
         &nbsp;|&nbsp;
-        <a href="{{ url_for('auth.recover_view') }}">Zapomniałem hasła</a>
+        <a href="{{ url_for('auth.recover_view') }}">{{ t("Zapomniałem hasła") }}</a>
     </p>
 </div>
 {% endblock %}

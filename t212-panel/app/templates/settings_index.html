@@ -1,26 +1,25 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Ustawienia{% endblock %}
+{% block title %}SNAJPER — {{ t("Ustawienia") }}{% endblock %}
 
 {% block content %}
 <div class="history-box">
-    <h1 class="auth-box__title">USTAWIENIA</h1>
+    <h1 class="auth-box__title">{{ t("USTAWIENIA") }}</h1>
 
     <div class="settings-links">
         <a href="{{ url_for('api_keys.view') }}" class="settings-links__item">
-            <span class="settings-links__title">Klucze API</span>
-            <span class="settings-links__desc">Zapisz/zmień klucz i sekret T212 (demo/live), zaszyfrowane Twoim hasłem.</span>
+            <span class="settings-links__title">{{ t("Klucze API") }}</span>
+            <span class="settings-links__desc">{{ t("Zapisz/zmień klucz i sekret T212 (demo/live), zaszyfrowane Twoim hasłem.") }}</span>
         </a>
         <a href="{{ url_for('settings.watchlist_view') }}" class="settings-links__item">
             <span class="settings-links__title">Watchlist</span>
-            <span class="settings-links__desc">Wyszukaj instrumenty i ustaw listę ulubionych (max 9) dla Warp Mode.</span>
+            <span class="settings-links__desc">{{ t("Wyszukaj instrumenty i ustaw listę ulubionych (max 9) dla Warp Mode.") }}</span>
         </a>
     </div>
 
     <hr class="watchlist-divider">
-    <h2 class="auth-box__title" style="font-size:12px">FOCUS MODE — LICZBA KAFELKÓW</h2>
+    <h2 class="auth-box__title" style="font-size:12px">FOCUS MODE — {{ t("LICZBA KAFELKÓW") }}</h2>
     <p class="auth-box__hint">
-        Ile kafelków widać jednocześnie (1–9). Odświeżanie ceny live dopasowuje się
-        automatycznie żeby nie przekroczyć limitu Finnhub (60 req/min).
+        {{ t("Ile kafelków widać jednocześnie (1–9). Odświeżanie ceny live dopasowuje się automatycznie żeby nie przekroczyć limitu Finnhub (60 req/min).") }}
     </p>
     <form method="post" action="{{ url_for('settings.set_focus_tiles') }}" style="display:flex;gap:8px;align-items:center">
         <select name="focus_tiles" class="auth-form__input" style="width:auto;padding:6px 10px">
@@ -28,39 +27,38 @@
             <option value="{{ n }}">{{ n }}</option>
             {% endfor %}
         </select>
-        <button type="submit" class="account-bar__btn">Zapisz</button>
+        <button type="submit" class="account-bar__btn">{{ t("Zapisz") }}</button>
     </form>
 
     <hr class="watchlist-divider">
-    <h2 class="auth-box__title" style="font-size:12px">POWIADOMIENIA DŹWIĘKOWE</h2>
+    <h2 class="auth-box__title" style="font-size:12px">{{ t("POWIADOMIENIA DŹWIĘKOWE") }}</h2>
     <p class="auth-box__hint">
-        Głośność dźwięków przy zleceniach (Kup/Sprzedaj) i cichych odświeżeniach
-        danych. Zapamiętane w tej przeglądarce, 0% = wyciszone.
+        {{ t("Głośność dźwięków przy zleceniach (Kup/Sprzedaj) i cichych odświeżeniach danych. Zapamiętane w tej przeglądarce, 0% = wyciszone.") }}
     </p>
     <div style="display:flex; gap:12px; align-items:center; max-width:420px">
         <input type="range" id="sound-volume-slider" min="0" max="100" step="5" value="100" style="flex:1">
         <span id="sound-volume-value" style="min-width:44px; color:var(--text-muted); font-size:12px">100%</span>
-        <button type="button" id="sound-volume-test" class="account-bar__btn">Testuj</button>
+        <button type="button" id="sound-volume-test" class="account-bar__btn">{{ t("Testuj") }}</button>
     </div>
 
     {% if is_admin %}
     <hr class="watchlist-divider">
-    <h2 class="auth-box__title" style="font-size:12px">OCZEKUJĄCE KONTA ({{ pending_users|length }})</h2>
+    <h2 class="auth-box__title" style="font-size:12px">{{ t("OCZEKUJĄCE KONTA") }} ({{ pending_users|length }})</h2>
     {% if not pending_users %}
-    <p class="auth-box__hint">Brak kont czekających na zatwierdzenie.</p>
+    <p class="auth-box__hint">{{ t("Brak kont czekających na zatwierdzenie.") }}</p>
     {% else %}
     <div class="watchlist-favorites">
         {% for u in pending_users %}
         <div class="watchlist-favorites__item">
             <span class="watchlist-favorites__info">
                 <span class="watchlist-favorites__name">{{ u.username }}</span>
-                <span class="watchlist-favorites__ticker">zarejestrowany {{ u.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
+                <span class="watchlist-favorites__ticker">{{ t("zarejestrowany") }} {{ u.created_at.strftime("%Y-%m-%d %H:%M") }}</span>
             </span>
             <form method="post" action="{{ url_for('settings.approve_user', user_id=u.id) }}">
-                <button type="submit" class="account-bar__btn account-bar__btn--buy">Zatwierdź</button>
+                <button type="submit" class="account-bar__btn account-bar__btn--buy">{{ t("Zatwierdź") }}</button>
             </form>
             <form method="post" action="{{ url_for('settings.reject_user', user_id=u.id) }}">
-                <button type="submit" class="account-bar__btn account-bar__btn--sell">Odrzuć</button>
+                <button type="submit" class="account-bar__btn account-bar__btn--sell">{{ t("Odrzuć") }}</button>
             </form>
         </div>
         {% endfor %}
@@ -69,7 +67,7 @@
     {% endif %}
 
     <p class="auth-box__footer">
-        <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
+        <a href="{{ url_for('scalping.warp_view') }}">{{ t("← Wróć do Warp Mode") }}</a>
     </p>
 </div>
 {% endblock %}

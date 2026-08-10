@@ -65,7 +65,7 @@ function renderAccountSummary(data) {
     const baselineNote = data.account_baseline_equity != null
         ? ` (${Math.round(data.account_baseline_equity)}€${data.account_baseline_at ? ", " + data.account_baseline_at : ""})`
         : "";
-    labelEl.textContent = `vs punkt startowy${baselineNote}`;
+    labelEl.textContent = `${t("vs punkt startowy")}${baselineNote}`;
 
     if (data.account_pnl != null) {
         pnlEl.dataset.real = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)`;
@@ -85,7 +85,7 @@ async function resetAccountBaseline() {
         const data = await resp.json();
         if (!data.ok) {
             playError();
-            window.alert(`Nie udało się zresetować punktu startowego: ${data.error}`);
+            window.alert(`${t("Nie udało się zresetować punktu startowego")}: ${t(data.error)}`);
             return;
         }
         renderAccountSummary(data);
@@ -93,7 +93,7 @@ async function resetAccountBaseline() {
     } catch (err) {
         playError();
         console.error("Błąd resetu punktu startowego:", err);
-        window.alert("Błąd sieci przy resetowaniu punktu startowego.");
+        window.alert(t("Błąd sieci przy resetowaniu punktu startowego."));
     } finally {
         if (btn) btn.disabled = false;
     }
@@ -106,7 +106,7 @@ document.getElementById("account-baseline-reset-btn")?.addEventListener("click",
 // "bot"/"signal"/"eod" -> etykieta w UI, jeden na wszystkie 3 przyciski
 // adopcji + odznaka "Zarządzane przez X" (patrz routes/scalping.py::
 // _annotate_bot_state, managed_by - 2026-08-04, "ujednolić wszystkie boty").
-const ENGINE_LABELS = { bot: "Micro-Grid", signal: "Sygnał", eod: "EOD" };
+const ENGINE_LABELS = { bot: "Micro-Grid", signal: t("Sygnał"), eod: "EOD" };
 function engineLabel(engine) {
     return ENGINE_LABELS[engine] || engine;
 }
@@ -122,7 +122,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
     if (!container) return;
 
     if (!positions.length) {
-        container.innerHTML = '<p class="auth-box__hint">Brak otwartych pozycji.</p>';
+        container.innerHTML = `<p class="auth-box__hint">${t("Brak otwartych pozycji.")}</p>`;
         return;
     }
 
@@ -133,7 +133,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
 
         const marketDot = p.market_open === null || p.market_open === undefined
             ? ""
-            : `<span class="market-dot ${p.market_open ? "market-dot--open" : "market-dot--closed"}" title="${p.market_open ? "Giełda otwarta" : "Giełda zamknięta"}"></span>`;
+            : `<span class="market-dot ${p.market_open ? "market-dot--open" : "market-dot--closed"}" title="${p.market_open ? t("Giełda otwarta") : t("Giełda zamknięta")}"></span>`;
 
         return `
             <tr class="${p.ppl >= 0 ? "portfolio-row--profit" : "portfolio-row--loss"}">
@@ -157,11 +157,11 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
                 </td>
                 <td class="portfolio-bot-cell" data-ticker="${escapeHtml(p.ticker)}">
                     ${p.managed_by
-                        ? `<span class="badge badge--bot">Zarządzane przez ${engineLabel(p.managed_by)}</span>
-                           <button type="button" class="account-bar__btn portfolio-release-btn" data-engine="${p.managed_by}" data-trade-id="${p.managed_trade_id}">Cofnij</button>`
+                        ? `<span class="badge badge--bot">${t("Zarządzane przez")} ${engineLabel(p.managed_by)}</span>
+                           <button type="button" class="account-bar__btn portfolio-release-btn" data-engine="${p.managed_by}" data-trade-id="${p.managed_trade_id}">${t("Cofnij")}</button>`
                         : `<div class="portfolio-adopt-group">
                                <button type="button" class="account-bar__btn portfolio-adopt-btn" data-engine="bot" data-ticker="${escapeHtml(p.ticker)}" data-on-list="${p.on_bot_list ? "true" : "false"}">→ Micro-Grid</button>
-                               <button type="button" class="account-bar__btn portfolio-adopt-btn" data-engine="signal" data-ticker="${escapeHtml(p.ticker)}" data-on-list="${p.on_signal_list ? "true" : "false"}">→ Sygnał</button>
+                               <button type="button" class="account-bar__btn portfolio-adopt-btn" data-engine="signal" data-ticker="${escapeHtml(p.ticker)}" data-on-list="${p.on_signal_list ? "true" : "false"}">→ ${t("Sygnał")}</button>
                                <button type="button" class="account-bar__btn portfolio-adopt-btn" data-engine="eod" data-ticker="${escapeHtml(p.ticker)}" data-on-list="${p.on_eod_list ? "true" : "false"}">→ EOD</button>
                            </div>`}
                 </td>
@@ -171,25 +171,25 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
     container.innerHTML = `
         <div class="portfolio-summary portfolio-summary--pulse">
             <div class="portfolio-summary__cell">
-                <span class="instrument-detail__position-label">Wartość portfela</span>
+                <span class="instrument-detail__position-label">${t("Wartość portfela")}</span>
                 <span class="instrument-detail__position-value js-money" data-real="${totalValue.toFixed(2)}"></span>
-                <span class="portfolio-freshness portfolio-freshness--live">Aktualne</span>
+                <span class="portfolio-freshness portfolio-freshness--live">${t("Aktualne")}</span>
             </div>
             <div class="portfolio-summary__cell">
-                <span class="instrument-detail__position-label">Zysk / strata</span>
+                <span class="instrument-detail__position-label">${t("Zysk / strata")}</span>
                 <span class="instrument-detail__position-value js-money ${pplClass(totalPpl)}" data-real="${totalPpl >= 0 ? "+" : ""}${totalPpl.toFixed(2)} (${totalPplPct >= 0 ? "+" : ""}${totalPplPct.toFixed(1)}%)"></span>
             </div>
         </div>
         <table class="history-table" id="portfolio-table">
             <thead>
                 <tr>
-                    ${sortHeaderCell("Aktywo", "name")}
-                    ${sortHeaderCell("Waluta", "currency")}
-                    ${sortHeaderCell("Ilość", "quantity")}
-                    ${sortHeaderCell("Średnia cena", "avg_price")}
-                    ${sortHeaderCell("Cena teraz", "current_price")}
-                    ${sortHeaderCell("Wartość", "value")}
-                    ${sortHeaderCell("Zysk / strata", "ppl")}
+                    ${sortHeaderCell(t("Aktywo"), "name")}
+                    ${sortHeaderCell(t("Waluta"), "currency")}
+                    ${sortHeaderCell(t("Ilość"), "quantity")}
+                    ${sortHeaderCell(t("Średnia cena"), "avg_price")}
+                    ${sortHeaderCell(t("Cena teraz"), "current_price")}
+                    ${sortHeaderCell(t("Wartość"), "value")}
+                    ${sortHeaderCell(t("Zysk / strata"), "ppl")}
                     <th>Bot</th>
                 </tr>
             </thead>
@@ -259,14 +259,14 @@ async function adoptPosition(engine, ticker, onList) {
     let entryAmount = null;
     if (!onList) {
         const input = window.prompt(
-            `${ticker} nie jest jeszcze na liście ${engineLabel(engine)} - podaj kwotę wejścia (na przyszłe poziomy DCA):`
+            `${ticker} ${t("nie jest jeszcze na liście")} ${engineLabel(engine)} - ${t("podaj kwotę wejścia (na przyszłe poziomy DCA):")}`
         );
         if (input === null) return;
         entryAmount = input.trim();
         if (!entryAmount) return;
     }
 
-    if (!(await confirmDialog(`Przekazać ${ticker} silnikowi ${engineLabel(engine)}? Od tego momentu przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).`))) {
+    if (!(await confirmDialog(`${t("Przekazać")} ${ticker} ${t("silnikowi")} ${engineLabel(engine)}${t("? Od tego momentu przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).")}`))) {
         return;
     }
 
@@ -279,7 +279,7 @@ async function adoptPosition(engine, ticker, onList) {
         const data = await resp.json();
         if (!data.ok) {
             playError();
-            window.alert(`Nie udało się przekazać ${ticker} silnikowi ${engineLabel(engine)}: ${data.error}`);
+            window.alert(`${t("Nie udało się przekazać")} ${ticker} ${t("silnikowi")} ${engineLabel(engine)}: ${t(data.error)}`);
             return;
         }
         playSuccess();
@@ -287,12 +287,12 @@ async function adoptPosition(engine, ticker, onList) {
     } catch (err) {
         playError();
         console.error("Błąd adopcji pozycji:", err);
-        window.alert("Błąd sieci przy przekazywaniu pozycji botowi.");
+        window.alert(t("Błąd sieci przy przekazywaniu pozycji botowi."));
     }
 }
 
 async function releasePosition(engine, tradeId) {
-    if (!(await confirmDialog(`Cofnąć tę pozycję spod zarządzania ${engineLabel(engine)}? Udziały ZOSTAJĄ na koncie - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).`))) {
+    if (!(await confirmDialog(`${t("Cofnąć tę pozycję spod zarządzania")} ${engineLabel(engine)}${t("? Udziały ZOSTAJĄ na koncie - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).")}`))) {
         return;
     }
 
@@ -301,7 +301,7 @@ async function releasePosition(engine, tradeId) {
         const data = await resp.json();
         if (!data.ok) {
             playError();
-            window.alert(`Nie udało się cofnąć pozycji: ${data.error}`);
+            window.alert(`${t("Nie udało się cofnąć pozycji")}: ${t(data.error)}`);
             return;
         }
         playSuccess();
@@ -309,7 +309,7 @@ async function releasePosition(engine, tradeId) {
     } catch (err) {
         playError();
         console.error("Błąd zwalniania pozycji:", err);
-        window.alert("Błąd sieci przy cofaniu pozycji.");
+        window.alert(t("Błąd sieci przy cofaniu pozycji."));
     }
 }
 
@@ -345,7 +345,7 @@ async function refreshPortfolio() {
         const data = await resp.json();
 
         if (!data.ok) {
-            console.warn("Odswiezenie portfela nie powiodlo sie:", data.error);
+            console.warn("Odswiezenie portfela nie powiodlo sie:", t(data.error));
             return;
         }
 

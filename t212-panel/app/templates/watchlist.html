@@ -5,44 +5,42 @@
 <div class="watchlist-layout">
 
     <div class="history-box watchlist-layout__browse">
-        <h2 class="auth-box__title" style="font-size:13px">WSZYSTKIE INSTRUMENTY</h2>
+        <h2 class="auth-box__title" style="font-size:13px">{{ t("WSZYSTKIE INSTRUMENTY") }}</h2>
         <input
             type="text"
             id="watchlist-search"
             class="auth-form__input"
-            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..."
+            placeholder="{{ t('Szukaj w tej zakładce (puste pole = przeglądaj wszystko)...') }}"
             autocomplete="off"
         >
         <div id="watchlist-tabs" class="tabs" role="tablist"></div>
         <div id="watchlist-results" class="watchlist-results watchlist-results--browse"></div>
 
         <p class="auth-box__hint">
-            Lista pochodzi z lokalnej kopii instrumentów T212 (nie odpytujemy
-            T212 na żywo przy przeglądaniu - limity API na to nie pozwalają).
+            {{ t("Lista pochodzi z lokalnej kopii instrumentów T212 (nie odpytujemy T212 na żywo przy przeglądaniu - limity API na to nie pozwalają).") }}
         </p>
 
         <form method="post" action="{{ url_for('settings.refresh_cache') }}">
             <button type="submit" class="auth-form__submit auth-form__submit--link" style="display:inline-block;width:auto;padding:8px 16px">
-                Odśwież bazę instrumentów
+                {{ t("Odśwież bazę instrumentów") }}
             </button>
         </form>
         <p class="auth-box__hint">
-            Ostatnia synchronizacja:
-            {{ last_synced_at.strftime("%Y-%m-%d %H:%M") if last_synced_at else "nigdy" }}
-            (min. odstęp: 1h - limit T212)
+            {{ t("Ostatnia synchronizacja:") }}
+            {{ last_synced_at.strftime("%Y-%m-%d %H:%M") if last_synced_at else t("nigdy") }}
+            {{ t("(min. odstęp: 1h - limit T212)") }}
         </p>
     </div>
 
     <div class="history-box watchlist-layout__favorites">
-        <h1 class="auth-box__title">TWOJE ULUBIONE ({{ favorites|length }}/{{ max_favorites }})</h1>
+        <h1 class="auth-box__title">{{ t("TWOJE ULUBIONE") }} ({{ favorites|length }}/{{ max_favorites }})</h1>
         <p class="auth-box__hint">
-            Ulubione to Twoja szersza lista "co mnie interesuje". Siatka Warp Mode
-            pokazuje tylko WYBRANE z nich (max {{ max_grid }}) - obecnie w siatce:
+            {{ t('Ulubione to Twoja szersza lista "co mnie interesuje". Siatka Warp Mode pokazuje tylko WYBRANE z nich (max') }} {{ max_grid }}{{ t(') - obecnie w siatce:') }}
             <strong>{{ grid_count }}/{{ max_grid }}</strong>.
         </p>
 
         {% if not favorites %}
-        <p class="auth-box__hint">Brak ulubionych - dodaj instrumenty z panelu obok.</p>
+        <p class="auth-box__hint">{{ t("Brak ulubionych - dodaj instrumenty z panelu obok.") }}</p>
         {% else %}
         <div class="watchlist-favorites">
             {% for f in favorites %}
@@ -62,7 +60,7 @@
                         <span class="watchlist-favorites__name">
                             {% if f.market_open is not none %}
                             <span class="market-dot {{ 'market-dot--open' if f.market_open else 'market-dot--closed' }}"
-                                  title="{{ 'Giełda otwarta' if f.market_open else 'Giełda zamknięta' }}"></span>
+                                  title="{{ t('Giełda otwarta') if f.market_open else t('Giełda zamknięta') }}"></span>
                             {% endif %}
                             {{ f.name or f.ticker }}
                         </span>
@@ -75,7 +73,7 @@
                 {% if f.in_grid %}
                 <form method="post" action="{{ url_for('settings.grid_remove') }}">
                     <input type="hidden" name="ticker" value="{{ f.ticker }}">
-                    <button type="submit" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--active" title="W siatce - kliknij aby usunąć">
+                    <button type="submit" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--active" title="{{ t('W siatce - kliknij aby usunąć') }}">
                         <svg class="icon" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                             <path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.7 7.1-.6z"/>
                         </svg>
@@ -84,7 +82,7 @@
                 {% else %}
                 <form method="post" action="{{ url_for('settings.grid_add') }}">
                     <input type="hidden" name="ticker" value="{{ f.ticker }}">
-                    <button type="submit" class="watchlist-favorites__icon-btn" title="Dodaj do siatki Warp Mode">
+                    <button type="submit" class="watchlist-favorites__icon-btn" title="{{ t('Dodaj do siatki Warp Mode') }}">
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M12 2l2.9 6.6 7.1.6-5.4 4.7 1.6 7-6.2-3.8-6.2 3.8 1.6-7-5.4-4.7 7.1-.6z"/>
                         </svg>
@@ -94,7 +92,7 @@
 
                 <form method="post" action="{{ url_for('settings.watchlist_remove') }}">
                     <input type="hidden" name="ticker" value="{{ f.ticker }}">
-                    <button type="submit" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--danger" title="Usuń z ulubionych">
+                    <button type="submit" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--danger" title="{{ t('Usuń z ulubionych') }}">
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/>
                         </svg>
@@ -107,35 +105,23 @@
 
         <form method="post" action="{{ url_for('settings.fetch_logos') }}">
             <button type="submit" class="account-bar__btn" style="margin-top:8px">
-                Pobierz logotypy ulubionych teraz
+                {{ t("Pobierz logotypy ulubionych teraz") }}
             </button>
         </form>
         <p class="auth-box__hint">
-            Logotypy ulubionych pobierają się automatycznie (kilka na wizytę) -
-            ten przycisk wymusza pobranie wszystkich brakujących od razu,
-            zamiast czekać na kolejne odświeżenia strony. Dla instrumentów
-            spoza głównych giełd (np. europejskie ETF-y UCITS z wewnętrznymi
-            kodami T212) logo może nie istnieć - wtedy zostaje kolorowy
-            awatar z inicjałem.
+            {{ t("Logotypy ulubionych pobierają się automatycznie (kilka na wizytę) - ten przycisk wymusza pobranie wszystkich brakujących od razu, zamiast czekać na kolejne odświeżenia strony. Dla instrumentów spoza głównych giełd (np. europejskie ETF-y UCITS z wewnętrznymi kodami T212) logo może nie istnieć - wtedy zostaje kolorowy awatar z inicjałem.") }}
         </p>
 
         <button type="button" id="btn-bulk-fetch-logos" class="account-bar__btn" style="margin-top:16px">
-            Pobierz logotypy dla CAŁEJ bazy instrumentów
+            {{ t("Pobierz logotypy dla CAŁEJ bazy instrumentów") }}
         </button>
         <p class="auth-box__hint" id="bulk-fetch-status"></p>
         <p class="auth-box__hint">
-            To osobna operacja od ulubionych - dociąga logo dla wszystkich
-            zsynchronizowanych instrumentów (nie tylko tych co masz na liście
-            ulubionych), żeby były widoczne też przy przeglądaniu zakładek
-            kategorii. Przy ~15 800 instrumentach trwa to dziesiątki minut i
-            leci w tle - możesz spokojnie zamknąć tę stronę, appka i tak
-            dokończy. Bezpieczne do ponownego kliknięcia kiedykolwiek później
-            (np. po odświeżeniu bazy instrumentów w T212) - już pobrane logo
-            są pomijane, dociągane są tylko nowe/brakujące.
+            {{ t("To osobna operacja od ulubionych - dociąga logo dla wszystkich zsynchronizowanych instrumentów (nie tylko tych co masz na liście ulubionych), żeby były widoczne też przy przeglądaniu zakładek kategorii. Przy ~15 800 instrumentach trwa to dziesiątki minut i leci w tle - możesz spokojnie zamknąć tę stronę, appka i tak dokończy. Bezpieczne do ponownego kliknięcia kiedykolwiek później (np. po odświeżeniu bazy instrumentów w T212) - już pobrane logo są pomijane, dociągane są tylko nowe/brakujące.") }}
         </p>
 
         <p class="auth-box__footer">
-            <a href="{{ url_for('settings.index') }}">← Wróć do Ustawień</a>
+            <a href="{{ url_for('settings.index') }}">{{ t("← Wróć do Ustawień") }}</a>
             &nbsp;|&nbsp;
             <a href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
         </p>

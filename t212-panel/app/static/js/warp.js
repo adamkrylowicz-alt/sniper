@@ -130,21 +130,21 @@ async function sendOrder(tile, side) {
     const buttons = tile.querySelectorAll(".tile__btn");
 
     if (!quantity || Number(quantity) <= 0) {
-        setStatus(tile, "Podaj ilość > 0");
+        setStatus(tile, t("Podaj ilość > 0"));
         return;
     }
     if (mode === "limit" && (!price || Number(price) <= 0)) {
-        setStatus(tile, "Podaj cenę LIMIT > 0 (pole ceny powyżej)");
+        setStatus(tile, t("Podaj cenę LIMIT > 0 (pole ceny powyżej)"));
         return;
     }
     if (mode === "stop" && (!price || Number(price) <= 0)) {
-        setStatus(tile, "Podaj cenę STOP > 0 (pole ceny powyżej)");
+        setStatus(tile, t("Podaj cenę STOP > 0 (pole ceny powyżej)"));
         return;
     }
     const stopLimitPriceInput = tile.querySelector(".tile__stoplimit-price");
     const stopLimitPrice = stopLimitPriceInput ? stopLimitPriceInput.value : null;
     if (mode === "stoplimit" && ((!price || Number(price) <= 0) || (!stopLimitPrice || Number(stopLimitPrice) <= 0))) {
-        setStatus(tile, "Podaj cenę STOP (pole u góry) i cenę LIMIT (pole niżej), obie > 0");
+        setStatus(tile, t("Podaj cenę STOP (pole u góry) i cenę LIMIT (pole niżej), obie > 0"));
         return;
     }
 
@@ -155,10 +155,10 @@ async function sendOrder(tile, side) {
     if (mode === "market" && price && cachedMaxOrderValue) {
         const estValue = Number(quantity) * Number(price);
         if (estValue >= cachedMaxOrderValue * CONFIRM_THRESHOLD_RATIO) {
-            const label = side === "buy" ? "KUP" : "SPRZEDAJ";
+            const label = side === "buy" ? t("KUP") : t("SPRZEDAJ");
             const confirmed = await confirmDialog(
-                `Duże zlecenie: ${label} ${quantity} × ${ticker} ` +
-                `≈ ${estValue.toFixed(2)} (limit: ${cachedMaxOrderValue.toFixed(2)}). Kontynuować?`
+                `${t("Duże zlecenie")}: ${label} ${quantity} × ${ticker} ` +
+                `≈ ${estValue.toFixed(2)} (limit: ${cachedMaxOrderValue.toFixed(2)}). ${t("Kontynuować?")}`
             );
             if (!confirmed) return;
         }
@@ -167,10 +167,10 @@ async function sendOrder(tile, side) {
     buttons.forEach((b) => (b.disabled = true));
     setStatus(
         tile,
-        mode === "limit" ? "wysyłanie LIMIT…"
-        : mode === "stop" ? "wysyłanie STOP…"
-        : mode === "stoplimit" ? "wysyłanie STOP-LIMIT…"
-        : "wysyłanie…",
+        mode === "limit" ? `${t("wysyłanie")} LIMIT…`
+        : mode === "stop" ? `${t("wysyłanie")} STOP…`
+        : mode === "stoplimit" ? `${t("wysyłanie")} STOP-LIMIT…`
+        : `${t("wysyłanie")}…`,
     );
 
     try {
@@ -210,16 +210,16 @@ async function sendOrder(tile, side) {
         } else if (data.blocked) {
             flashTile(tile, "error");
             playError();
-            setStatus(tile, `ZABLOKOWANE: ${data.reason ?? data.decision}`);
+            setStatus(tile, `${t("ZABLOKOWANE")}: ${t(data.reason) ?? t(data.decision)}`);
         } else {
             flashTile(tile, "error");
             playError();
-            setStatus(tile, `BŁĄD: ${data.error ?? "nieznany"}`);
+            setStatus(tile, `${t("BŁĄD")}: ${t(data.error) ?? t("nieznany")}`);
         }
     } catch (err) {
         flashTile(tile, "error");
         playError();
-        setStatus(tile, "BŁĄD SIECI");
+        setStatus(tile, t("BŁĄD SIECI"));
         console.error(err);
     } finally {
         buttons.forEach((b) => (b.disabled = false));
@@ -268,14 +268,14 @@ function updatePnlBadge(tile, position) {
         // "brak pozycji" NIE jest wartością pieniężną - bez klasy js-money,
         // żeby hide/show (patrz common.js) jej nie dotykał.
         delete badge.dataset.real;
-        badge.textContent = "brak pozycji";
+        badge.textContent = t("brak pozycji");
         badge.className = "tile__pnl tile__pnl--empty";
         return;
     }
     const ppl = Number(position.ppl);
     const qty = position.quantity;
     const sign = ppl >= 0 ? "+" : "";
-    badge.dataset.real = `${qty} szt. · ${sign}${formatMoney(ppl)}`;
+    badge.dataset.real = `${qty} ${t("szt.")} · ${sign}${formatMoney(ppl)}`;
     badge.className = "tile__pnl js-money " + (ppl >= 0 ? "tile__pnl--profit" : "tile__pnl--loss");
 }
 
@@ -296,13 +296,13 @@ async function loadAccount(force = false) {
     }
     lastLoadAccountAt = now;
 
-    setAccountStatus("ładowanie…");
+    setAccountStatus(t("ładowanie…"));
     try {
         const resp = await fetch("/warp/account");
         const data = await resp.json();
 
         if (!data.ok) {
-            setAccountStatus(`Błąd: ${data.error ?? "nieznany"}`);
+            setAccountStatus(`${t("Błąd")}: ${t(data.error) ?? t("nieznany")}`);
             setConnDot("error");
             return;
         }
@@ -320,14 +320,14 @@ async function loadAccount(force = false) {
             // podmieniłby go na kropki zamiast realnego opisu błędu.
             balanceEl.classList.remove("js-money");
             delete balanceEl.dataset.real;
-            balanceEl.textContent = "saldo: niedostępne (brak uprawnień klucza API)";
+            balanceEl.textContent = t("saldo: niedostępne (brak uprawnień klucza API)");
         } else if (free !== null) {
             balanceEl.classList.add("js-money");
-            balanceEl.dataset.real = `saldo: ${formatMoney(free)}`;
+            balanceEl.dataset.real = `${t("saldo")}: ${formatMoney(free)}`;
         } else {
             balanceEl.classList.remove("js-money");
             delete balanceEl.dataset.real;
-            balanceEl.textContent = "saldo: brak danych";
+            balanceEl.textContent = t("saldo: brak danych");
         }
 
         const positionsByTicker = {};
@@ -340,15 +340,15 @@ async function loadAccount(force = false) {
 
         setAccountStatus("");
     } catch (err) {
-        setAccountStatus("Błąd sieci przy ładowaniu konta.");
+        setAccountStatus(t("Błąd sieci przy ładowaniu konta."));
         setConnDot("error");
         console.error(err);
     }
 }
 
 async function cancelAll(side) {
-    const label = side === "buy" ? "KUP" : "SPRZEDAJ";
-    setAccountStatus(`Anulowanie wszystkich zleceń ${label}…`);
+    const label = side === "buy" ? t("KUP") : t("SPRZEDAJ");
+    setAccountStatus(`${t("Anulowanie wszystkich zleceń")} ${label}…`);
 
     try {
         const resp = await fetch("/warp/cancel-all", {
@@ -359,13 +359,13 @@ async function cancelAll(side) {
         const data = await resp.json();
 
         if (!data.ok) {
-            setAccountStatus(`Błąd: ${data.error ?? "nieznany"}`);
+            setAccountStatus(`${t("Błąd")}: ${t(data.error) ?? t("nieznany")}`);
             return;
         }
-        setAccountStatus(`Anulowano ${data.cancelled}/${data.total} zleceń ${label}.`);
+        setAccountStatus(`${t("Anulowano")} ${data.cancelled}/${data.total} ${t("zleceń")} ${label}.`);
         loadAccount();
     } catch (err) {
-        setAccountStatus("Błąd sieci przy anulowaniu.");
+        setAccountStatus(t("Błąd sieci przy anulowaniu."));
         console.error(err);
     }
 }
@@ -392,27 +392,27 @@ strzelały wszystkie trzy jednym batchem w tej samej milisekundzie.
 */
 async function loadPendingOrders() {
     const container = document.getElementById("pending-orders-list");
-    container.innerHTML = '<p class="sidebar-widget__empty">ładowanie…</p>';
+    container.innerHTML = `<p class="sidebar-widget__empty">${t("ładowanie…")}</p>`;
 
     try {
         const resp = await fetch("/warp/pending");
         const data = await resp.json();
 
         if (!data.ok) {
-            container.innerHTML = `<p class="sidebar-widget__empty">Błąd: ${data.error ?? "nieznany"}</p>`;
+            container.innerHTML = `<p class="sidebar-widget__empty">${t("Błąd")}: ${t(data.error) ?? t("nieznany")}</p>`;
             return;
         }
 
         const orders = data.orders || [];
         if (orders.length === 0) {
-            container.innerHTML = '<p class="sidebar-widget__empty">Brak oczekujących zleceń.</p>';
+            container.innerHTML = `<p class="sidebar-widget__empty">${t("Brak oczekujących zleceń.")}</p>`;
             return;
         }
 
         container.innerHTML = "";
         orders.forEach((o) => {
             const qty = Number(o.quantity);
-            const side = qty >= 0 ? "KUP" : "SPRZEDAJ";
+            const side = qty >= 0 ? t("KUP") : t("SPRZEDAJ");
             const div = document.createElement("div");
             div.className = "pending-orders-list__item";
 
@@ -438,7 +438,7 @@ async function loadPendingOrders() {
             container.appendChild(div);
         });
     } catch (err) {
-        container.innerHTML = '<p class="sidebar-widget__empty">Błąd sieci.</p>';
+        container.innerHTML = `<p class="sidebar-widget__empty">${t("Błąd sieci.")}</p>`;
         console.error(err);
     }
 }
@@ -491,7 +491,7 @@ function buildEditableOrderRow(div, order) {
     const pricePlusBtn = nudgeBtn(priceRow, "+");
 
     const { valueEl: qtyEl, row: qtyRow } = fieldRow("pending-orders-list__price");
-    qtyEl.textContent = `${originalQuantity} szt.`;
+    qtyEl.textContent = `${originalQuantity} ${t("szt.")}`;
     const qtyMinusBtn = nudgeBtn(qtyRow, "−");
     const qtyPlusBtn = nudgeBtn(qtyRow, "+");
 
@@ -502,7 +502,7 @@ function buildEditableOrderRow(div, order) {
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.className = "pending-orders-list__action-btn pending-orders-list__action-btn--cancel";
-    cancelBtn.textContent = "Skasuj";
+    cancelBtn.textContent = t("Skasuj");
     controlsEl.appendChild(cancelBtn);
 
     let confirmBtn = null;
@@ -524,7 +524,7 @@ function buildEditableOrderRow(div, order) {
         priceEl.classList.toggle("pending-orders-list__price--staged", priceChanged);
 
         const qtyChanged = Math.abs(stagedQuantity - originalQuantity) > 1e-9;
-        qtyEl.textContent = `${stagedQuantity.toFixed(4)} szt.`;
+        qtyEl.textContent = `${stagedQuantity.toFixed(4)} ${t("szt.")}`;
         qtyEl.classList.toggle("pending-orders-list__price--staged", qtyChanged);
 
         if (!isStaged()) {
@@ -537,7 +537,7 @@ function buildEditableOrderRow(div, order) {
             confirmBtn = document.createElement("button");
             confirmBtn.type = "button";
             confirmBtn.className = "pending-orders-list__action-btn pending-orders-list__action-btn--confirm";
-            confirmBtn.textContent = "Zatwierdź";
+            confirmBtn.textContent = t("Zatwierdź");
             confirmBtn.addEventListener("click", async () => {
                 div.querySelectorAll("button").forEach((b) => { b.disabled = true; });
                 const ok = await sendReprice(orderId, stagedPrice, stagedQuantity);
@@ -553,7 +553,7 @@ function buildEditableOrderRow(div, order) {
             revertBtn = document.createElement("button");
             revertBtn.type = "button";
             revertBtn.className = "pending-orders-list__action-btn";
-            revertBtn.textContent = "Anuluj";
+            revertBtn.textContent = t("Anuluj");
             revertBtn.addEventListener("click", () => {
                 stagedPrice = originalPrice;
                 stagedQuantity = originalQuantity;
@@ -605,13 +605,13 @@ async function sendReprice(orderId, newPrice, newQuantity) {
         });
         const data = await resp.json();
         if (!data.ok) {
-            alert(data.error || data.reason || "Nie udało się zmienić zlecenia.");
+            alert(t(data.error) || t(data.reason) || t("Nie udało się zmienić zlecenia."));
             return false;
         }
         return true;
     } catch (err) {
         console.error("Błąd repricingu zlecenia:", err);
-        alert("Błąd połączenia przy zmianie ceny zlecenia.");
+        alert(t("Błąd połączenia przy zmianie ceny zlecenia."));
         return false;
     }
 }
@@ -621,13 +621,13 @@ async function sendCancelOrder(orderId) {
         const resp = await fetch(`/warp/order/${encodeURIComponent(orderId)}/cancel`, { method: "POST" });
         const data = await resp.json();
         if (!data.ok) {
-            alert(data.error || "Nie udało się skasować zlecenia.");
+            alert(t(data.error) || t("Nie udało się skasować zlecenia."));
             return false;
         }
         return true;
     } catch (err) {
         console.error("Błąd kasowania zlecenia:", err);
-        alert("Błąd połączenia przy kasowaniu zlecenia.");
+        alert(t("Błąd połączenia przy kasowaniu zlecenia."));
         return false;
     }
 }
@@ -674,11 +674,11 @@ document.querySelectorAll(".sidebar-favorites__toggle").forEach((btn) => {
             if (resp.ok) {
                 window.location.reload();
             } else {
-                statusEl.textContent = "Nie udało się zmienić siatki.";
+                statusEl.textContent = t("Nie udało się zmienić siatki.");
                 btn.disabled = false;
             }
         } catch (err) {
-            statusEl.textContent = "Błąd sieci.";
+            statusEl.textContent = t("Błąd sieci.");
             btn.disabled = false;
             console.error(err);
         }

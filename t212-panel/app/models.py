@@ -228,6 +228,11 @@ class UserSettings(db.Model):
     sound_enabled = db.Column(db.Boolean, default=True, nullable=False)
     dark_mode = db.Column(db.Boolean, default=True, nullable=False)
 
+    # Język UI (10.08.2026, Adam: przełącznik PL/EN, żeby appka była czytelna
+    # dla kogoś kto nie zna polskiego) - "pl" to zarazem klucz słownika w
+    # app/i18n.py (nie wymaga pliku), "en" czyta app/translations/en.txt.
+    language = db.Column(db.String(5), default="pl", nullable=False)
+
     focus_tiles = db.Column(db.Integer, default=1, nullable=False)  # 1-9 kafelków w Focus Mode
 
     # Punkt odniesienia dla "całości konta" na zakładce Aktywa (dodane

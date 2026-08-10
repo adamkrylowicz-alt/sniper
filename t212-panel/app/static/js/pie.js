@@ -238,7 +238,7 @@ async function buyAsset(row) {
     const buyBtn = row.querySelector("[data-buy]");
 
     if (!qty || Number(qty) <= 0) {
-        statusEl.textContent = "Podaj ilość > 0";
+        statusEl.textContent = t("Podaj ilość > 0");
         return;
     }
 
@@ -246,15 +246,15 @@ async function buyAsset(row) {
         const estValue = Number(qty) * Number(price);
         if (estValue >= cachedMaxOrderValue * CONFIRM_THRESHOLD_RATIO) {
             const confirmed = await confirmDialog(
-                `Duże zlecenie: KUP ${qty} × ${ticker} ` +
-                `≈ ${estValue.toFixed(2)} (limit: ${cachedMaxOrderValue.toFixed(2)}). Kontynuować?`
+                `${t("Duże zlecenie:")} ${t("KUP")} ${qty} × ${ticker} ` +
+                `≈ ${estValue.toFixed(2)} (${t("limit:")} ${cachedMaxOrderValue.toFixed(2)}). ${t("Kontynuować?")}`
             );
             if (!confirmed) return;
         }
     }
 
     buyBtn.disabled = true;
-    statusEl.textContent = "wysyłanie…";
+    statusEl.textContent = t("wysyłanie…");
 
     try {
         const resp = await fetch(`/pie/asset/${assetId}/buy`, {
@@ -269,14 +269,14 @@ async function buyAsset(row) {
             statusEl.textContent = `OK #${data.order_id ?? "?"}`;
         } else if (data.blocked) {
             playError();
-            statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
+            statusEl.textContent = `${t("ZABLOKOWANE:")} ${t(data.reason) ?? t(data.decision)}`;
         } else {
             playError();
-            statusEl.textContent = `BŁĄD: ${data.error ?? "nieznany"}`;
+            statusEl.textContent = `${t("BŁĄD:")} ${t(data.error) ?? t("nieznany")}`;
         }
     } catch (err) {
         playError();
-        statusEl.textContent = "BŁĄD SIECI";
+        statusEl.textContent = t("BŁĄD SIECI");
         console.error(err);
     } finally {
         buyBtn.disabled = false;
@@ -305,15 +305,15 @@ async function checkFx() {
         const data = await resp.json();
 
         if (!data.ok) {
-            banner.textContent = `Błąd: ${data.error ?? "nieznany"}`;
+            banner.textContent = `${t("Błąd:")} ${t(data.error) ?? t("nieznany")}`;
         } else if (data.warning) {
             banner.textContent = data.warning;
         } else {
-            banner.textContent = `Środki wystarczają (dostępne: ${data.free ?? "brak danych"}).`;
+            banner.textContent = `${t("Środki wystarczają (dostępne:")} ${data.free ?? t("brak danych")}).`;
         }
         banner.classList.remove("pie-fx-banner--hidden");
     } catch (err) {
-        banner.textContent = "Błąd sieci przy sprawdzaniu środków.";
+        banner.textContent = t("Błąd sieci przy sprawdzaniu środków.");
         banner.classList.remove("pie-fx-banner--hidden");
         console.error(err);
     } finally {
@@ -340,7 +340,7 @@ function renderAssetResults(results, append) {
     if (!append) container.innerHTML = "";
 
     if (!append && results.length === 0) {
-        container.innerHTML = '<p class="auth-box__hint">Brak wyników.</p>';
+        container.innerHTML = `<p class="auth-box__hint">${t("Brak wyników.")}</p>`;
         return;
     }
 
@@ -365,7 +365,7 @@ function renderAssetResults(results, append) {
             currencyBadge.textContent = r.currency;
             descLine.appendChild(currencyBadge);
         } else {
-            descLine.append("waluta nieznana");
+            descLine.append(t("waluta nieznana"));
         }
         label.appendChild(descLine);
 
@@ -374,14 +374,14 @@ function renderAssetResults(results, append) {
         if (r.is_leveraged) {
             const badge = document.createElement("span");
             badge.className = "badge badge--leverage";
-            badge.textContent = "DŹWIGNIA";
+            badge.textContent = t("DŹWIGNIA");
             row.appendChild(badge);
         }
 
         const addBtn = document.createElement("button");
         addBtn.type = "button";
         addBtn.className = "watchlist-results__add";
-        addBtn.textContent = "Dodaj";
+        addBtn.textContent = t("Dodaj");
         addBtn.addEventListener("click", () => addAssetToPie(r.ticker));
         row.appendChild(addBtn);
         container.appendChild(row);
@@ -470,7 +470,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (deleteBtn) {
         deleteBtn.addEventListener("click", async () => {
             const confirmed = await confirmDialog(
-                "Na pewno usunąć ten koszyk? Aktywa w nim znikną (historia zleceń zostaje)."
+                t("Na pewno usunąć ten koszyk? Aktywa w nim znikną (historia zleceń zostaje).")
             );
             if (confirmed) document.getElementById("delete-pie-form").submit();
         });

@@ -1,40 +1,36 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Zapisz kod odzyskiwania{% endblock %}
+{% block title %}SNAJPER — {{ t("Zapisz kod odzyskiwania") }}{% endblock %}
 
 {% block content %}
 <div class="auth-box auth-box--wide">
-    <h1 class="auth-box__title">ZAPISZ TEN KOD TERAZ</h1>
+    <h1 class="auth-box__title">{{ t("ZAPISZ TEN KOD TERAZ") }}</h1>
 
     <p class="auth-box__hint">
         {% if is_rotation %}
-        Hasło zostało zmienione, a Twój kod odzyskiwania właśnie się
-        <strong>zrotował</strong> (stary kod już nie działa).
+        {{ t("Hasło zostało zmienione, a Twój kod odzyskiwania właśnie się") }}
+        <strong>{{ t("zrotował") }}</strong> ({{ t("stary kod już nie działa") }}).
         {% else %}
-        Konto <strong>{{ username }}</strong> zostało utworzone.
+        {{ t("Konto") }} <strong>{{ username }}</strong> {{ t("zostało utworzone.") }}
         {% endif %}
-        Poniższy kod pozwoli Ci odzyskać dostęp, jeśli zapomnisz hasła.
-        <strong>Zobaczysz go tylko raz — teraz.</strong>
-        Zapisz go w menedżerze haseł albo w bezpiecznym miejscu offline.
+        {{ t("Poniższy kod pozwoli Ci odzyskać dostęp, jeśli zapomnisz hasła.") }}
+        <strong>{{ t("Zobaczysz go tylko raz — teraz.") }}</strong>
+        {{ t("Zapisz go w menedżerze haseł albo w bezpiecznym miejscu offline.") }}
     </p>
 
     <div class="recovery-code">{{ recovery_code }}</div>
 
     <p class="auth-box__hint auth-box__hint--warn">
-        Nikt, łącznie z administratorem tej appki, nie może Ci tego kodu
-        przypomnieć ani odtworzyć. Jeśli go zgubisz razem z hasłem — dostęp
-        do zaszyfrowanych kluczy API przepada bezpowrotnie.
+        {{ t("Nikt, łącznie z administratorem tej appki, nie może Ci tego kodu przypomnieć ani odtworzyć. Jeśli go zgubisz razem z hasłem — dostęp do zaszyfrowanych kluczy API przepada bezpowrotnie.") }}
     </p>
 
     {% if pending_activation %}
     <p class="auth-box__hint">
-        Zanim się zalogujesz, potrzebne są jeszcze dwie rzeczy: kliknij link
-        aktywacyjny wysłany na <strong>{{ username }}</strong>, a potem poczekaj
-        aż administrator ręcznie zatwierdzi konto.
+        {{ t("Zanim się zalogujesz, potrzebne są jeszcze dwie rzeczy: kliknij link aktywacyjny wysłany na") }} <strong>{{ username }}</strong>, {{ t("a potem poczekaj aż administrator ręcznie zatwierdzi konto.") }}
     </p>
     {% endif %}
 
     <a class="auth-form__submit auth-form__submit--link" href="{{ url_for('auth.login_view') }}">
-        ZAPISAŁEM — PRZEJDŹ DO LOGOWANIA
+        {{ t("ZAPISAŁEM — PRZEJDŹ DO LOGOWANIA") }}
     </a>
 </div>
 {% endblock %}

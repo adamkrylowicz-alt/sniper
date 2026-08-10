@@ -1,75 +1,66 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Strategia Sygnałowa{% endblock %}
+{% block title %}SNAJPER — {{ t("Strategia Sygnałowa") }}{% endblock %}
 
 {% block content %}
 <div class="history-box" id="signal-panel">
-    <h1 class="auth-box__title">STRATEGIA SYGNAŁOWA (RSI/MA/ATR)</h1>
+    <h1 class="auth-box__title">{{ t("STRATEGIA SYGNAŁOWA (RSI/MA/ATR)") }}</h1>
     <p class="auth-box__hint">
-        OSOBNA strategia, działająca RÓWNOLEGLE do Micro-Grid Bota (nie
-        zastępuje siatki DCA) - wchodzi w pozycję gdy RSI(14) &lt; próg ORAZ
-        cena &gt; SMA(200), JEDNO wejście na sygnał (bez dokupowania). Stop-loss
-        i take-profit liczone z ATR(14) przy wejściu i zostają stałe. Działa
-        wyłącznie na koncie <strong>demo</strong> (T212 nie wspiera zleceń
-        STOP na koncie live) i dzieli poświadczenia z Micro-Grid Botem - jeśli
-        tamten jest już aktywny, nie musisz podawać hasła drugi raz.
+        {{ t("OSOBNA strategia, działająca RÓWNOLEGLE do Micro-Grid Bota (nie zastępuje siatki DCA) - wchodzi w pozycję gdy RSI(14) &lt; próg ORAZ cena &gt; SMA(200), JEDNO wejście na sygnał (bez dokupowania). Stop-loss i take-profit liczone z ATR(14) przy wejściu i zostają stałe. Działa wyłącznie na koncie") }} <strong>demo</strong> {{ t("(T212 nie wspiera zleceń STOP na koncie live) i dzieli poświadczenia z Micro-Grid Botem - jeśli tamten jest już aktywny, nie musisz podawać hasła drugi raz.") }}
     </p>
 
-    <nav class="tabs section-nav" aria-label="Sekcje strony">
-        <a class="tab" href="#section-assets">Aktywa</a>
-        <a class="tab" href="#section-positions">Otwarte pozycje</a>
-        <a class="tab" href="#section-activation">Aktywacja</a>
-        <a class="tab" href="#section-risk">Ustawienia ryzyka</a>
-        <a class="tab" href="#section-log">Dziennik</a>
+    <nav class="tabs section-nav" aria-label="{{ t('Sekcje strony') }}">
+        <a class="tab" href="#section-assets">{{ t("Aktywa") }}</a>
+        <a class="tab" href="#section-positions">{{ t("Otwarte pozycje") }}</a>
+        <a class="tab" href="#section-activation">{{ t("Aktywacja") }}</a>
+        <a class="tab" href="#section-risk">{{ t("Ustawienia ryzyka") }}</a>
+        <a class="tab" href="#section-log">{{ t("Dziennik") }}</a>
     </nav>
 
     <div class="pie-fx-banner {{ '' if credentials_active else 'pie-fx-banner--hidden' }}" id="signal-status-banner">
         {% if credentials_active %}
-        Strategia AKTYWNA (poświadczenia w pamięci serwera) — {{ "Paper Trading (symulacja)" if settings.is_paper_trading else "REALNE zlecenia na demo T212" }}.
+        {{ t("Strategia AKTYWNA (poświadczenia w pamięci serwera) —") }} {{ t("Paper Trading (symulacja)") if settings.is_paper_trading else t("REALNE zlecenia na demo T212") }}.
         {% endif %}
     </div>
     {% if settings.is_active and not credentials_active %}
     <div class="pie-fx-banner">
-        Baza mówi że strategia jest aktywna, ale poświadczenia wygasły (restart
-        appki czyści je celowo) — kliknij "Uruchom" ponownie, żeby faktycznie ruszyła.
+        {{ t('Baza mówi że strategia jest aktywna, ale poświadczenia wygasły (restart appki czyści je celowo) — kliknij "Uruchom" ponownie, żeby faktycznie ruszyła.') }}
     </div>
     {% endif %}
 
     <div class="reorderable-panel" data-panel-id="assets">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
-    <h2 class="section-heading" id="section-assets">AKTYWA STRATEGII</h2>
+    <h2 class="section-heading" id="section-assets">{{ t("AKTYWA STRATEGII") }}</h2>
     <p class="auth-box__hint">
-        Własna, niezależna lista tickerów - bez związku z BotAsset (Micro-Grid)
-        ani PieAsset (Virtual Pie). Ten sam ticker może być jednocześnie na
-        wszystkich trzech listach jako niezależne decyzje.
+        {{ t("Własna, niezależna lista tickerów - bez związku z BotAsset (Micro-Grid) ani PieAsset (Virtual Pie). Ten sam ticker może być jednocześnie na wszystkich trzech listach jako niezależne decyzje.") }}
     </p>
 
     <div class="pie-detail__add-asset">
-        <label class="auth-form__label" for="signal-asset-default-amount">Kwota wejścia dla nowo dodawanych pozycji</label>
-        <input type="number" id="signal-asset-default-amount" class="auth-form__input" min="0" step="0.01" placeholder="np. 25.00 (wymagane przed dodaniem)">
+        <label class="auth-form__label" for="signal-asset-default-amount">{{ t("Kwota wejścia dla nowo dodawanych pozycji") }}</label>
+        <input type="number" id="signal-asset-default-amount" class="auth-form__input" min="0" step="0.01" placeholder="{{ t('np. 25.00 (wymagane przed dodaniem)') }}">
 
-        <label class="auth-form__label" for="signal-asset-search" style="margin-top:12px; display:block">Dodaj aktywo</label>
+        <label class="auth-form__label" for="signal-asset-search" style="margin-top:12px; display:block">{{ t("Dodaj aktywo") }}</label>
         <input
             type="text" id="signal-asset-search" class="auth-form__input"
-            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..." autocomplete="off"
+            placeholder="{{ t('Szukaj w tej zakładce (puste pole = przeglądaj wszystko)...') }}" autocomplete="off"
         >
         <div id="signal-asset-tabs" class="tabs" role="tablist"></div>
         <div id="signal-asset-results" class="watchlist-results watchlist-results--browse"></div>
         <button type="button" id="signal-asset-load-more" class="account-bar__btn" style="margin-top:8px; display:none">
-            Załaduj więcej
+            {{ t("Załaduj więcej") }}
         </button>
         <p class="auth-box__hint" id="signal-asset-status"></p>
     </div>
 
     {% if not signal_assets %}
-    <p class="auth-box__hint">Lista jest pusta — dodaj aktywa powyżej.</p>
+    <p class="auth-box__hint">{{ t("Lista jest pusta — dodaj aktywa powyżej.") }}</p>
     {% else %}
     <div class="pie-assets" id="signal-assets-list">
         {% for a in signal_assets %}
         <div class="pie-asset-row" data-asset-id="{{ a.id }}" data-ticker="{{ a.ticker }}">
-            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="Szczegóły {{ a.display_ticker }}">
+            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="{{ t('Szczegóły') }} {{ a.display_ticker }}">
                 {{ a.display_ticker[0] }}
             </a>
 
@@ -77,22 +68,22 @@
                 <div class="pie-asset-row__title-line">
                     <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__ticker-link">
                         <span class="market-dot {{ 'market-dot--open' if a.market_open else 'market-dot--closed' }}"
-                              title="{{ 'Giełda otwarta' if a.market_open else 'Giełda zamknięta' }}"></span>
+                              title="{{ t('Giełda otwarta') if a.market_open else t('Giełda zamknięta') }}"></span>
                         <span class="pie-asset-row__ticker">{{ a.name or a.display_ticker }}</span>
                         <span class="pie-asset-row__currency">{{ a.display_ticker }}{% if a.currency %} · <span class="currency-badge currency-badge--{{ a.currency|lower }}">{{ a.currency }}</span>{% endif %}</span>
                     </a>
                 </div>
                 <div class="pie-asset-row__fields">
-                    <label>Kwota wejścia
+                    <label>{{ t("Kwota wejścia") }}
                         <input type="number" min="0" step="0.01" value="{{ a.entry_amount }}" data-entry-amount>
                     </label>
                 </div>
-                <div class="auth-box__hint" data-price-hint style="margin:6px 0 0">sprawdzanie ceny…</div>
+                <div class="auth-box__hint" data-price-hint style="margin:6px 0 0">{{ t("sprawdzanie ceny…") }}</div>
             </div>
 
             <div class="pie-asset-row__actions">
                 <button type="button" class="pie-asset-row__icon-btn pie-asset-row__icon-btn--danger"
-                        data-remove title="Usuń z listy">
+                        data-remove title="{{ t('Usuń z listy') }}">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/>
                     </svg>
@@ -108,30 +99,27 @@
 
     <div class="reorderable-panel" data-panel-id="positions">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
-    <h2 class="section-heading" id="section-positions">OTWARTE POZYCJE</h2>
+    <h2 class="section-heading" id="section-positions">{{ t("OTWARTE POZYCJE") }}</h2>
     <p class="auth-box__hint">
-        "Niepotwierdzona" - zlecenie kupna jeszcze nie wypełnione, stop-loss
-        jeszcze nieuzbrojony. Take-profit jest pilnowany WYŁĄCZNIE w
-        softwarze (sprzedaż Market gdy cena go dotknie) - jedyne prawdziwe
-        zlecenie na T212 to stop-loss.
+        {{ t('"Niepotwierdzona" - zlecenie kupna jeszcze nie wypełnione, stop-loss jeszcze nieuzbrojony. Take-profit jest pilnowany WYŁĄCZNIE w softwarze (sprzedaż Market gdy cena go dotknie) - jedyne prawdziwe zlecenie na T212 to stop-loss.') }}
     </p>
     {% if not open_positions %}
-    <p class="auth-box__hint">Brak otwartych pozycji.</p>
+    <p class="auth-box__hint">{{ t("Brak otwartych pozycji.") }}</p>
     {% else %}
     <table class="history-table" id="signal-positions-table">
         <thead>
             <tr>
-                <th class="history-table__th--sortable" data-sort-key="name">Aktywo <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="currency">Waluta <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="quantity">Ilość <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="buy_price">Cena wejścia <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="stop_loss">Stop-loss <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="take_profit">Take-profit <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="created_at">Otwarta od (Amsterdam) <span class="sort-arrow">⇅</span></th>
-                <th>Status</th>
+                <th class="history-table__th--sortable" data-sort-key="name">{{ t("Aktywo") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="currency">{{ t("Waluta") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="quantity">{{ t("Ilość") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="buy_price">{{ t("Cena wejścia") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="stop_loss">{{ t("Stop-loss") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="take_profit">{{ t("Take-profit") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="created_at">{{ t("Otwarta od (Amsterdam)") }} <span class="sort-arrow">⇅</span></th>
+                <th>{{ t("Status") }}</th>
             </tr>
         </thead>
         <tbody>
@@ -139,7 +127,7 @@
             <tr data-trade-id="{{ p.id }}">
                 <td data-sort-value="{{ p.name or p.display_ticker }}">
                     <span class="market-dot {{ 'market-dot--open' if p.market_open else 'market-dot--closed' }}"
-                          title="{{ 'Giełda otwarta' if p.market_open else 'Giełda zamknięta' }}"></span>
+                          title="{{ t('Giełda otwarta') if p.market_open else t('Giełda zamknięta') }}"></span>
                     <a href="{{ url_for('instrument.detail', ticker=p.ticker) }}" class="pie-asset-row__ticker-link">
                         <span class="pie-asset-row__ticker">{{ p.name or p.display_ticker }}</span>
                         <span class="pie-asset-row__currency">{{ p.display_ticker }}{% if p.currency %} · <span class="currency-badge currency-badge--{{ p.currency|lower }}">{{ p.currency }}</span>{% endif %}</span>
@@ -156,12 +144,12 @@
                         {% if p.is_paper %}
                         <span class="history-table__status history-table__status--info">PAPER</span>
                         {% elif not p.buy_confirmed %}
-                        <span class="history-table__status history-table__status--warn">NIEPOTWIERDZONA</span>
+                        <span class="history-table__status history-table__status--warn">{{ t("NIEPOTWIERDZONA") }}</span>
                         {% else %}
                         <span class="history-table__status history-table__status--buy">OK</span>
                         {% endif %}
                     </span>
-                    <button type="button" class="section-heading__action" data-close-position title="Ręcznie zamknij pozycję Market Sell">Zamknij</button>
+                    <button type="button" class="section-heading__action" data-close-position title="{{ t('Ręcznie zamknij pozycję Market Sell') }}">{{ t("Zamknij") }}</button>
                 </td>
             </tr>
             {% endfor %}
@@ -172,15 +160,15 @@
 
     <div class="reorderable-panel" data-panel-id="activation">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <div class="pie-detail__add-asset" id="section-activation">
-        <label class="auth-form__label" for="signal-password">Hasło (do aktywacji)</label>
+        <label class="auth-form__label" for="signal-password">{{ t("Hasło (do aktywacji)") }}</label>
         <input type="password" id="signal-password" class="auth-form__input" autocomplete="current-password">
         <div style="display:flex; gap:8px; margin-top:8px">
-            <button type="button" id="btn-signal-activate" class="account-bar__btn account-bar__btn--start">Uruchom</button>
-            <button type="button" id="btn-signal-deactivate" class="account-bar__btn account-bar__btn--stop">Wyłącz</button>
+            <button type="button" id="btn-signal-activate" class="account-bar__btn account-bar__btn--start">{{ t("Uruchom") }}</button>
+            <button type="button" id="btn-signal-deactivate" class="account-bar__btn account-bar__btn--stop">{{ t("Wyłącz") }}</button>
         </div>
         <p class="auth-box__hint" id="signal-activate-status"></p>
     </div>
@@ -188,83 +176,71 @@
 
     <div class="reorderable-panel" data-panel-id="risk">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <details class="collapsible" id="section-risk">
-    <summary class="section-heading">USTAWIENIA RYZYKA</summary>
+    <summary class="section-heading">{{ t("USTAWIENIA RYZYKA") }}</summary>
     <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="signal-rsi-threshold">Próg RSI(14) wejścia (poniżej tej wartości)</label>
+        <label class="auth-form__label" for="signal-rsi-threshold">{{ t("Próg RSI(14) wejścia (poniżej tej wartości)") }}</label>
         <input type="number" id="signal-rsi-threshold" class="auth-form__input" min="0" max="100" step="0.1" value="{{ settings.rsi_threshold }}">
     </div>
     <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="signal-stop-loss-mult">Mnożnik ATR dla stop-loss (np. 1.8)</label>
+        <label class="auth-form__label" for="signal-stop-loss-mult">{{ t("Mnożnik ATR dla stop-loss (np. 1.8)") }}</label>
         <input type="number" id="signal-stop-loss-mult" class="auth-form__input" min="0" step="0.1" value="{{ settings.stop_loss_atr_mult }}">
     </div>
     <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="signal-take-profit-mult">Mnożnik ATR dla take-profit (np. 3.0)</label>
+        <label class="auth-form__label" for="signal-take-profit-mult">{{ t("Mnożnik ATR dla take-profit (np. 3.0)") }}</label>
         <input type="number" id="signal-take-profit-mult" class="auth-form__input" min="0" step="0.1" value="{{ settings.take_profit_atr_mult }}">
     </div>
     <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="signal-max-positions">Maks. liczba jednoczesnych otwartych pozycji</label>
+        <label class="auth-form__label" for="signal-max-positions">{{ t("Maks. liczba jednoczesnych otwartych pozycji") }}</label>
         <input type="number" id="signal-max-positions" class="auth-form__input" min="1" step="1" value="{{ settings.max_concurrent_positions }}">
     </div>
     <p class="auth-box__hint">
-        Warunek wejścia (na sztywno, nie edytowalny tutaj): RSI(14) &lt; próg
-        powyżej ORAZ cena &gt; SMA(200), liczone ze świec dziennych.
+        {{ t("Warunek wejścia (na sztywno, nie edytowalny tutaj): RSI(14) &lt; próg powyżej ORAZ cena &gt; SMA(200), liczone ze świec dziennych.") }}
     </p>
 
     <label class="auth-form__checkbox">
         <input type="checkbox" id="signal-equity-sizing" {{ "checked" if settings.equity_sizing_enabled else "" }}>
-        Money management: skaluj kwotę wejścia wg √equity
+        {{ t("Money management: skaluj kwotę wejścia wg √equity") }}
     </label>
     <p class="auth-box__hint">
-        Gdy włączone: efektywna kwota wejścia = kwota z listy Aktywa *
-        √(bieżące equity / equity odniesienia) - NIE liniowo (patrz
-        microgrid_strategy.compute_equity_scaled_amount). Equity odniesienia
-        jest ZAPISYWANE AUTOMATYCZNIE w momencie zaznaczenia tego checkboxa
-        (nic nie wpisujesz ręcznie) - obecnie:
+        {{ t("Gdy włączone: efektywna kwota wejścia = kwota z listy Aktywa * √(bieżące equity / equity odniesienia) - NIE liniowo (patrz microgrid_strategy.compute_equity_scaled_amount). Equity odniesienia jest ZAPISYWANE AUTOMATYCZNIE w momencie zaznaczenia tego checkboxa (nic nie wpisujesz ręcznie) - obecnie:") }}
         <span id="signal-equity-sizing-baseline">{{ settings.equity_sizing_baseline if settings.equity_sizing_baseline else "—" }}</span> EUR.
-        Odznaczenie i ponowne zaznaczenie ustawia nowy punkt odniesienia na
-        equity z TEGO momentu.
+        {{ t("Odznaczenie i ponowne zaznaczenie ustawia nowy punkt odniesienia na equity z TEGO momentu.") }}
     </p>
 
     <label class="auth-form__checkbox">
         <input type="checkbox" id="signal-fx-cost-adjustment" {{ "checked" if settings.fx_cost_adjustment_enabled else "" }}>
-        Uwzględniaj koszt przewalutowania (FX) dla tickerów USD
+        {{ t("Uwzględniaj koszt przewalutowania (FX) dla tickerów USD") }}
     </label>
     <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="signal-fx-fee-pct">Koszt FX za jedną nogę (ułamek, np. 0.0015 = 0.15%)</label>
+        <label class="auth-form__label" for="signal-fx-fee-pct">{{ t("Koszt FX za jedną nogę (ułamek, np. 0.0015 = 0.15%)") }}</label>
         <input type="number" id="signal-fx-fee-pct" class="auth-form__input" min="0" step="0.0001" value="{{ settings.fx_fee_pct }}">
     </div>
     <p class="auth-box__hint">
-        Konto demo ma jedną walutę (EUR) - każdy zakup/sprzedaż tickera USD
-        kosztuje przewalutowanie w obie strony. Gdy włączone, próg
-        stop-loss dla pozycji USD liczony jest względem ceny podbitej o 2x
-        powyższy koszt. Dla tickerów EUR bez zmian.
+        {{ t("Konto demo ma jedną walutę (EUR) - każdy zakup/sprzedaż tickera USD kosztuje przewalutowanie w obie strony. Gdy włączone, próg stop-loss dla pozycji USD liczony jest względem ceny podbitej o 2x powyższy koszt. Dla tickerów EUR bez zmian.") }}
     </p>
 
     <label class="auth-form__checkbox">
         <input type="checkbox" id="signal-paper-trading" {{ "checked" if settings.is_paper_trading else "" }}>
-        Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)
+        {{ t("Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)") }}
     </label>
     <p class="auth-box__hint">
-        Odznaczone = prawdziwe zlecenia na konto demo T212 (wciąż zero ryzyka
-        finansowego, to demo, ale realne API).
+        {{ t("Odznaczone = prawdziwe zlecenia na konto demo T212 (wciąż zero ryzyka finansowego, to demo, ale realne API).") }}
     </p>
 
     <label class="auth-form__checkbox">
         <input type="checkbox" id="signal-stop-loss-only" {{ "checked" if settings.stop_loss_only_mode else "" }}>
-        Tylko stop-loss (bez nowych wejść)
+        {{ t("Tylko stop-loss (bez nowych wejść)") }}
     </label>
     <p class="auth-box__hint">
-        Gdy włączone, Sygnał NIE otwiera żadnych nowych pozycji - jedyne co
-        robi to pilnuje stop-loss/take-profit na pozycjach już otwartych
-        (istniejące + ręcznie przekazane przyciskiem "Przekaż Sygnałowi").
+        {{ t('Gdy włączone, Sygnał NIE otwiera żadnych nowych pozycji - jedyne co robi to pilnuje stop-loss/take-profit na pozycjach już otwartych (istniejące + ręcznie przekazane przyciskiem "Przekaż Sygnałowi").') }}
     </p>
 
     <button type="button" id="btn-signal-save-settings" class="auth-form__submit auth-form__submit--sticky">
-        Zapisz ustawienia
+        {{ t("Zapisz ustawienia") }}
     </button>
     <p class="auth-box__hint" id="signal-settings-status"></p>
     </details>
@@ -272,23 +248,23 @@
 
     <div class="reorderable-panel" data-panel-id="log">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="Przesuń panel wyżej">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="Przesuń panel niżej">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <div class="section-heading section-heading--with-action" id="section-log">
-        <span>DZIENNIK (ostatnie 50)</span>
-        <button type="button" id="btn-signal-clear-log" class="section-heading__action">Wyczyść log</button>
+        <span>{{ t("DZIENNIK (ostatnie 50)") }}</span>
+        <button type="button" id="btn-signal-clear-log" class="section-heading__action">{{ t("Wyczyść log") }}</button>
     </div>
     <p class="auth-box__hint" id="signal-log-status"></p>
     {% if not logs %}
-    <p class="auth-box__hint" id="signal-log-empty-hint">Brak wpisów.</p>
+    <p class="auth-box__hint" id="signal-log-empty-hint">{{ t("Brak wpisów.") }}</p>
     {% else %}
     <table class="history-table" id="signal-log-table">
         <thead>
             <tr>
-                <th>Czas (Amsterdam)</th>
-                <th>Typ</th>
-                <th>Wiadomość</th>
+                <th>{{ t("Czas (Amsterdam)") }}</th>
+                <th>{{ t("Typ") }}</th>
+                <th>{{ t("Wiadomość") }}</th>
             </tr>
         </thead>
         <tbody>

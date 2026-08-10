@@ -146,7 +146,7 @@ async function loadCandles(ticker) {
         const svgEl = document.getElementById(`spark-${ticker}`);
         if (!svgEl) return;
         if (!data.ok) {
-            svgEl.innerHTML = '<text x="100" y="35" text-anchor="middle" fill="#7C868C" font-size="10" font-family="monospace">brak danych</text>';
+            svgEl.innerHTML = `<text x="100" y="35" text-anchor="middle" fill="#7C868C" font-size="10" font-family="monospace">${t("brak danych")}</text>`;
             return;
         }
         drawCandles(svgEl, data.candles);
@@ -178,7 +178,7 @@ async function loadFocusPnl() {
 
             const ppl = Number(position.ppl);
             const sign = ppl >= 0 ? "+" : "";
-            pnlEl.textContent = `${position.quantity} szt. · ${sign}${ppl.toFixed(2)}`;
+            pnlEl.textContent = `${position.quantity} ${t("szt.")} · ${sign}${ppl.toFixed(2)}`;
             pnlEl.className = "focus-tile__pnl " + (ppl >= 0 ? "focus-tile__pnl--profit" : "focus-tile__pnl--loss");
         });
     } catch (err) {
@@ -230,14 +230,14 @@ async function sendFocusOrder(tile, side) {
     const stopLimitInput = tile.querySelector(".tile__stoplimit-price");
 
     if (!quantity || Number(quantity) <= 0) {
-        statusEl.textContent = "Podaj ilość > 0";
+        statusEl.textContent = t("Podaj ilość > 0");
         return;
     }
     let limitPrice = null;
     if (mode === "limit" || mode === "stop" || mode === "stoplimit") {
         limitPrice = priceInput.value;
         if (!limitPrice || Number(limitPrice) <= 0) {
-            statusEl.textContent = mode === "limit" ? "Podaj cenę LIMIT > 0" : "Podaj cenę STOP > 0";
+            statusEl.textContent = mode === "limit" ? t("Podaj cenę LIMIT > 0") : t("Podaj cenę STOP > 0");
             priceInput.focus();
             return;
         }
@@ -246,17 +246,17 @@ async function sendFocusOrder(tile, side) {
     if (mode === "stoplimit") {
         stopLimitPrice = stopLimitInput.value;
         if (!stopLimitPrice || Number(stopLimitPrice) <= 0) {
-            statusEl.textContent = "Podaj cenę LIMIT (po triggerze) > 0";
+            statusEl.textContent = t("Podaj cenę LIMIT (po triggerze) > 0");
             stopLimitInput.focus();
             return;
         }
     }
 
     btns.forEach(b => b.disabled = true);
-    statusEl.textContent = mode === "limit" ? "wysyłanie LIMIT…"
-        : mode === "stop" ? "wysyłanie STOP…"
-        : mode === "stoplimit" ? "wysyłanie STOP-LIMIT…"
-        : "wysyłanie…";
+    statusEl.textContent = mode === "limit" ? `${t("wysyłanie")} LIMIT…`
+        : mode === "stop" ? `${t("wysyłanie")} STOP…`
+        : mode === "stoplimit" ? `${t("wysyłanie")} STOP-LIMIT…`
+        : `${t("wysyłanie")}…`;
 
     try {
         const url = mode === "limit" ? "/warp/order/limit"
@@ -283,14 +283,14 @@ async function sendFocusOrder(tile, side) {
             setTimeout(() => tile.querySelector(".focus-tile__flash").classList.remove("focus-tile__flash--ok"), 400);
         } else if (data.blocked) {
             playError();
-            statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
+            statusEl.textContent = `${t("ZABLOKOWANE")}: ${t(data.reason) ?? t(data.decision)}`;
         } else {
             playError();
-            statusEl.textContent = `BŁĄD: ${data.error ?? "nieznany"}`;
+            statusEl.textContent = `${t("BŁĄD")}: ${t(data.error) ?? t("nieznany")}`;
         }
     } catch (err) {
         playError();
-        statusEl.textContent = "Błąd sieci";
+        statusEl.textContent = t("Błąd sieci");
     } finally {
         btns.forEach(b => b.disabled = false);
     }
@@ -312,7 +312,7 @@ document.querySelectorAll(".focus-tile").forEach(tile => {
         const priceInput = tile.querySelector(".focus-tile__limit-price");
         const showPrice = btn.dataset.mode === "limit" || btn.dataset.mode === "stop" || btn.dataset.mode === "stoplimit";
         priceInput.classList.toggle("focus-tile__limit-price--hidden", !showPrice);
-        priceInput.placeholder = btn.dataset.mode === "limit" ? "cena LIMIT" : "cena STOP";
+        priceInput.placeholder = btn.dataset.mode === "limit" ? t("cena LIMIT") : t("cena STOP");
         const stopLimitInput = tile.querySelector(".tile__stoplimit-price");
         if (stopLimitInput) {
             stopLimitInput.classList.toggle("tile__stoplimit-price--hidden", btn.dataset.mode !== "stoplimit");

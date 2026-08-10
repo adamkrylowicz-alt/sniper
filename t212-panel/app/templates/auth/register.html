@@ -1,41 +1,39 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Rejestracja{% endblock %}
+{% block title %}SNAJPER — {{ t("Rejestracja") }}{% endblock %}
 
 {% block content %}
 <div class="auth-box">
-    <h1 class="auth-box__title">REJESTRACJA</h1>
+    <h1 class="auth-box__title">{{ t("REJESTRACJA") }}</h1>
 
     {% if closed %}
-    <p class="auth-box__hint">Rejestracja jest zamknięta — konto już istnieje.</p>
+    <p class="auth-box__hint">{{ t("Rejestracja jest zamknięta — konto już istnieje.") }}</p>
     <p class="auth-box__footer">
-        <a href="{{ url_for('auth.login_view') }}">Zaloguj się</a>
+        <a href="{{ url_for('auth.login_view') }}">{{ t("Zaloguj się") }}</a>
     </p>
     {% else %}
     {% if error %}
-    <div class="auth-box__error">{{ error }}</div>
+    <div class="auth-box__error">{{ t(error) }}</div>
     {% endif %}
 
     <form method="post" class="auth-form">
-        <label class="auth-form__label" for="username">Użytkownik</label>
+        <label class="auth-form__label" for="username">{{ t("Użytkownik") }}</label>
         <input class="auth-form__input" type="text" id="username" name="username" required autofocus>
 
-        <label class="auth-form__label" for="password">Hasło (min. 10 znaków)</label>
+        <label class="auth-form__label" for="password">{{ t("Hasło (min. 10 znaków)") }}</label>
         <input class="auth-form__input" type="password" id="password" name="password" required minlength="10">
 
-        <label class="auth-form__label" for="password_confirm">Powtórz hasło</label>
+        <label class="auth-form__label" for="password_confirm">{{ t("Powtórz hasło") }}</label>
         <input class="auth-form__input" type="password" id="password_confirm" name="password_confirm" required minlength="10">
 
         <p class="auth-box__hint">
-            Zapamiętaj to hasło dobrze — po rejestracji dostaniesz też
-            jednorazowy kod odzyskiwania. Jeśli zgubisz oba, nikt (łącznie
-            z adminem) nie odzyska Twoich zaszyfrowanych kluczy API.
+            {{ t("Zapamiętaj to hasło dobrze — po rejestracji dostaniesz też jednorazowy kod odzyskiwania. Jeśli zgubisz oba, nikt (łącznie z adminem) nie odzyska Twoich zaszyfrowanych kluczy API.") }}
         </p>
 
-        <button class="auth-form__submit" type="submit">ZAREJESTRUJ</button>
+        <button class="auth-form__submit" type="submit">{{ t("ZAREJESTRUJ") }}</button>
     </form>
 
     <p class="auth-box__footer">
-        Masz już konto? <a href="{{ url_for('auth.login_view') }}">Zaloguj się</a>
+        {{ t("Masz już konto?") }} <a href="{{ url_for('auth.login_view') }}">{{ t("Zaloguj się") }}</a>
     </p>
     {% endif %}
 </div>

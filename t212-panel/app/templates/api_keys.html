@@ -1,34 +1,34 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Klucze API{% endblock %}
+{% block title %}SNAJPER — {{ t("Klucze API") }}{% endblock %}
 
 {% block content %}
 <div class="auth-box auth-box--wide">
-    <h1 class="auth-box__title">KLUCZE API T212</h1>
+    <h1 class="auth-box__title">{{ t("KLUCZE API T212") }}</h1>
 
     {% if error %}
-    <div class="auth-box__error">{{ error }}</div>
+    <div class="auth-box__error">{{ t(error) }}</div>
     {% endif %}
 
     <p class="auth-box__hint">
-        Status: DEMO {{ "✅ zapisany" if has_demo else "— brak" }}
+        {{ t("Status") }}: DEMO {{ t("✅ zapisany") if has_demo else t("— brak") }}
         {% if has_demo %}
         <form method="post" action="{{ url_for('api_keys.delete') }}" style="display:inline">
             <input type="hidden" name="environment" value="demo">
-            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">Usuń</button>
+            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">{{ t("Usuń") }}</button>
         </form>
         {% endif %}
         &nbsp;|&nbsp;
-        LIVE {{ "✅ zapisany" if has_live else "— brak" }}
+        LIVE {{ t("✅ zapisany") if has_live else t("— brak") }}
         {% if has_live %}
         <form method="post" action="{{ url_for('api_keys.delete') }}" style="display:inline">
             <input type="hidden" name="environment" value="live">
-            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">Usuń</button>
+            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">{{ t("Usuń") }}</button>
         </form>
         {% endif %}
     </p>
 
     <form method="post" action="{{ url_for('api_keys.save') }}" class="auth-form">
-        <label class="auth-form__label" for="environment">Środowisko</label>
+        <label class="auth-form__label" for="environment">{{ t("Środowisko") }}</label>
         <select class="auth-form__input" id="environment" name="environment" required>
             <option value="demo">demo</option>
             <option value="live">live</option>
@@ -41,16 +41,14 @@
         <input class="auth-form__input" type="text" id="api_secret" name="api_secret" required>
 
         <p class="auth-box__hint">
-            Wygeneruj w aplikacji T212: Ustawienia → API (Beta). Wartości są
-            szyfrowane Twoim kluczem prywatnym zanim trafią do bazy — admin
-            tej appki nie ma do nich dostępu.
+            {{ t("Wygeneruj w aplikacji T212: Ustawienia → API (Beta). Wartości są szyfrowane Twoim kluczem prywatnym zanim trafią do bazy — admin tej appki nie ma do nich dostępu.") }}
         </p>
 
-        <button class="auth-form__submit" type="submit">ZAPISZ (ZASZYFROWANE)</button>
+        <button class="auth-form__submit" type="submit">{{ t("ZAPISZ (ZASZYFROWANE)") }}</button>
     </form>
 
     <p class="auth-box__footer">
-        <a href="{{ url_for('settings.index') }}">← Wróć do Ustawień</a>
+        <a href="{{ url_for('settings.index') }}">{{ t("← Wróć do Ustawień") }}</a>
         &nbsp;|&nbsp;
         <a href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
     </p>

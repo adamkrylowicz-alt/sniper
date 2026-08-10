@@ -20,6 +20,7 @@ import json
 from flask import Blueprint, abort, current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from ..extensions import db
+from ..i18n import current_lang, t
 from ..models import ApiKeySet, EODSettings, RiskSettings, SignalSettings, User, UserSettings
 from ..services import instrument_cache, logo_cache
 from ..services.market_hours import is_market_open as _market_open
@@ -82,7 +83,7 @@ def set_focus_tiles():
     settings = _get_or_create_settings(current_user_id())
     settings.focus_tiles = n
     db.session.commit()
-    flash(f"Focus Mode: {n} kafelek/kafelki jednocześnie.")
+    flash(f"Focus Mode: {n} {t('kafelek/kafelki jednocześnie.', current_lang())}")
     return redirect(url_for("settings.index"))
 
 
@@ -145,7 +146,7 @@ def reject_user(user_id):
     username = target.username
     db.session.delete(target)
     db.session.commit()
-    flash(f"Odrzucono i usunięto konto {username}.")
+    flash(f"{t('Odrzucono i usunięto konto', current_lang())} {username}.")
     return redirect(url_for("settings.index"))
 
 
@@ -317,15 +318,15 @@ def watchlist_add():
     tickers = _get_favorites(settings)
 
     if not ticker:
-        flash("Brak tickera.")
+        flash(t("Brak tickera.", current_lang()))
     elif ticker in tickers:
-        flash(f"{ticker} jest już w ulubionych.")
+        flash(f"{ticker} {t('jest już w ulubionych.', current_lang())}")
     elif len(tickers) >= MAX_FAVORITES_SIZE:
-        flash(f"Lista ulubionych jest pełna (max {MAX_FAVORITES_SIZE}).")
+        flash(f"{t('Lista ulubionych jest pełna (max', current_lang())} {MAX_FAVORITES_SIZE}).")
     else:
         tickers.append(ticker)
         _save_favorites(settings, tickers)
-        flash(f"Dodano {ticker} do ulubionych.")
+        flash(f"{t('Dodano', current_lang())} {ticker} {t('do ulubionych.', current_lang())}")
 
     return redirect(url_for("settings.watchlist_view"))
 
@@ -347,7 +348,7 @@ def watchlist_remove():
         grid.remove(ticker)
         _save_grid(settings, grid)
 
-    flash(f"Usunięto {ticker} z ulubionych.")
+    flash(f"{t('Usunięto', current_lang())} {ticker} {t('z ulubionych.', current_lang())}")
     return redirect(url_for("settings.watchlist_view"))
 
 
@@ -369,23 +370,23 @@ def grid_add():
     grid = _get_grid(settings)
 
     if ticker in grid:
-        flash(f"{ticker} jest już w siatce.")
+        flash(f"{ticker} {t('jest już w siatce.', current_lang())}")
         return redirect(url_for("settings.watchlist_view"))
 
     if len(grid) >= MAX_GRID_SIZE:
-        flash(f"Siatka jest pełna (max {MAX_GRID_SIZE} kafelków).")
+        flash(f"{t('Siatka jest pełna (max', current_lang())} {MAX_GRID_SIZE} {t('kafelków).', current_lang())}")
         return redirect(url_for("settings.watchlist_view"))
 
     if ticker not in favorites:
         if len(favorites) >= MAX_FAVORITES_SIZE:
-            flash(f"Lista ulubionych jest pełna (max {MAX_FAVORITES_SIZE}) - nie można dodać.")
+            flash(f"{t('Lista ulubionych jest pełna (max', current_lang())} {MAX_FAVORITES_SIZE}) {t('- nie można dodać.', current_lang())}")
             return redirect(url_for("settings.watchlist_view"))
         favorites.append(ticker)
         _save_favorites(settings, favorites)
 
     grid.append(ticker)
     _save_grid(settings, grid)
-    flash(f"Dodano {ticker} do siatki.")
+    flash(f"{t('Dodano', current_lang())} {ticker} {t('do siatki.', current_lang())}")
 
     return redirect(url_for("settings.watchlist_view"))
 
@@ -401,7 +402,7 @@ def grid_remove():
     if ticker in grid:
         grid.remove(ticker)
         _save_grid(settings, grid)
-        flash(f"Usunięto {ticker} z siatki.")
+        flash(f"{t('Usunięto', current_lang())} {ticker} {t('z siatki.', current_lang())}")
 
     return redirect(url_for("settings.watchlist_view"))
 
@@ -419,7 +420,7 @@ def fetch_logos():
     tickers = _get_favorites(settings)
 
     if not tickers:
-        flash("Brak ulubionych - najpierw dodaj jakieś instrumenty.")
+        flash(t("Brak ulubionych - najpierw dodaj jakieś instrumenty.", current_lang()))
         return redirect(url_for("settings.watchlist_view"))
 
     results = logo_cache.fetch_missing_logos(
@@ -427,7 +428,7 @@ def fetch_logos():
     )
     fetched = sum(1 for ok in results.values() if ok)
 
-    flash(f"Pobrano/zaktualizowano {fetched}/{len(tickers)} logotypów.")
+    flash(f"{t('Pobrano/zaktualizowano', current_lang())} {fetched}/{len(tickers)} {t('logotypów.', current_lang())}")
     return redirect(url_for("settings.watchlist_view"))
 
 
@@ -472,13 +473,13 @@ def refresh_cache():
     try:
         client = _get_client()
         count = instrument_cache.refresh_instrument_cache(client)
-        flash(f"Zsynchronizowano {count} instrumentów.")
+        flash(f"{t('Zsynchronizowano', current_lang())} {count} {t('instrumentów.', current_lang())}")
     except instrument_cache.RefreshTooSoonError as exc:
         minutes = int(exc.retry_after.total_seconds() // 60) + 1
-        flash(f"Za wcześnie - spróbuj ponownie za ~{minutes} min.")
+        flash(f"{t('Za wcześnie - spróbuj ponownie za ~', current_lang())}{minutes} {t('min.', current_lang())}")
     except RuntimeError as exc:
         flash(str(exc))
     except T212APIError as exc:
-        flash(f"Błąd T212: {exc}")
+        flash(f"{t('Błąd T212:', current_lang())} {exc}")
 
     return redirect(url_for("settings.watchlist_view"))

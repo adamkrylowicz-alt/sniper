@@ -17,18 +17,17 @@ document.addEventListener("DOMContentLoaded", () => {
     activateBtn.addEventListener("click", async () => {
         const password = passwordInput.value;
         if (!password) {
-            statusEl.textContent = "Podaj hasło.";
+            statusEl.textContent = t("Podaj hasło.");
             return;
         }
 
         const confirmed = await confirmDialog(
-            "Uruchomić bota? Poświadczenia zostaną w pamięci serwera dopóki " +
-            "nie wyłączysz bota albo nie zrestartujesz appki. Bot działa na demo."
+            t("Uruchomić bota? Poświadczenia zostaną w pamięci serwera dopóki nie wyłączysz bota albo nie zrestartujesz appki. Bot działa na demo.")
         );
         if (!confirmed) return;
 
         activateBtn.disabled = true;
-        statusEl.textContent = "Uruchamianie...";
+        statusEl.textContent = t("Uruchamianie...");
 
         try {
             const resp = await fetch("/bot/activate", {
@@ -40,15 +39,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
             if (data.ok) {
                 playSuccess();
-                statusEl.textContent = "Bot uruchomiony.";
+                statusEl.textContent = t("Bot uruchomiony.");
                 window.location.reload();
             } else {
                 playError();
-                statusEl.textContent = data.error || "Nie udało się uruchomić.";
+                statusEl.textContent = t(data.error) || t("Nie udało się uruchomić.");
             }
         } catch (err) {
             playError();
-            statusEl.textContent = "Błąd sieci.";
+            statusEl.textContent = t("Błąd sieci.");
             console.error(err);
         } finally {
             activateBtn.disabled = false;
@@ -57,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     deactivateBtn.addEventListener("click", async () => {
-        const confirmed = await confirmDialog("Wyłączyć bota?");
+        const confirmed = await confirmDialog(t("Wyłączyć bota?"));
         if (!confirmed) return;
 
         deactivateBtn.disabled = true;
@@ -69,11 +68,11 @@ document.addEventListener("DOMContentLoaded", () => {
                 window.location.reload();
             } else {
                 playError();
-                statusEl.textContent = data.error || "Nie udało się wyłączyć.";
+                statusEl.textContent = t(data.error) || t("Nie udało się wyłączyć.");
             }
         } catch (err) {
             playError();
-            statusEl.textContent = "Błąd sieci.";
+            statusEl.textContent = t("Błąd sieci.");
             console.error(err);
         } finally {
             deactivateBtn.disabled = false;
@@ -94,7 +93,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const btn = document.getElementById("btn-bot-save-settings");
         const settingsStatus = document.getElementById("bot-settings-status");
         btn.disabled = true;
-        settingsStatus.textContent = "Zapisywanie...";
+        settingsStatus.textContent = t("Zapisywanie...");
 
         const payload = {
             dca_scenario: document.getElementById("bot-dca-scenario").value,
@@ -123,18 +122,18 @@ document.addEventListener("DOMContentLoaded", () => {
             if (data.ok) {
                 playSuccess();
                 settingsStatus.textContent = data.released_count
-                    ? `Zapisano. Zwolniono ${data.released_count} pozycji przejętych przez "zarządzaj wszystkim".`
-                    : "Zapisano.";
+                    ? `${t("Zapisano. Zwolniono")} ${data.released_count} ${t('pozycji przejętych przez "zarządzaj wszystkim".')}`
+                    : t("Zapisano.");
                 if (data.equity_sizing_baseline !== undefined) {
                     document.getElementById("bot-equity-sizing-baseline").textContent = data.equity_sizing_baseline || "—";
                 }
             } else {
                 playError();
-                settingsStatus.textContent = data.error || "Błąd zapisu.";
+                settingsStatus.textContent = t(data.error) || t("Błąd zapisu.");
             }
         } catch (err) {
             playError();
-            settingsStatus.textContent = "Błąd sieci.";
+            settingsStatus.textContent = t("Błąd sieci.");
             console.error(err);
         } finally {
             btn.disabled = false;
@@ -147,7 +146,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (clearLogBtn) {
         clearLogBtn.addEventListener("click", async () => {
             const logStatus = document.getElementById("bot-log-status");
-            if (!(await confirmDialog("Wyczyścić cały dziennik bota? Tej operacji nie da się cofnąć."))) return;
+            if (!(await confirmDialog(t("Wyczyścić cały dziennik bota? Tej operacji nie da się cofnąć.")))) return;
 
             clearLogBtn.disabled = true;
             try {
@@ -164,15 +163,15 @@ document.addEventListener("DOMContentLoaded", () => {
                         emptyHint.id = "bot-log-empty-hint";
                         logStatus.insertAdjacentElement("afterend", emptyHint);
                     }
-                    emptyHint.textContent = "Brak wpisów.";
-                    logStatus.textContent = "Dziennik wyczyszczony.";
+                    emptyHint.textContent = t("Brak wpisów.");
+                    logStatus.textContent = t("Dziennik wyczyszczony.");
                 } else {
                     playError();
-                    logStatus.textContent = data.error || "Błąd czyszczenia logu.";
+                    logStatus.textContent = t(data.error) || t("Błąd czyszczenia logu.");
                 }
             } catch (err) {
                 playError();
-                logStatus.textContent = "Błąd sieci.";
+                logStatus.textContent = t("Błąd sieci.");
                 console.error(err);
             } finally {
                 clearLogBtn.disabled = false;
@@ -191,7 +190,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const tradeId = row?.dataset.tradeId;
             if (!tradeId) return;
 
-            if (!(await confirmDialog("Odblokować tę pozycję? Bot spróbuje ponownie wystawić/przesunąć trailing STOP na najbliższym ticku."))) return;
+            if (!(await confirmDialog(t("Odblokować tę pozycję? Bot spróbuje ponownie wystawić/przesunąć trailing STOP na najbliższym ticku.")))) return;
 
             btn.disabled = true;
             try {
@@ -222,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const tradeId = row?.dataset.tradeId;
             if (!tradeId) return;
 
-            if (!(await confirmDialog("Zwolnić tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie T212 - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany)."))) return;
+            if (!(await confirmDialog(t("Zwolnić tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie T212 - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).")))) return;
 
             btn.disabled = true;
             try {
@@ -233,7 +232,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     row.remove();
                 } else {
                     playError();
-                    window.alert(data.error || "Nie udało się zwolnić pozycji.");
+                    window.alert(t(data.error) || t("Nie udało się zwolnić pozycji."));
                     btn.disabled = false;
                 }
             } catch (err) {
@@ -263,7 +262,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (!append) container.innerHTML = "";
 
         if (!append && results.length === 0) {
-            container.innerHTML = '<p class="auth-box__hint">Brak wyników.</p>';
+            container.innerHTML = `<p class="auth-box__hint">${t("Brak wyników.")}</p>`;
             return;
         }
 
@@ -288,7 +287,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 currencyBadge.textContent = r.currency;
                 descLine.appendChild(currencyBadge);
             } else {
-                descLine.append("waluta nieznana");
+                descLine.append(t("waluta nieznana"));
             }
             label.appendChild(descLine);
 
@@ -297,14 +296,14 @@ document.addEventListener("DOMContentLoaded", () => {
             if (r.is_leveraged) {
                 const badge = document.createElement("span");
                 badge.className = "badge badge--leverage";
-                badge.textContent = "DŹWIGNIA";
+                badge.textContent = t("DŹWIGNIA");
                 row.appendChild(badge);
             }
 
             const addBtn = document.createElement("button");
             addBtn.type = "button";
             addBtn.className = "watchlist-results__add";
-            addBtn.textContent = "Dodaj";
+            addBtn.textContent = t("Dodaj");
             addBtn.addEventListener("click", () => addBotAsset(r.ticker, addBtn));
             row.appendChild(addBtn);
 
@@ -344,7 +343,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const amount = amountInput.value;
         if (!amount || Number(amount) <= 0) {
             amountInput.focus();
-            assetStatusEl.textContent = "Podaj najpierw kwotę wejścia (pole nad wyszukiwarką).";
+            assetStatusEl.textContent = t("Podaj najpierw kwotę wejścia (pole nad wyszukiwarką).");
             return;
         }
 
@@ -358,7 +357,7 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await resp.json();
             if (!data.ok) {
                 playError();
-                assetStatusEl.textContent = data.error || "Nie udało się dodać.";
+                assetStatusEl.textContent = t(data.error) || t("Nie udało się dodać.");
                 addBtn.disabled = false;
                 return;
             }
@@ -366,7 +365,7 @@ document.addEventListener("DOMContentLoaded", () => {
             window.location.reload();
         } catch (err) {
             playError();
-            assetStatusEl.textContent = "Błąd sieci.";
+            assetStatusEl.textContent = t("Błąd sieci.");
             console.error(err);
             addBtn.disabled = false;
         }
@@ -406,13 +405,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const hintEl = row.querySelector("[data-price-hint]");
                 const info = data.prices[row.dataset.ticker];
                 if (!info || info.price === null) {
-                    hintEl.textContent = "brak ceny (Finnhub/Yahoo niedostępne dla tego tickera)";
+                    hintEl.textContent = t("brak ceny (Finnhub/Yahoo niedostępne dla tego tickera)");
                     return;
                 }
                 const warningTxt = info.warning
-                    ? " ⚠ może być za mało dla T212 (obserwowane minimum ~1.20 USD)"
+                    ? ` ⚠ ${t("może być za mało dla T212 (obserwowane minimum ~1.20 USD)")}`
                     : "";
-                hintEl.textContent = `cena: ${info.price} · przy tej kwocie: ~${info.implied_quantity} akcji${warningTxt}`;
+                hintEl.textContent = `${t("cena:")} ${info.price} · ${t("przy tej kwocie:")} ~${info.implied_quantity} ${t("akcji")}${warningTxt}`;
                 hintEl.style.color = info.warning ? "var(--sell-red)" : "";
             });
         } catch (err) {
@@ -439,14 +438,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await resp.json();
                 if (!data.ok) {
                     playError();
-                    rowStatus.textContent = data.error || "Nie udało się zapisać kwoty.";
+                    rowStatus.textContent = t(data.error) || t("Nie udało się zapisać kwoty.");
                 } else {
-                    rowStatus.textContent = "Zapisano.";
+                    rowStatus.textContent = t("Zapisano.");
                     loadBotAssetPrices();  // odśwież ostrzeżenie pod nową kwotę
                 }
             } catch (err) {
                 playError();
-                rowStatus.textContent = "Błąd sieci.";
+                rowStatus.textContent = t("Błąd sieci.");
                 console.error(err);
             }
         });
@@ -459,13 +458,13 @@ document.addEventListener("DOMContentLoaded", () => {
                 const data = await resp.json();
                 if (!data.ok) {
                     playError();
-                    rowStatus.textContent = data.error || "Nie udało się przełączyć.";
+                    rowStatus.textContent = t(data.error) || t("Nie udało się przełączyć.");
                     return;
                 }
                 pennyBtn.classList.toggle("pie-asset-row__icon-btn--active", data.is_penny_stock);
             } catch (err) {
                 playError();
-                rowStatus.textContent = "Błąd sieci.";
+                rowStatus.textContent = t("Błąd sieci.");
                 console.error(err);
             } finally {
                 pennyBtn.disabled = false;
@@ -473,7 +472,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
 
         row.querySelector("[data-remove]").addEventListener("click", async () => {
-            const confirmed = await confirmDialog(`Usunąć ${row.dataset.ticker} z listy bota?`);
+            const confirmed = await confirmDialog(`${t("Usunąć")} ${row.dataset.ticker} ${t("z listy bota?")}`);
             if (!confirmed) return;
             try {
                 const resp = await fetch(`/bot/asset/${assetId}/remove`, { method: "POST" });
@@ -481,10 +480,10 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (data.ok) {
                     window.location.reload();
                 } else {
-                    rowStatus.textContent = data.error || "Nie udało się usunąć.";
+                    rowStatus.textContent = t(data.error) || t("Nie udało się usunąć.");
                 }
             } catch (err) {
-                rowStatus.textContent = "Błąd sieci.";
+                rowStatus.textContent = t("Błąd sieci.");
                 console.error(err);
             }
         });

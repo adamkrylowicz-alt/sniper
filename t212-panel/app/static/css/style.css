@@ -252,6 +252,7 @@ button.topbar__env { cursor: pointer; font-family: inherit; font-weight: 600; le
 }
 
 .topbar__logout { margin: 0; }
+.topbar__lang { margin: 0; }
 
 .topbar__theme-toggle {
     background: transparent;

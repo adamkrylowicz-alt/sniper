@@ -22,7 +22,7 @@ function renderResults(results) {
     container.innerHTML = "";
 
     if (results.length === 0) {
-        container.innerHTML = '<p class="auth-box__hint">Brak wyników.</p>';
+        container.innerHTML = `<p class="auth-box__hint">${t("Brak wyników.")}</p>`;
         return;
     }
 
@@ -64,7 +64,7 @@ function renderResults(results) {
             currencyBadge.textContent = r.currency;
             descLine.appendChild(currencyBadge);
         } else {
-            descLine.append("waluta nieznana");
+            descLine.append(t("waluta nieznana"));
         }
         label.appendChild(descLine);
 
@@ -73,14 +73,14 @@ function renderResults(results) {
         if (r.is_leveraged) {
             const badge = document.createElement("span");
             badge.className = "badge badge--leverage";
-            badge.textContent = "DŹWIGNIA";
+            badge.textContent = t("DŹWIGNIA");
             row.appendChild(badge);
         }
 
         const addBtn = document.createElement("button");
         addBtn.type = "button";
         addBtn.className = "watchlist-results__add";
-        addBtn.textContent = "Dodaj";
+        addBtn.textContent = t("Dodaj");
         addBtn.addEventListener("click", () => addToWatchlist(r.ticker));
         row.appendChild(addBtn);
         container.appendChild(row);
@@ -142,7 +142,7 @@ async function loadFavoritesPnl() {
 
             const ppl = Number(position.ppl);
             const sign = ppl >= 0 ? "+" : "";
-            el.textContent = `${position.quantity} szt. · ${sign}${ppl.toFixed(2)}`;
+            el.textContent = `${position.quantity} ${t("szt.")} · ${sign}${ppl.toFixed(2)}`;
             el.className = "watchlist-favorites__pnl " +
                 (ppl >= 0 ? "watchlist-favorites__pnl--profit" : "watchlist-favorites__pnl--loss");
         });
@@ -181,17 +181,17 @@ async function pollBulkLogoStatus() {
         const data = await resp.json();
 
         if (data.running) {
-            statusEl.textContent = `Pobieranie w toku: ${data.done}/${data.total}...`;
+            statusEl.textContent = `${t("Pobieranie w toku:")} ${data.done}/${data.total}...`;
             btn.disabled = true;
             setTimeout(pollBulkLogoStatus, 2000);
         } else if (data.total > 0) {
-            statusEl.textContent = `Gotowe - przetworzono ${data.done}/${data.total} instrumentów.`;
+            statusEl.textContent = `${t("Gotowe - przetworzono")} ${data.done}/${data.total} ${t("instrumentów.")}`;
             btn.disabled = false;
         } else {
             btn.disabled = false;
         }
     } catch (err) {
-        statusEl.textContent = "Błąd sieci przy sprawdzaniu postępu.";
+        statusEl.textContent = t("Błąd sieci przy sprawdzaniu postępu.");
         btn.disabled = false;
         console.error(err);
     }
@@ -201,19 +201,19 @@ document.getElementById("btn-bulk-fetch-logos").addEventListener("click", async 
     const btn = document.getElementById("btn-bulk-fetch-logos");
     const statusEl = document.getElementById("bulk-fetch-status");
     btn.disabled = true;
-    statusEl.textContent = "Uruchamianie...";
+    statusEl.textContent = t("Uruchamianie...");
 
     try {
         const resp = await fetch("/settings/logos/bulk-fetch", { method: "POST" });
         const data = await resp.json();
         if (!data.ok) {
-            statusEl.textContent = data.error || "Nie udało się uruchomić.";
+            statusEl.textContent = t(data.error) || t("Nie udało się uruchomić.");
             btn.disabled = false;
             return;
         }
         pollBulkLogoStatus();
     } catch (err) {
-        statusEl.textContent = "Błąd sieci.";
+        statusEl.textContent = t("Błąd sieci.");
         btn.disabled = false;
         console.error(err);
     }

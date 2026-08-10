@@ -7,20 +7,20 @@
     <div class="pie-detail__header">
         <form method="post" action="{{ url_for('pie.rename', pie_id=pie.id) }}" class="pie-detail__rename">
             <input type="text" name="name" value="{{ pie.name }}" class="auth-form__input pie-detail__name-input" autocomplete="off">
-            <button type="submit" class="account-bar__btn">Zapisz nazwę</button>
+            <button type="submit" class="account-bar__btn">{{ t("Zapisz nazwę") }}</button>
         </form>
-        <button type="button" id="btn-delete-pie" class="account-bar__btn account-bar__btn--sell">Usuń koszyk</button>
+        <button type="button" id="btn-delete-pie" class="account-bar__btn account-bar__btn--sell">{{ t("Usuń koszyk") }}</button>
     </div>
     <form id="delete-pie-form" method="post" action="{{ url_for('pie.delete', pie_id=pie.id) }}" style="display:none"></form>
 
     {% if not assets %}
-    <p class="auth-box__hint">Koszyk jest pusty — dodaj aktywa poniżej.</p>
+    <p class="auth-box__hint">{{ t("Koszyk jest pusty — dodaj aktywa poniżej.") }}</p>
     {% else %}
     <div class="pie-donut-wrap">
         <div class="pie-donut" id="pie-donut"></div>
         <div class="pie-donut__center">
             <span class="pie-donut__count">{{ assets|length }}</span>
-            <span class="pie-donut__label">{{ "aktywo" if assets|length == 1 else "aktywów" }}</span>
+            <span class="pie-donut__label">{{ t("aktywo") if assets|length == 1 else t("aktywów") }}</span>
         </div>
     </div>
 
@@ -32,7 +32,7 @@
              data-currency="{{ a.currency }}"
              data-weight="{{ a.target_weight }}">
 
-            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="Szczegóły {{ a.display_ticker }}">
+            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="{{ t('Szczegóły') }} {{ a.display_ticker }}">
                 {{ a.display_ticker[0] }}
             </a>
 
@@ -40,7 +40,7 @@
                 <div class="pie-asset-row__title-line">
                     <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__ticker-link">
                         <span class="market-dot {{ 'market-dot--open' if a.market_open else 'market-dot--closed' }}"
-                              title="{{ 'Giełda otwarta' if a.market_open else 'Giełda zamknięta' }}"></span>
+                              title="{{ t('Giełda otwarta') if a.market_open else t('Giełda zamknięta') }}"></span>
                         <span class="pie-asset-row__ticker">{{ a.display_ticker }}</span>
                         <span class="pie-asset-row__currency"><span class="currency-badge currency-badge--{{ a.currency|lower }}">{{ a.currency }}</span></span>
                     </a>
@@ -57,13 +57,13 @@
                 </div>
 
                 <div class="pie-asset-row__fields">
-                    <label>Kwota
+                    <label>{{ t("Kwota") }}
                         <input type="number" class="pie-asset-row__amount" min="0" step="0.01" data-amount>
                     </label>
-                    <label>Ilość
+                    <label>{{ t("Ilość") }}
                         <input type="number" class="pie-asset-row__qty" min="0" step="0.0001" data-qty>
                     </label>
-                    <label>Cena ref.
+                    <label>{{ t("Cena ref.") }}
                         <input type="number" class="pie-asset-row__price" min="0" step="0.01" data-price>
                     </label>
                 </div>
@@ -71,7 +71,7 @@
 
             <div class="pie-asset-row__actions">
                 <form method="post" action="{{ url_for('pie.remove_asset', asset_id=a.id) }}">
-                    <button type="submit" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--danger" title="Usuń z koszyka">
+                    <button type="submit" class="watchlist-favorites__icon-btn watchlist-favorites__icon-btn--danger" title="{{ t('Usuń z koszyka') }}">
                         <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6"/>
                         </svg>
@@ -80,39 +80,39 @@
             </div>
 
             <div class="pie-asset-row__buy">
-                <button type="button" class="account-bar__btn account-bar__btn--buy" data-buy>KUP</button>
+                <button type="button" class="account-bar__btn account-bar__btn--buy" data-buy>{{ t("KUP") }}</button>
                 <div class="pie-asset-row__status" data-status></div>
             </div>
         </div>
         {% endfor %}
     </div>
 
-    <button type="button" id="btn-buy-all" class="auth-form__submit" style="max-width:260px">Kup całość</button>
+    <button type="button" id="btn-buy-all" class="auth-form__submit" style="max-width:260px">{{ t("Kup całość") }}</button>
     {% endif %}
 
     <div class="pie-detail__budget-row">
-        <label class="auth-form__label" for="pie-budget">Budżet do zainwestowania (tylko do liczenia, nie zapisywany)</label>
+        <label class="auth-form__label" for="pie-budget">{{ t("Budżet do zainwestowania (tylko do liczenia, nie zapisywany)") }}</label>
         <input type="number" id="pie-budget" class="auth-form__input" min="0" step="0.01" placeholder="0.00">
     </div>
 
     <div id="fx-guard-banner" class="pie-fx-banner pie-fx-banner--hidden"></div>
-    <button type="button" id="btn-fx-check" class="account-bar__btn">Sprawdź środki (Smart FX Guard)</button>
+    <button type="button" id="btn-fx-check" class="account-bar__btn">{{ t("Sprawdź środki (Smart FX Guard)") }}</button>
 
     <div class="pie-detail__add-asset">
-        <label class="auth-form__label" for="pie-asset-search">Dodaj aktywo</label>
+        <label class="auth-form__label" for="pie-asset-search">{{ t("Dodaj aktywo") }}</label>
         <input
             type="text" id="pie-asset-search" class="auth-form__input"
-            placeholder="Szukaj w tej zakładce (puste pole = przeglądaj wszystko)..." autocomplete="off"
+            placeholder="{{ t('Szukaj w tej zakładce (puste pole = przeglądaj wszystko)...') }}" autocomplete="off"
         >
         <div id="pie-asset-tabs" class="tabs" role="tablist"></div>
         <div id="pie-asset-results" class="watchlist-results watchlist-results--browse"></div>
         <button type="button" id="pie-asset-load-more" class="account-bar__btn" style="margin-top:8px; display:none">
-            Załaduj więcej
+            {{ t("Załaduj więcej") }}
         </button>
     </div>
 
     <p class="auth-box__footer">
-        <a href="{{ url_for('pie.list_view') }}">← Wróć do koszyków</a>
+        <a href="{{ url_for('pie.list_view') }}">← {{ t("Wróć do koszyków") }}</a>
         &nbsp;|&nbsp;
         <a href="{{ url_for('scalping.warp_view') }}">Warp Mode</a>
     </p>

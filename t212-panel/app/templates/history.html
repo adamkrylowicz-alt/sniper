@@ -1,23 +1,23 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Historia{% endblock %}
+{% block title %}SNAJPER — {{ t("Historia") }}{% endblock %}
 
 {% block content %}
 <div class="history-box">
-    <h1 class="auth-box__title">HISTORIA ZLECEŃ (ostatnie 100)</h1>
+    <h1 class="auth-box__title">{{ t("HISTORIA ZLECEŃ (ostatnie 100)") }}</h1>
 
     {% if not entries %}
-    <p class="auth-box__hint">Brak zleceń do pokazania.</p>
+    <p class="auth-box__hint">{{ t("Brak zleceń do pokazania.") }}</p>
     {% else %}
     <table class="history-table">
         <thead>
             <tr>
-                <th>Czas</th>
+                <th>{{ t("Czas") }}</th>
                 <th>Ticker</th>
-                <th>Kierunek</th>
-                <th>Ilość</th>
-                <th>Cena ręczna</th>
+                <th>{{ t("Kierunek") }}</th>
+                <th>{{ t("Ilość") }}</th>
+                <th>{{ t("Cena ręczna") }}</th>
                 <th>Status</th>
-                <th>Szczegóły</th>
+                <th>{{ t("Szczegóły") }}</th>
             </tr>
         </thead>
         <tbody>
@@ -26,7 +26,7 @@
                 <td>{{ e.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
                 <td>{{ e.ticker }}</td>
                 <td class="history-table__side history-table__side--{{ e.side }}">
-                    {{ "KUP" if e.side == "buy" else "SPRZEDAJ" }}
+                    {{ t("KUP") if e.side == "buy" else t("SPRZEDAJ") }}
                 </td>
                 <td>{{ e.quantity }}</td>
                 <td>{{ e.price_snapshot or "—" }}</td>
@@ -44,7 +44,7 @@
     {% endif %}
 
     <p class="auth-box__footer">
-        <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
+        <a href="{{ url_for('scalping.warp_view') }}">{{ t("← Wróć do Warp Mode") }}</a>
     </p>
 </div>
 {% endblock %}

@@ -12,6 +12,19 @@ reużywa też playSuccess/playError zamiast duplikować logikę dźwięku).
 */
 
 /*
+t(text) - JS odpowiednik app/i18n.py::t(). window.SNAJPER_LANG i
+window.SNAJPER_I18N wstrzykiwane są w base.html (inline <script> przed
+tym plikiem) z tego samego kontekstu Jinja co current_lang/i18n_json, więc
+oba t() (Python i JS) czytają DOKŁADNIE ten sam słownik en.txt - żaden
+tekst dorenderowany przez JS (tooltipy, statusy, alerty) nie zostaje po
+polsku gdy user przełączy się na EN.
+*/
+function t(text) {
+    if (window.SNAJPER_LANG !== "en") return text;
+    return (window.SNAJPER_I18N && window.SNAJPER_I18N[text]) || text;
+}
+
+/*
 avatarHue(ticker) - JS odpowiednik utils.py::avatar_hue(), ten sam wzór
 (suma kodów znaków % 360), żeby kolor awatara fallback dla tego samego
 tickera ZAWSZE wychodził identyczny czy liczony po stronie serwera
@@ -218,7 +231,7 @@ document.addEventListener("DOMContentLoaded", () => {
         event.preventDefault();
         const submitBtn = form.querySelector('button[type="submit"]');
         submitBtn.disabled = true;
-        statusEl.textContent = "Wysyłanie…";
+        statusEl.textContent = t("Wysyłanie…");
 
         const formData = new FormData(form);
         formData.set("page_url", window.location.href);
@@ -229,16 +242,16 @@ document.addEventListener("DOMContentLoaded", () => {
             const data = await resp.json();
 
             if (data.ok) {
-                statusEl.textContent = "Wysłano. Dzięki!";
+                statusEl.textContent = t("Wysłano. Dzięki!");
                 setTimeout(() => {
                     closeReportModal();
                     form.reset();
                 }, 1200);
             } else {
-                statusEl.textContent = `Błąd: ${data.error ?? "nieznany"}`;
+                statusEl.textContent = `${t("Błąd")}: ${t(data.error) ?? t("nieznany")}`;
             }
         } catch (err) {
-            statusEl.textContent = "Błąd sieci przy wysyłaniu.";
+            statusEl.textContent = t("Błąd sieci przy wysyłaniu.");
             console.error(err);
         } finally {
             submitBtn.disabled = false;
@@ -285,9 +298,9 @@ document.addEventListener("DOMContentLoaded", () => {
     envBtn.addEventListener("click", async () => {
         const current = envBtn.classList.contains("topbar__env--live") ? "live" : "demo";
         const target = current === "live" ? "demo" : "live";
-        const label = target === "live" ? "PRAWDZIWE (LIVE)" : "demo";
+        const label = target === "live" ? t("PRAWDZIWE (LIVE)") : t("demo");
 
-        const ok = await confirmDialog(`Przełączyć konto na ${label}? Dotyczy WSZYSTKICH silników (Micro-Grid/Sygnał/EOD) i Warp Mode.`);
+        const ok = await confirmDialog(`${t("Przełączyć konto na")} ${label}? ${t("Dotyczy WSZYSTKICH silników (Micro-Grid/Sygnał/EOD) i Warp Mode.")}`);
         if (!ok) return;
 
         try {
@@ -298,13 +311,13 @@ document.addEventListener("DOMContentLoaded", () => {
             });
             const data = await resp.json();
             if (!data.ok) {
-                alert(data.error || "Nie udało się przełączyć środowiska.");
+                alert(t(data.error) || t("Nie udało się przełączyć środowiska."));
                 return;
             }
             location.reload();
         } catch (err) {
             console.error("Nie udało się przełączyć środowiska:", err);
-            alert("Błąd sieci - spróbuj ponownie.");
+            alert(t("Błąd sieci - spróbuj ponownie."));
         }
     });
 });
@@ -336,7 +349,7 @@ function applyMoneyHiding() {
     });
     document.querySelectorAll(".js-money-toggle-btn").forEach((btn) => {
         btn.textContent = moneyHidden ? "🙈" : "👁️";
-        btn.title = moneyHidden ? "Pokaż wartości" : "Ukryj wartości (np. przed screen-share)";
+        btn.title = moneyHidden ? t("Pokaż wartości") : t("Ukryj wartości (np. przed screen-share)");
     });
 }
 
@@ -389,9 +402,9 @@ function setConnDot(status) {
     dot.classList.remove("topbar__conn-dot--ok", "topbar__conn-dot--error", "topbar__conn-dot--unknown");
 
     const labels = {
-        ok: "Połączenie z T212: OK",
-        error: "Połączenie z T212: BŁĄD",
-        unknown: "Status połączenia z T212 (nieznany)",
+        ok: t("Połączenie z T212: OK"),
+        error: t("Połączenie z T212: BŁĄD"),
+        unknown: t("Status połączenia z T212 (nieznany)"),
     };
     dot.classList.add(`topbar__conn-dot--${status}`);
     wrapper.title = labels[status] || labels.unknown;
@@ -411,9 +424,9 @@ wynikach (Instrument.is_leveraged) zostaje bez zmian - to ostrzeżenie
 per-instrument, nie kategoria zakładki.
 */
 const INSTRUMENT_CATEGORIES = [
-    { id: "stock_usd", label: "Akcje USD" },
-    { id: "stock_eur", label: "Akcje EUR" },
-    { id: "other", label: "Pozostałe" },
+    { id: "stock_usd", label: t("Akcje USD") },
+    { id: "stock_eur", label: t("Akcje EUR") },
+    { id: "other", label: t("Pozostałe") },
 ];
 
 /*
@@ -427,7 +440,7 @@ notowana w dwóch walutach na dwóch giełdach) - sam ticker+nazwa czasem nie
 wystarczał, żeby je odróżnić.
 */
 function instrumentTypeLabel(type) {
-    const labels = { STOCK: "Akcja", ETF: "ETF", WARRANT: "Warrant" };
+    const labels = { STOCK: t("Akcja"), ETF: "ETF", WARRANT: "Warrant" };
     return labels[type] || type || "?";
 }
 

@@ -1,0 +1,622 @@
+# app/translations/en.txt
+# Format: jedna linia = jeden tekst, klucz i wartość rozdzielone "|||"
+#     Polski tekst z szablonu/kodu|||English text
+# Klucz MUSI być identyczny znak w znak z tekstem użytym w t("...") w
+# szablonach / kodzie Python (patrz app/i18n.py). Ten plik można podmienić
+# na serwerze samodzielnie, bez ruszania reszty appki - restart appki
+# wystarczy, żeby wczytał nową wersję.
+
+# --- base.html: nawigacja, modale, stopka ---
+Aktywa|||Assets
+Sygnał|||Signal
+Ustawienia|||Settings
+Zgłoś problem|||Report a problem
+Wyloguj|||Log out
+Przełącz jasny/ciemny motyw|||Toggle light/dark theme
+Przełącz język|||Switch language
+Status połączenia z T212 (nieznany)|||T212 connection status (unknown)
+Kliknij, żeby przełączyć demo/live|||Click to switch demo/live
+ANULUJ|||CANCEL
+TAK, WYŚLIJ|||YES, SEND
+ZGŁOŚ PROBLEM|||REPORT A PROBLEM
+Co się stało?|||What happened?
+Opisz problem - im więcej szczegółów, tym łatwiej to naprawić...|||Describe the problem - the more detail, the easier it is to fix...
+Załącznik (screenshot PNG/JPG albo plik TXT, opcjonalnie)|||Attachment (PNG/JPG screenshot or TXT file, optional)
+Automatycznie dołączone: nazwa użytkownika, czas, adres strony i ostatnie błędy JS z tej sesji (jeśli jakieś wystąpiły).|||Automatically included: username, time, page address, and the latest JS errors from this session (if any occurred).
+WYŚLIJ|||SEND
+Koszty i opłaty|||Costs & fees
+
+# --- templates/auth/*.html ---
+Logowanie|||Login
+LOGOWANIE|||LOGIN
+Użytkownik|||Username
+Hasło|||Password
+Zapamiętaj mnie (30 dni)|||Remember me (30 days)
+ZALOGUJ|||LOG IN
+Nie masz konta?|||Don't have an account?
+Zarejestruj się|||Register
+Zapomniałem hasła|||Forgot password
+Rejestracja|||Registration
+REJESTRACJA|||REGISTRATION
+Rejestracja jest zamknięta — konto już istnieje.|||Registration is closed — an account already exists.
+Zaloguj się|||Log in
+Hasło (min. 10 znaków)|||Password (min. 10 characters)
+Powtórz hasło|||Repeat password
+Zapamiętaj to hasło dobrze — po rejestracji dostaniesz też jednorazowy kod odzyskiwania. Jeśli zgubisz oba, nikt (łącznie z adminem) nie odzyska Twoich zaszyfrowanych kluczy API.|||Remember this password well — after registration you'll also get a one-time recovery code. If you lose both, no one (including the admin) can recover your encrypted API keys.
+ZAREJESTRUJ|||REGISTER
+Masz już konto?|||Already have an account?
+Odzyskaj dostęp|||Recover access
+ODZYSKAJ DOSTĘP|||RECOVER ACCESS
+Podaj swój kod odzyskiwania (dostałeś go raz, przy rejestracji albo przy poprzednim odzyskiwaniu) i ustaw nowe hasło.|||Enter your recovery code (you received it once, at registration or a previous recovery) and set a new password.
+Kod odzyskiwania|||Recovery code
+Nowe hasło (min. 10 znaków)|||New password (min. 10 characters)
+Powtórz nowe hasło|||Repeat new password
+USTAW NOWE HASŁO|||SET NEW PASSWORD
+Wróć do logowania|||Back to login
+Zapisz kod odzyskiwania|||Save recovery code
+ZAPISZ TEN KOD TERAZ|||SAVE THIS CODE NOW
+Hasło zostało zmienione, a Twój kod odzyskiwania właśnie się|||Your password has been changed, and your recovery code has just
+zrotował|||rotated
+stary kod już nie działa|||the old code no longer works
+Konto|||Account
+zostało utworzone.|||has been created.
+Poniższy kod pozwoli Ci odzyskać dostęp, jeśli zapomnisz hasła.|||The code below will let you recover access if you forget your password.
+Zobaczysz go tylko raz — teraz.|||You'll see it only once — right now.
+Zapisz go w menedżerze haseł albo w bezpiecznym miejscu offline.|||Save it in a password manager or a secure offline place.
+Nikt, łącznie z administratorem tej appki, nie może Ci tego kodu przypomnieć ani odtworzyć. Jeśli go zgubisz razem z hasłem — dostęp do zaszyfrowanych kluczy API przepada bezpowrotnie.|||No one, including this app's administrator, can remind you of or recreate this code. If you lose it along with your password, access to your encrypted API keys is gone for good.
+Zanim się zalogujesz, potrzebne są jeszcze dwie rzeczy: kliknij link aktywacyjny wysłany na|||Before you can log in, two more things are needed: click the activation link sent to
+a potem poczekaj aż administrator ręcznie zatwierdzi konto.|||and then wait for the administrator to manually approve the account.
+ZAPISAŁEM — PRZEJDŹ DO LOGOWANIA|||SAVED — GO TO LOGIN
+Aktywacja konta|||Account activation
+AKTYWACJA KONTA|||ACCOUNT ACTIVATION
+PRZEJDŹ DO LOGOWANIA|||GO TO LOGIN
+
+# --- static/js/common.js ---
+Wysyłanie…|||Sending…
+Wysłano. Dzięki!|||Sent. Thanks!
+Błąd|||Error
+nieznany|||unknown
+Błąd sieci przy wysyłaniu.|||Network error while sending.
+PRAWDZIWE (LIVE)|||REAL (LIVE)
+demo|||demo
+Przełączyć konto na|||Switch account to
+Dotyczy WSZYSTKICH silników (Micro-Grid/Sygnał/EOD) i Warp Mode.|||Applies to ALL engines (Micro-Grid/Signal/EOD) and Warp Mode.
+Nie udało się przełączyć środowiska.|||Failed to switch environment.
+Błąd sieci - spróbuj ponownie.|||Network error - try again.
+Pokaż wartości|||Show values
+Ukryj wartości (np. przed screen-share)|||Hide values (e.g. before screen-sharing)
+Połączenie z T212: OK|||T212 connection: OK
+Połączenie z T212: BŁĄD|||T212 connection: ERROR
+Akcje USD|||USD stocks
+Akcje EUR|||EUR stocks
+Pozostałe|||Other
+Akcja|||Stock
+
+# --- templates/settings_index.html + api_keys.html ---
+USTAWIENIA|||SETTINGS
+Klucze API|||API Keys
+Zapisz/zmień klucz i sekret T212 (demo/live), zaszyfrowane Twoim hasłem.|||Save/change your T212 key and secret (demo/live), encrypted with your password.
+Wyszukaj instrumenty i ustaw listę ulubionych (max 9) dla Warp Mode.|||Search instruments and set your favorites list (max 9) for Warp Mode.
+LICZBA KAFELKÓW|||TILE COUNT
+Ile kafelków widać jednocześnie (1–9). Odświeżanie ceny live dopasowuje się automatycznie żeby nie przekroczyć limitu Finnhub (60 req/min).|||How many tiles are visible at once (1-9). Live price refresh adjusts automatically to stay under the Finnhub limit (60 req/min).
+Zapisz|||Save
+POWIADOMIENIA DŹWIĘKOWE|||SOUND NOTIFICATIONS
+Głośność dźwięków przy zleceniach (Kup/Sprzedaj) i cichych odświeżeniach danych. Zapamiętane w tej przeglądarce, 0% = wyciszone.|||Volume for order sounds (Buy/Sell) and silent data refreshes. Remembered in this browser, 0% = muted.
+Testuj|||Test
+OCZEKUJĄCE KONTA|||PENDING ACCOUNTS
+Brak kont czekających na zatwierdzenie.|||No accounts awaiting approval.
+zarejestrowany|||registered
+Zatwierdź|||Approve
+Odrzuć|||Reject
+← Wróć do Warp Mode|||← Back to Warp Mode
+KLUCZE API T212|||T212 API KEYS
+✅ zapisany|||✅ saved
+— brak|||— none
+Usuń|||Delete
+Środowisko|||Environment
+Wygeneruj w aplikacji T212: Ustawienia → API (Beta). Wartości są szyfrowane Twoim kluczem prywatnym zanim trafią do bazy — admin tej appki nie ma do nich dostępu.|||Generate it in the T212 app: Settings → API (Beta). Values are encrypted with your private key before they reach the database — this app's admin has no access to them.
+ZAPISZ (ZASZYFROWANE)|||SAVE (ENCRYPTED)
+← Wróć do Ustawień|||← Back to Settings
+
+# --- templates/pie_list.html + pie_detail.html + instrument_detail.html ---
+Prywatne wirtualne koszyki (ETF) — dokupuj kilka spółek naraz z proporcjonalnymi wagami, bez opłaty FX 0.15% od pojedynczych zleceń.|||Private virtual baskets (ETF-style) — buy several stocks at once with proportional weights, no 0.15% FX fee on individual orders.
+Brak koszyków — utwórz pierwszy poniżej.|||No pies yet — create your first one below.
+aktywo|||asset
+aktywa|||assets
+aktywów|||assets
+utworzono|||created
+Nowy koszyk|||New pie
+np. Big Tech|||e.g. Big Tech
+Utwórz koszyk|||Create pie
+Wróć do Warp Mode|||Back to Warp Mode
+Zapisz nazwę|||Save name
+Usuń koszyk|||Delete pie
+Koszyk jest pusty — dodaj aktywa poniżej.|||The pie is empty — add assets below.
+Szczegóły|||Details
+Giełda otwarta|||Market open
+Giełda zamknięta|||Market closed
+Kwota|||Amount
+Ilość|||Quantity
+Cena ref.|||Ref. price
+Usuń z koszyka|||Remove from pie
+KUP|||BUY
+Kup całość|||Buy all
+Budżet do zainwestowania (tylko do liczenia, nie zapisywany)|||Budget to invest (for calculation only, not saved)
+Sprawdź środki (Smart FX Guard)|||Check funds (Smart FX Guard)
+Dodaj aktywo|||Add asset
+Szukaj w tej zakładce (puste pole = przeglądaj wszystko)...|||Search this tab (empty field = browse everything)...
+Załaduj więcej|||Load more
+Wróć do koszyków|||Back to pies
+DŹWIGNIA|||LEVERAGE
+Świece 1-minutowe dzisiejszej sesji|||1-minute candles for today's session
+Świece 5-minutowe, ostatnie 5 dni|||5-minute candles, last 5 days
+Świece 15-minutowe, ostatnie 2 tygodnie|||15-minute candles, last 2 weeks
+Świece godzinowe, ostatnie ~2 miesiące|||Hourly candles, last ~2 months
+1T|||1W
+1R|||1Y
+Brak danych świecowych dla tego zakresu.|||No candle data for this range.
+Statystyki|||Statistics
+1 DZIEŃ|||1 DAY
+52 TYGODNIE|||52 WEEKS
+Kapitalizacja rynkowa|||Market cap
+Średni wolumen (3 mies.)|||Avg. volume (3 mo.)
+Wskaźnik P/E|||P/E ratio
+Stopa dywidendy|||Dividend yield
+Twoja inwestycja|||Your investment
+Wartość|||Value
+Zysk|||Profit
+Akcje|||Shares
+Kliknij, żeby ustawić ILOŚĆ na MAX|||Click to set QUANTITY to MAX
+Średnia cena|||Average price
+ILOŚĆ|||QTY
+wł.|||own
+Tryb zlecenia|||Order mode
+RYNEK|||MARKET
+cena LIMIT|||LIMIT price
+Cena LIMIT dla nowego zlecenia|||LIMIT price for the new order
+cena STOP|||STOP price
+Cena STOP dla nowego zlecenia|||STOP price for the new order
+SPRZEDAJ|||SELL
+Max kupno:|||Max buy:
+Max sprzedaż:|||Max sell:
+Wróć|||Back
+
+# --- templates/warp.html + focus.html ---
+SALDO|||BALANCE
+saldo: —|||balance: —
+Odśwież|||Refresh
+Anuluj wszystkie oczekujące zlecenia KUP|||Cancel all pending BUY orders
+Anuluj KUP|||Cancel BUY
+Anuluj wszystkie oczekujące zlecenia SPRZEDAJ|||Cancel all pending SELL orders
+Anuluj SPRZEDAJ|||Cancel SELL
+ULUBIONE|||FAVORITES
+Brak ulubionych.|||No favorites.
+W siatce - kliknij aby usunąć|||In grid - click to remove
+Kliknij aby dodać do siatki|||Click to add to grid
+Zarządzaj|||Manage
+HISTORIA|||HISTORY
+Brak zleceń.|||No orders.
+K|||B
+S|||S
+Zobacz całą|||View all
+Siatka jest pusta|||Grid is empty
+Wybierz aktywa w widgecie ULUBIONE po lewej (albo dodaj nowe w|||Pick assets in the FAVORITES widget on the left (or add new ones in
+), żeby pojawiły się tutaj jako kafelki.|||), so they show up here as tiles.
+cena live (edytowalna)|||live price (editable)
+Cena wpisana ręcznie dla|||Manually entered price for
+Presety ilości dla|||Quantity presets for
+Własna ilość dla|||Custom quantity for
+Tryb zlecenia dla|||Order mode for
+LIMIT|||LIMIT
+STOP|||STOP
+STOP-LIMIT|||STOP-LIMIT
+cena LIMIT (po triggerze) - pole u góry to STOP|||LIMIT price (after trigger) - field above is STOP
+Cena LIMIT po triggerze STOP dla|||LIMIT price after STOP trigger for
+OTWARTE ZLECENIA|||OPEN ORDERS
+ładowanie…|||loading…
+BRAK AKTYWÓW|||NO ASSETS
+Wybierz aktywa w|||Pick assets in
+(ta sama lista ulubionych co w Warp Mode), żeby pojawiły się tutaj kafelki.|||(same favorites list as in Warp Mode), so tiles show up here.
+Poprzedni (←)|||Previous (←)
+Następny (→)|||Next (→)
+ładowanie...|||loading...
+Cena LIMIT/STOP dla|||LIMIT/STOP price for
+cena LIMIT (po triggerze STOP)|||LIMIT price (after STOP trigger)
+Odświeżanie co|||Refreshing every
+kafelek/kafelki|||tiles
+Zmień aktywa (Watchlist)|||Change assets (Watchlist)
+
+# --- routes/settings.py + routes/pie.py: flash() messages ---
+kafelek/kafelki jednocześnie.|||tile(s) at once.
+Odrzucono i usunięto konto|||Rejected and deleted account
+jest już w ulubionych.|||is already in favorites.
+Lista ulubionych jest pełna (max|||Favorites list is full (max
+do ulubionych.|||to favorites.
+z ulubionych.|||from favorites.
+jest już w siatce.|||is already in the grid.
+Siatka jest pełna (max|||Grid is full (max
+kafelków).|||tiles).
+- nie można dodać.|||- can't add.
+Dodano|||Added
+do siatki.|||to the grid.
+z siatki.|||from the grid.
+Brak ulubionych - najpierw dodaj jakieś instrumenty.|||No favorites - add some instruments first.
+Pobrano/zaktualizowano|||Fetched/updated
+logotypów.|||logos.
+Zsynchronizowano|||Synced
+instrumentów.|||instruments.
+Za wcześnie - spróbuj ponownie za ~|||Too early - try again in ~
+min.|||min.
+Błąd T212:|||T212 error:
+Podaj nazwę koszyka.|||Enter a pie name.
+Brak tickera.|||No ticker.
+Usunięto koszyk|||Deleted pie
+nie znaleziony w lokalnej bazie instrumentów - odśwież ją w Ustawieniach.|||not found in the local instrument cache - refresh it in Settings.
+jest już w tym koszyku.|||is already in this pie.
+
+# --- routes/*.py: jsonify(error=...) literal validation messages (looked
+# up client-side by JS via t(data.error) before display, no route code
+# touched for these - see static/js/common.js::t()) ---
+Błąd odszyfrowania klucza - skontaktuj się z adminem.|||Key decryption error - contact the admin.
+Brak wymaganych pól (ticker/side/quantity).|||Missing required fields (ticker/side/quantity).
+Brak wymaganych pól (ticker/side/quantity/price).|||Missing required fields (ticker/side/quantity/price).
+Brak wymaganych pól (ticker/side/quantity/stop_price).|||Missing required fields (ticker/side/quantity/stop_price).
+Brak wymaganych pól (ticker/side/quantity/stop_price/limit_price).|||Missing required fields (ticker/side/quantity/stop_price/limit_price).
+Cena musi być dodatnia.|||Price must be positive.
+Cena stop musi być dodatnia.|||Stop price must be positive.
+Ceny stop i limit muszą być dodatnie.|||Stop and limit prices must be positive.
+Edycja dostępna tylko dla zleceń LIMIT BUY.|||Editing is only available for LIMIT BUY orders.
+Hasła nie są identyczne.|||Passwords don't match.
+Ilość musi być dodatnia.|||Quantity must be positive.
+Kasowanie z tego miejsca dostępne tylko dla zleceń LIMIT BUY.|||Deleting from here is only available for LIMIT BUY orders.
+Nieprawidłowa cena.|||Invalid price.
+Nieprawidłowa cena stop.|||Invalid stop price.
+Nieprawidłowa cena stop/limit.|||Invalid stop/limit price.
+Nieprawidłowa ilość.|||Invalid quantity.
+Nieprawidłowa ilość w istniejącym zleceniu.|||Invalid quantity in the existing order.
+Nieprawidłowa kwota (musi być > 0).|||Invalid amount (must be > 0).
+Nieprawidłowa szacowana cena.|||Invalid estimated price.
+Nieprawidłowa waga (musi być > 0).|||Invalid weight (must be > 0).
+Nieprawidłowe dane pozycji zwrócone przez T212.|||Invalid position data returned by T212.
+Nieprawidłowe dane w ustawieniach ryzyka.|||Invalid data in risk settings.
+Nieprawidłowe hasło.|||Invalid password.
+Nieprawidłowe środowisko.|||Invalid environment.
+Nowe hasła nie są identyczne.|||New passwords don't match.
+Odczytane equity <= 0 - nie mogę ustawić punktu odniesienia.|||Equity read as <= 0 - can't set a baseline.
+Opisz problem zanim wyślesz.|||Describe the problem before sending.
+Plik za duży (max 5 MB).|||File too large (max 5 MB).
+Pobieranie już trwa - sprawdź postęp poniżej.|||A fetch is already in progress - check the progress below.
+Podaj hasło.|||Enter a password.
+Podaj ilość.|||Enter a quantity.
+Podaj kwotę wejścia (musi być > 0).|||Enter an entry amount (must be > 0).
+Podaj prawidłowy adres e-mail jako nazwę użytkownika - trafi tam link aktywacyjny.|||Enter a valid e-mail address as your username - the activation link will be sent there.
+Ta nazwa użytkownika jest już zajęta.|||This username is already taken.
+Wyliczony stop-loss <= 0 (ATR zbyt duże względem ceny).|||Calculated stop-loss <= 0 (ATR too large relative to price).
+Wypełnij wszystkie pola.|||Fill in all fields.
+Zbyt wiele nieudanych prób logowania. Spróbuj ponownie za kilkanaście minut.|||Too many failed login attempts. Try again in a few minutes.
+Zbyt wiele rejestracji z tego adresu. Spróbuj później.|||Too many registrations from this address. Try again later.
+Zlecenie kupna jeszcze nie potwierdzone - poczekaj aż się wykona.|||The buy order isn't confirmed yet - wait until it executes.
+Zlecenie nie istnieje albo już zostało wykonane/anulowane.|||The order doesn't exist or was already executed/cancelled.
+
+# --- templates/portfolio.html + bot.html ---
+AKTYWA|||ASSETS
+Całość konta (gotówka + pozycje)|||Total account (cash + positions)
+vs punkt startowy|||vs starting point
+Zapisz aktualną wartość konta jako nowy punkt odniesienia - np. po ręcznym resecie konta demo|||Save the current account value as a new baseline - e.g. after manually resetting the demo account
+Resetuj punkt startowy|||Reset starting point
+Błąd pobierania portfela:|||Error fetching portfolio:
+Ładowanie…|||Loading…
+Brak otwartych pozycji.|||No open positions.
+Wartość portfela|||Portfolio value
+Z cache|||Cached
+Zysk / strata|||Profit / loss
+Aktywo|||Asset
+Waluta|||Currency
+Ilość|||Quantity
+Średnia cena|||Average price
+Cena teraz|||Current price
+Wartość|||Value
+Zarządzane przez|||Managed by
+Cofnij|||Undo
+Wróć do|||Back to
+Bot ma WŁASNĄ listę aktywów (niżej) — całkowicie niezależną od koszyków Virtual Pie. Pełna pętla: wejście + DCA (dokupy przy spadku), trailing take-profit i stop-loss, opcjonalne money management (skalowanie kwoty wg √equity) i korekta kosztu przewalutowania dla tickerów USD. Umie też przejąć zarządzanie pozycją kupioną ręcznie. Działa wyłącznie na koncie|||The bot has its OWN asset list (below) — completely independent of the Virtual Pie baskets. Full loop: entry + DCA (buying more on dips), trailing take-profit and stop-loss, optional money management (scaling the amount by √equity) and an FX conversion cost adjustment for USD tickers. It can also take over managing a manually bought position. Works only on the
+— T212 nie wspiera zleceń LIMIT (na których opiera się cała strategia) na koncie live.|||— T212 doesn't support LIMIT orders (which the whole strategy relies on) on the live account.
+Sekcje strony|||Page sections
+Otwarte pozycje|||Open positions
+Aktywacja|||Activation
+Ustawienia ryzyka|||Risk settings
+Dziennik|||Log
+Bot AKTYWNY (poświadczenia w pamięci serwera) —|||Bot ACTIVE (credentials in server memory) —
+Paper Trading (symulacja)|||Paper Trading (simulation)
+REALNE zlecenia na demo T212|||REAL orders on T212 demo
+Baza mówi że bot jest aktywny, ale poświadczenia wygasły (restart appki czyści je celowo, patrz uwaga w services/bot_credentials.py) — kliknij "Uruchom bota" ponownie, żeby faktycznie ruszył.|||The database says the bot is active, but credentials expired (an app restart clears them on purpose, see the note in services/bot_credentials.py) — click "Start bot" again to actually get it running.
+Przesuń panel wyżej|||Move panel up
+Przesuń panel niżej|||Move panel down
+AKTYWA BOTA|||BOT ASSETS
+Własna, niezależna lista tickerów bota — dodanie tickera tutaj nie ma żadnego związku z koszykami Virtual Pie (i odwrotnie).|||The bot's own, independent list of tickers — adding a ticker here has no relation to the Virtual Pie baskets (and vice versa).
+Kwota wejścia dla nowo dodawanych pozycji|||Entry amount for newly added positions
+np. 1.00 (wymagane przed dodaniem)|||e.g. 1.00 (required before adding)
+Lista bota jest pusta — dodaj aktywa powyżej.|||The bot's list is empty — add assets above.
+Kwota wejścia|||Entry amount
+sprawdzanie ceny…|||checking price…
+Oznacz jako penny stock (blokuje wejście bota)|||Mark as penny stock (blocks bot entry)
+Usuń z listy bota|||Remove from bot's list
+OTWARTE POZYCJE|||OPEN POSITIONS
+Pozycje, na których bot aktualnie trzyma kapitał - niezależnie od tego czy trailing STOP zdążył się już uzbroić. "Zablokowana" oznacza że T212 odrzucił wystawienie/przesunięcie STOP-a błędem innym niż zwykłe "akcje jeszcze niesprzedane" - taki błąd sam się nie naprawi, bot przestaje próbować dopóki nie klikniesz "Odblokuj".|||Positions the bot currently holds capital in - regardless of whether the trailing STOP has armed yet. "Locked" means T212 rejected placing/moving the STOP with an error other than the usual "shares not yet sold" - that kind of error won't fix itself, the bot stops trying until you click "Unlock".
+Śr. cena wejścia|||Avg. entry price
+Otwarta od (Amsterdam)|||Open since (Amsterdam)
+Giełda otwarta - bot aktywnie zarządza pozycją|||Market open - bot is actively managing the position
+Giełda zamknięta - bot wznowi zarządzanie po otwarciu sesji|||Market closed - bot will resume managing once the session opens
+próg|||threshold
+jeszcze nieuzbrojony|||not armed yet
+ZABLOKOWANA|||LOCKED
+Odblokuj|||Unlock
+Cofnij spod zarządzania bota - udziały zostają na koncie|||Release from bot management - shares stay in the account
+Zwolnij|||Release
+Hasło (do aktywacji bota)|||Password (to activate the bot)
+Uruchom bota|||Start bot
+Wyłącz bota|||Stop bot
+USTAWIENIA RYZYKA|||RISK SETTINGS
+Siatka DCA|||DCA grid
+Scenariusz DCA (mnożniki po przecinku)|||DCA scenario (comma-separated multipliers)
+Maksymalna liczba poziomów DCA|||Maximum number of DCA levels
+Maks. liczba jednoczesnych otwartych pozycji|||Max. number of concurrent open positions
+Próg dokupu DCA na poziom (ułamek, np. 0.05 = 5%)|||DCA buy-in trigger per level (fraction, e.g. 0.05 = 5%)
+Maks. spread (ułamek, np. 0.05 = 5%)|||Max. spread (fraction, e.g. 0.05 = 5%)
+Krok trailing take-profit (ułamek, np. 0.003 = 0.3%)|||Trailing take-profit step (fraction, e.g. 0.003 = 0.3%)
+Bot NIE wystawia zlecenia od razu po kupnie - czeka aż cena minie 2 progi powyżej średniej ceny wejścia, dopiero wtedy wystawia LIMIT SELL jeden próg niżej i przesuwa go w górę o kolejny próg za każdym razem gdy cena idzie dalej w górę.|||The bot does NOT place an order right after buying - it waits until the price clears 2 thresholds above the average entry price, only then does it place a LIMIT SELL one threshold below and moves it up by another threshold every time the price goes further up.
+Stop-loss (ułamek od średniej ceny wejścia, np. 0.02 = 2%)|||Stop-loss (fraction of the average entry price, e.g. 0.02 = 2%)
+Uzbrajany DOPIERO gdy trailing take-profit zdąży się uzbroić (2 progi) - ochrona przed oddaniem zysku i wejściem pod kreskę, nie stop od samego wejścia.|||Armed ONLY once the trailing take-profit has armed (2 thresholds) - protection against giving back profit and going into the red, not a stop from the entry itself.
+Maksymalna dzienna strata|||Maximum daily loss
+Tryb wykonania|||Execution mode
+Paper Trading (symulacja - zero zleceń do T212, tylko wpisy w dzienniku)|||Paper Trading (simulation - zero orders to T212, only log entries)
+Odznaczone = bot wysyła prawdziwe zlecenia na konto demo T212 (wciąż zero ryzyka finansowego, to demo, ale realne API). Zaznaczone = tylko loguje co by zrobił, bez żadnego requestu do T212.|||Unchecked = the bot sends real orders to the T212 demo account (still zero financial risk, it's demo, but a real API). Checked = it only logs what it would have done, with no request to T212 at all.
+Zarządzaj wszystkim ("idę spać, a ty handluj")|||Manage everything ("I'm going to sleep, you trade")
+Gdy włączone, bot automatycznie przejmuje trailing exit (STOP) dla KAŻDEJ pozycji na koncie T212, nawet kupionej ręcznie poza appką - bez DCA (nie zna kontekstu ręcznego zakupu, więc pilnuje tylko wyjścia). Wyłączenie automatycznie oddaje TYLKO pozycje przejęte DZIĘKI temu przełącznikowi (udziały zostają na koncie) - pozycje przekazane ręcznie przyciskiem "Przekaż botowi" zostają pod botem bez zmian.|||When enabled, the bot automatically takes over the trailing exit (STOP) for EVERY position on the T212 account, even one bought manually outside the app - no DCA (it doesn't know the context of a manual buy, so it only watches the exit). Turning it off automatically releases ONLY the positions taken over THANKS TO this switch (shares stay in the account) - positions handed over manually via the "Hand to bot" button stay under the bot unchanged.
+Tylko stop-loss (bez nowych wejść i bez DCA)|||Stop-loss only (no new entries and no DCA)
+Gdy włączone, bot NIE otwiera nowych pozycji, NIE dokupuje (DCA) i NIE przejmuje automatycznie obcych pozycji - jedyne co robi to przesuwa trailing stop na pozycjach już pod jego zarządzaniem (istniejące + ręcznie przekazane przyciskiem "Przekaż botowi"). Żeby wskazać botowi nowe aktywo w tym trybie, użyj "Przekaż botowi" na stronie instrumentu/Warp - to jedyny sposób na dodanie pozycji, gdy ta flaga jest włączona.|||When enabled, the bot does NOT open new positions, does NOT DCA, and does NOT automatically take over other positions - the only thing it does is move the trailing stop on positions already under its management (existing + manually handed over via the "Hand to bot" button). To point the bot at a new asset in this mode, use "Hand to bot" on the instrument/Warp page - it's the only way to add a position while this flag is on.
+Money management i FX|||Money management and FX
+Money management: skaluj kwotę wejścia/DCA wg √equity|||Money management: scale entry/DCA amount by √equity
+Gdy włączone: efektywna kwota wejścia = kwota z listy Aktywa * √(bieżące equity / equity odniesienia) - NIE liniowo (patrz microgrid_strategy.compute_equity_scaled_amount). Equity odniesienia jest ZAPISYWANE AUTOMATYCZNIE w momencie zaznaczenia tego checkboxa (nic nie wpisujesz ręcznie) - obecnie:|||When enabled: effective entry amount = amount from the Assets list * √(current equity / baseline equity) - NOT linear (see microgrid_strategy.compute_equity_scaled_amount). The baseline equity is SAVED AUTOMATICALLY the moment you check this box (you don't type anything manually) - currently:
+Odznaczenie i ponowne zaznaczenie ustawia nowy punkt odniesienia na equity z TEGO momentu.|||Unchecking and rechecking sets a new baseline to the equity at THAT moment.
+Uwzględniaj koszt przewalutowania (FX) dla tickerów USD|||Include the FX conversion cost for USD tickers
+Koszt FX za jedną nogę (ułamek, np. 0.0015 = 0.15%)|||FX cost per leg (fraction, e.g. 0.0015 = 0.15%)
+Konto demo ma jedną walutę (EUR) - każdy zakup/sprzedaż tickera USD kosztuje przewalutowanie w obie strony. Gdy włączone, próg stop-loss/trailing dla pozycji USD liczony jest względem ceny podbitej o 2x powyższy koszt, żeby bot nie "zamykał zysku" na progu, który po przewalutowaniu jest już stratą albo zerem. Dla tickerów EUR bez zmian.|||The demo account has a single currency (EUR) - every buy/sell of a USD ticker costs conversion both ways. When enabled, the stop-loss/trailing threshold for USD positions is calculated against a price bumped up by 2x the cost above, so the bot doesn't "lock in profit" at a threshold that, after conversion, is already a loss or zero. Unchanged for EUR tickers.
+Zapisz ustawienia|||Save settings
+DZIENNIK BOTA (ostatnie 50)|||BOT LOG (last 50)
+Wyczyść log|||Clear log
+Brak wpisów.|||No entries.
+Czas (Amsterdam)|||Time (Amsterdam)
+Typ|||Type
+Wiadomość|||Message
+
+# --- templates/watchlist.html + history.html + costs.html ---
+WSZYSTKIE INSTRUMENTY|||ALL INSTRUMENTS
+Lista pochodzi z lokalnej kopii instrumentów T212 (nie odpytujemy T212 na żywo przy przeglądaniu - limity API na to nie pozwalają).|||The list comes from a local copy of T212 instruments (we don't query T212 live while browsing - API limits don't allow it).
+Odśwież bazę instrumentów|||Refresh instrument database
+Ostatnia synchronizacja:|||Last synced:
+nigdy|||never
+(min. odstęp: 1h - limit T212)|||(min. interval: 1h - T212 limit)
+TWOJE ULUBIONE|||YOUR FAVORITES
+Ulubione to Twoja szersza lista "co mnie interesuje". Siatka Warp Mode pokazuje tylko WYBRANE z nich (max|||Favorites are your broader "what interests me" list. The Warp Mode grid shows only the SELECTED ones (max
+) - obecnie w siatce:|||) - currently in grid:
+Brak ulubionych - dodaj instrumenty z panelu obok.|||No favorites - add instruments from the panel alongside.
+Dodaj do siatki Warp Mode|||Add to Warp Mode grid
+Usuń z ulubionych|||Remove from favorites
+Pobierz logotypy ulubionych teraz|||Fetch favorite logos now
+Logotypy ulubionych pobierają się automatycznie (kilka na wizytę) - ten przycisk wymusza pobranie wszystkich brakujących od razu, zamiast czekać na kolejne odświeżenia strony. Dla instrumentów spoza głównych giełd (np. europejskie ETF-y UCITS z wewnętrznymi kodami T212) logo może nie istnieć - wtedy zostaje kolorowy awatar z inicjałem.|||Favorite logos download automatically (a few per visit) - this button forces all missing ones to download right away, instead of waiting for further page refreshes. For instruments outside the main exchanges (e.g. European UCITS ETFs with internal T212 codes) a logo may not exist - a colored avatar with an initial is used instead.
+Pobierz logotypy dla CAŁEJ bazy instrumentów|||Fetch logos for the ENTIRE instrument database
+To osobna operacja od ulubionych - dociąga logo dla wszystkich zsynchronizowanych instrumentów (nie tylko tych co masz na liście ulubionych), żeby były widoczne też przy przeglądaniu zakładek kategorii. Przy ~15 800 instrumentach trwa to dziesiątki minut i leci w tle - możesz spokojnie zamknąć tę stronę, appka i tak dokończy. Bezpieczne do ponownego kliknięcia kiedykolwiek później (np. po odświeżeniu bazy instrumentów w T212) - już pobrane logo są pomijane, dociągane są tylko nowe/brakujące.|||This is a separate operation from favorites - it pulls logos for all synced instruments (not just the ones on your favorites list), so they're also visible when browsing category tabs. With ~15,800 instruments this takes tens of minutes and runs in the background - you can safely close this page, the app will finish anyway. Safe to click again anytime later (e.g. after refreshing the instrument database in T212) - already-downloaded logos are skipped, only new/missing ones are fetched.
+Historia|||History
+HISTORIA ZLECEŃ (ostatnie 100)|||ORDER HISTORY (last 100)
+Brak zleceń do pokazania.|||No orders to show.
+Czas|||Time
+Kierunek|||Direction
+Cena ręczna|||Manual price
+KOSZTY I OPŁATY (T212 INVEST)|||COSTS & FEES (T212 INVEST)
+Przepisane z oficjalnej dokumentacji Trading 212 (zobacz link do źródła na dole). To informacja referencyjna, nie dane na żywo — jeśli T212 zmieni cennik, ta strona nie zaktualizuje się sama.|||Copied from official Trading 212 documentation (see source link at the bottom). This is reference information, not live data — if T212 changes its pricing, this page won't update itself.
+OPŁATY POBIERANE PRZEZ T212|||FEES CHARGED BY T212
+Opłata|||Fee
+Wysokość|||Amount
+Kiedy|||When
+Prowizja za zlecenie|||Order commission
+Zawsze — T212 nie pobiera prowizji od zleceń|||Always — T212 doesn't charge commission on orders
+Przechowywanie aktywów (custody)|||Asset custody
+Zawsze — brak opłaty|||Always — no fee
+Opłata FX (przewalutowanie)|||FX fee (currency conversion)
+Gdy waluta instrumentu różni się od waluty konta. Doliczana do kursu spot: przy kupnie kurs pomniejszony o 0,15%, przy sprzedaży powiększony o 0,15%. Nie dotyczy dywidend.|||When the instrument's currency differs from the account currency. Added to the spot rate: reduced by 0.15% on buy, increased by 0.15% on sell. Doesn't apply to dividends.
+Wpłata kartą / Apple Pay / Google Pay|||Card / Apple Pay / Google Pay deposit
+0% do 2000 EUR/GBP łącznie, potem 0,7%|||0% up to 2000 EUR/GBP total, then 0.7%
+Limit liczony narastająco (nie resetuje się). Przelew bankowy jest zawsze darmowy, bez limitu.|||Limit accrues over time (doesn't reset). Bank transfer is always free, with no limit.
+PODATKI I OPŁATY GIEŁD/URZĘDÓW (NIE T212)|||EXCHANGE/AUTHORITY TAXES & FEES (NOT T212)
+Tego T212 nie zarabia i nie kontroluje — to opłaty nakładane przez giełdy albo urzędy skarbowe danego kraju, doliczane automatycznie do zlecenia.|||T212 doesn't earn or control this — these are fees imposed by exchanges or a country's tax authorities, added automatically to the order.
+Rynek / warunki|||Market / conditions
+Zakup akcji na London Stock Exchange. Nie dotyczy obligacji, ETF-ów ani spółek notowanych na LSE AIM.|||Buying shares on the London Stock Exchange. Doesn't apply to bonds, ETFs, or companies listed on LSE AIM.
+zlecenie|||order
+LSE, tylko dla zleceń powyżej £10 000 (kupno i sprzedaż)|||LSE, only for orders above £10,000 (buy and sell)
+wartość zlecenia|||order value
+NYSE/NASDAQ, tylko sprzedaż|||NYSE/NASDAQ, sell only
+liczba akcji|||number of shares
+Francuski podatek od transakcji (FTT)|||French Financial Transaction Tax (FTT)
+Zakup akcji francuskich spółek o kapitalizacji &gt; 1 mld €|||Buying shares of French companies with market cap &gt; €1bn
+Pełna, zawsze aktualna lista (T212 może dodać rynki/zmienić stawki):|||Full, always up-to-date list (T212 may add markets/change rates):
+oraz|||and
+
+# --- templates/signal.html + eod.html ---
+np. 25.00 (wymagane przed dodaniem)|||e.g. 25.00 (required before adding)
+Lista jest pusta — dodaj aktywa powyżej.|||The list is empty — add assets above.
+Usuń z listy|||Remove from list
+Cena wejścia|||Entry price
+Stop-loss|||Stop-loss
+Take-profit|||Take-profit
+Status|||Status
+Ręcznie zamknij pozycję Market Sell|||Manually close the position (Market Sell)
+Zamknij|||Close
+NIEPOTWIERDZONA|||UNCONFIRMED
+Hasło (do aktywacji)|||Password (to activate)
+Uruchom|||Start
+Wyłącz|||Stop
+Money management: skaluj kwotę wejścia wg √equity|||Money management: scale entry amount by √equity
+Tylko stop-loss (bez nowych wejść)|||Stop-loss only (no new entries)
+DZIENNIK (ostatnie 50)|||LOG (last 50)
+Strategia Sygnałowa|||Signal Strategy
+STRATEGIA SYGNAŁOWA (RSI/MA/ATR)|||SIGNAL STRATEGY (RSI/MA/ATR)
+OSOBNA strategia, działająca RÓWNOLEGLE do Micro-Grid Bota (nie zastępuje siatki DCA) - wchodzi w pozycję gdy RSI(14) &lt; próg ORAZ cena &gt; SMA(200), JEDNO wejście na sygnał (bez dokupowania). Stop-loss i take-profit liczone z ATR(14) przy wejściu i zostają stałe. Działa wyłącznie na koncie|||SEPARATE strategy, running IN PARALLEL to the Micro-Grid Bot (it doesn't replace the DCA grid) - enters a position when RSI(14) &lt; threshold AND price &gt; SMA(200), ONE entry per signal (no averaging in). Stop-loss and take-profit are calculated from ATR(14) at entry and stay fixed. Works only on the
+(T212 nie wspiera zleceń STOP na koncie live) i dzieli poświadczenia z Micro-Grid Botem - jeśli tamten jest już aktywny, nie musisz podawać hasła drugi raz.|||account (T212 doesn't support STOP orders on the live account) and shares credentials with the Micro-Grid Bot - if that one is already active, you don't need to enter the password again.
+Strategia AKTYWNA (poświadczenia w pamięci serwera) —|||Strategy ACTIVE (credentials in server memory) —
+Baza mówi że strategia jest aktywna, ale poświadczenia wygasły (restart appki czyści je celowo) — kliknij "Uruchom" ponownie, żeby faktycznie ruszyła.|||The database says the strategy is active, but the credentials have expired (an app restart clears them on purpose) — click "Start" again to actually get it running.
+AKTYWA STRATEGII|||STRATEGY ASSETS
+Własna, niezależna lista tickerów - bez związku z BotAsset (Micro-Grid) ani PieAsset (Virtual Pie). Ten sam ticker może być jednocześnie na wszystkich trzech listach jako niezależne decyzje.|||Its own, independent list of tickers - unrelated to BotAsset (Micro-Grid) or PieAsset (Virtual Pie). The same ticker can be on all three lists at once as independent decisions.
+"Niepotwierdzona" - zlecenie kupna jeszcze nie wypełnione, stop-loss jeszcze nieuzbrojony. Take-profit jest pilnowany WYŁĄCZNIE w softwarze (sprzedaż Market gdy cena go dotknie) - jedyne prawdziwe zlecenie na T212 to stop-loss.|||"Unconfirmed" - the buy order hasn't been filled yet, the stop-loss isn't armed yet. Take-profit is monitored EXCLUSIVELY in software (Market sell when the price touches it) - the only real order on T212 is the stop-loss.
+Próg RSI(14) wejścia (poniżej tej wartości)|||RSI(14) entry threshold (below this value)
+Mnożnik ATR dla stop-loss (np. 1.8)|||ATR multiplier for stop-loss (e.g. 1.8)
+Mnożnik ATR dla take-profit (np. 3.0)|||ATR multiplier for take-profit (e.g. 3.0)
+Warunek wejścia (na sztywno, nie edytowalny tutaj): RSI(14) &lt; próg powyżej ORAZ cena &gt; SMA(200), liczone ze świec dziennych.|||Entry condition (hardcoded, not editable here): RSI(14) &lt; the threshold above AND price &gt; SMA(200), calculated from daily candles.
+Konto demo ma jedną walutę (EUR) - każdy zakup/sprzedaż tickera USD kosztuje przewalutowanie w obie strony. Gdy włączone, próg stop-loss dla pozycji USD liczony jest względem ceny podbitej o 2x powyższy koszt. Dla tickerów EUR bez zmian.|||The demo account has a single currency (EUR) - every buy/sell of a USD ticker costs a currency conversion both ways. When enabled, the stop-loss threshold for USD positions is calculated against the price bumped up by 2x the cost above. No change for EUR tickers.
+Odznaczone = prawdziwe zlecenia na konto demo T212 (wciąż zero ryzyka finansowego, to demo, ale realne API).|||Unchecked = real orders to the T212 demo account (still zero financial risk, it's demo, but a real API).
+Gdy włączone, Sygnał NIE otwiera żadnych nowych pozycji - jedyne co robi to pilnuje stop-loss/take-profit na pozycjach już otwartych (istniejące + ręcznie przekazane przyciskiem "Przekaż Sygnałowi").|||When enabled, Signal does NOT open any new positions - all it does is watch stop-loss/take-profit on positions already open (existing + manually handed over with the "Hand to Signal" button).
+Moduł EOD|||EOD Module
+MODUŁ EOD (KONIEC SESJI)|||EOD MODULE (END OF SESSION)
+TRZECI, osobny silnik - działa 9:00-22:00 czasu Amsterdamu (cały dzień handlowy EUR + cała sesja USA) na świecach 1-MINUTOWYCH (nieoficjalne Yahoo, bez SLA). Reaguje na NAGŁE, ostre spadki w 1-5 minut - im ostrzejszy spadek, tym większa pozycja (tier x0.6 / x1.0 / x1.5 kwoty wejścia, próg od -2.0%). Pozycje zostają otwarte tak samo jak w Sygnale (stop-loss/take-profit, BEZ wymuszonego zamknięcia na koniec dnia). Działa wyłącznie na koncie|||THIRD, separate engine - runs 9:00-22:00 Amsterdam time (the whole EUR trading day + the full US session) on 1-MINUTE candles (unofficial Yahoo data, no SLA). Reacts to SUDDEN, sharp drops within 1-5 minutes - the sharper the drop, the bigger the position (tier x0.6 / x1.0 / x1.5 of entry amount, threshold from -2.0%). Positions are opened the same way as in Signal (stop-loss/take-profit, WITHOUT a forced close at end of day). Works only on the
+i dzieli poświadczenia z Micro-Grid/Sygnał.|||account and shares credentials with Micro-Grid/Signal.
+Moduł AKTYWNY (poświadczenia w pamięci serwera) —|||Module ACTIVE (credentials in server memory) —
+Baza mówi że moduł jest aktywny, ale poświadczenia wygasły (restart appki czyści je celowo) — kliknij "Uruchom" ponownie, żeby faktycznie ruszył.|||The database says the module is active, but the credentials have expired (an app restart clears them on purpose) — click "Start" again to actually get it running.
+LISTA "HIGH CONVICTION"|||"HIGH CONVICTION" LIST
+Własna, niezależna lista tickerów - bez związku z BotAsset/SignalAsset. Kwota wejścia to BAZA - realna wielkość zależy od ostrości wykrytego spadku.|||Its own, independent list of tickers - unrelated to BotAsset/SignalAsset. The entry amount is a BASE - the actual size depends on how sharp the detected drop is.
+Bazowa kwota wejścia dla nowo dodawanych pozycji|||Base entry amount for newly added positions
+Bazowa kwota wejścia|||Base entry amount
+Take-profit pilnowany WYŁĄCZNIE w softwarze - jedyne prawdziwe zlecenie na T212 to stop-loss. Wszystkie pozycje zamykane wymuszenie ok. 17:20 (nie przenoszą się na kolejny dzień).|||Take-profit is monitored EXCLUSIVELY in software - the only real order on T212 is the stop-loss. All positions are force-closed around 17:20 (they don't carry over to the next day).
+Spadek / Tier|||Drop / Tier
+Stop-loss (ułamek od ceny wejścia, np. 0.004 = 0.4%)|||Stop-loss (fraction of entry price, e.g. 0.004 = 0.4%)
+Take-profit (ułamek od ceny wejścia, np. 0.006 = 0.6%)|||Take-profit (fraction of entry price, e.g. 0.006 = 0.6%)
+Tiery wielkości pozycji (na sztywno, nie edytowalne tutaj): spadek -2.0% do -3.49% → x0.6 kwoty bazowej, -3.5% do -5.49% → x1.0, -5.5% i więcej → x1.5. Poniżej -2.0% - brak wejścia.|||Position size tiers (hardcoded, not editable here): drop -2.0% to -3.49% → x0.6 of base amount, -3.5% to -5.49% → x1.0, -5.5% or more → x1.5. Below -2.0% - no entry.
+Gdy włączone: kwota BAZOWA z listy Aktywa (przed mnożnikiem tieru powyżej) * √(bieżące equity / equity odniesienia) - NIE liniowo (patrz microgrid_strategy.compute_equity_scaled_amount). Equity odniesienia jest ZAPISYWANE AUTOMATYCZNIE w momencie zaznaczenia tego checkboxa (nic nie wpisujesz ręcznie) - obecnie:|||When enabled: the BASE amount from the Assets list (before the tier multiplier above) * √(current equity / reference equity) - NOT linear (see microgrid_strategy.compute_equity_scaled_amount). The reference equity is SAVED AUTOMATICALLY the moment this checkbox is checked (you don't enter anything manually) - currently:
+Konto demo ma jedną walutę (EUR) - każdy zakup/sprzedaż tickera USD kosztuje przewalutowanie w obie strony, tego samego rzędu wielkości co ciasne progi % EOD. Gdy włączone, próg stop-loss dla pozycji USD liczony jest względem ceny podbitej o 2x powyższy koszt. Dla tickerów EUR bez zmian.|||The demo account has a single currency (EUR) - every buy/sell of a USD ticker costs a currency conversion both ways, on the same order of magnitude as EOD's tight % thresholds. When enabled, the stop-loss threshold for USD positions is calculated against the price bumped up by 2x the cost above. No change for EUR tickers.
+Wymuś zamknięcie wszystkich pozycji EOD przed końcem sesji (~17:20)|||Force-close all EOD positions before end of session (~17:20)
+Domyślnie WYŁĄCZONE - pozycje zostają otwarte i są zarządzane tylko stop-lossem/take-profitem, dokładnie jak w Sygnale (mogą przetrwać do kolejnego dnia). Zaznacz, jeśli chcesz wymuszoną sprzedaż Market wszystkich otwartych pozycji EOD tuż przed zamknięciem sesji.|||OFF by default - positions stay open and are managed only by stop-loss/take-profit, exactly like in Signal (they can carry over to the next day). Check this if you want a forced Market sell of all open EOD positions right before the session closes.
+Gdy włączone, EOD NIE otwiera żadnych nowych pozycji - jedyne co robi to pilnuje stop-loss/take-profit na pozycjach już otwartych.|||When enabled, EOD does NOT open any new positions - all it does is watch stop-loss/take-profit on positions already open.
+
+# --- static/js/bot.js + signal.js + eod.js ---
+Uruchomić bota? Poświadczenia zostaną w pamięci serwera dopóki nie wyłączysz bota albo nie zrestartujesz appki. Bot działa na demo.|||Start the bot? Credentials will stay in server memory until you deactivate the bot or restart the app. Bot runs on demo.
+Uruchamianie...|||Starting...
+Bot uruchomiony.|||Bot started.
+Nie udało się uruchomić.|||Failed to start.
+Błąd sieci.|||Network error.
+Wyłączyć bota?|||Deactivate the bot?
+Nie udało się wyłączyć.|||Failed to deactivate.
+Zapisywanie...|||Saving...
+Zapisano. Zwolniono|||Saved. Released
+pozycji przejętych przez "zarządzaj wszystkim".|||position(s) taken over by "manage all".
+Błąd zapisu.|||Save error.
+Wyczyścić cały dziennik bota? Tej operacji nie da się cofnąć.|||Clear the whole bot log? This action cannot be undone.
+Dziennik wyczyszczony.|||Log cleared.
+Błąd czyszczenia logu.|||Error clearing the log.
+Odblokować tę pozycję? Bot spróbuje ponownie wystawić/przesunąć trailing STOP na najbliższym ticku.|||Unblock this position? The bot will try to place/move the trailing STOP again on the next tick.
+Zwolnić tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie T212 - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).|||Release this position from bot management? Shares STAY in the T212 account - the bot just stops watching them (trailing STOP will be cancelled).
+Nie udało się zwolnić pozycji.|||Failed to release the position.
+Brak wyników.|||No results.
+waluta nieznana|||unknown currency
+Dodaj|||Add
+Podaj najpierw kwotę wejścia (pole nad wyszukiwarką).|||Enter an entry amount first (field above the search box).
+Nie udało się dodać.|||Failed to add.
+brak ceny (Finnhub/Yahoo niedostępne dla tego tickera)|||no price (Finnhub/Yahoo unavailable for this ticker)
+cena:|||price:
+przy tej kwocie:|||at this amount:
+akcji|||shares
+może być za mało dla T212 (obserwowane minimum ~1.20 USD)|||may be too little for T212 (observed minimum ~1.20 USD)
+Nie udało się zapisać kwoty.|||Failed to save the amount.
+Zapisano.|||Saved.
+Nie udało się przełączyć.|||Failed to toggle.
+Usunąć|||Remove
+z listy bota?|||from the bot's list?
+Nie udało się usunąć.|||Failed to remove.
+Uruchomić strategię sygnałową? Poświadczenia zostaną w pamięci serwera dopóki nie wyłączysz albo nie zrestartujesz appki. Działa na demo.|||Start the signal strategy? Credentials will stay in server memory until you deactivate it or restart the app. Runs on demo.
+Uruchomiona.|||Started.
+Wyłączyć strategię sygnałową?|||Deactivate the signal strategy?
+Wyczyścić cały dziennik? Tej operacji nie da się cofnąć.|||Clear the whole log? This action cannot be undone.
+Zamknąć tę pozycję teraz (Market Sell)? Stop-loss zostanie najpierw anulowany.|||Close this position now (Market Sell)? The stop-loss will be cancelled first.
+Nie udało się zamknąć pozycji.|||Failed to close the position.
+z listy?|||from the list?
+Uruchomić moduł EOD? Poświadczenia zostaną w pamięci serwera dopóki nie wyłączysz albo nie zrestartujesz appki. Działa na demo.|||Start the EOD module? Credentials will stay in server memory until you deactivate it or restart the app. Runs on demo.
+Uruchomiony.|||Started.
+Wyłączyć moduł EOD?|||Deactivate the EOD module?
+przy bazowej kwocie:|||at the base amount:
+
+# --- static/js/instrument.js + pie.js + watchlist.js ---
+Twoja średnia|||Your average
+Kupno LIMIT|||LIMIT buy
+kupi po rynku|||buys at market
+Kupno MARKET, natychmiast|||MARKET buy, instant
+Nie udało się zmienić ceny zlecenia.|||Failed to change order price.
+Błąd połączenia przy zmianie ceny zlecenia.|||Connection error while changing order price.
+Nie udało się skasować zlecenia.|||Failed to cancel order.
+Błąd połączenia przy kasowaniu zlecenia.|||Connection error while canceling order.
+Skasuj|||Delete
+Anuluj|||Cancel
+Kupi PO RYNKU - kliknij ponownie|||Buys AT MARKET - click again
+bln|||T
+mld|||B
+mln|||M
+błąd|||error
+błąd sieci|||network error
+szt.|||pcs
+Nie masz nic do sprzedania (posiadasz 0 szt.).|||You have nothing to sell (you own 0 pcs).
+Brak środków na zakup (albo nie udało się pobrać salda/ceny).|||Insufficient funds to buy (or failed to fetch balance/price).
+Podaj ilość > 0|||Enter a quantity > 0
+Podaj cenę LIMIT > 0|||Enter a LIMIT price > 0
+Podaj cenę STOP > 0|||Enter a STOP price > 0
+Duże zlecenie:|||Large order:
+limit:|||limit:
+Kontynuować?|||Continue?
+wysyłanie LIMIT…|||sending LIMIT…
+wysyłanie STOP…|||sending STOP…
+wysyłanie STOP-LIMIT…|||sending STOP-LIMIT…
+wysyłanie…|||sending…
+ZABLOKOWANE:|||BLOCKED:
+BŁĄD:|||ERROR:
+BŁĄD SIECI|||NETWORK ERROR
+Błąd:|||Error:
+Środki wystarczają (dostępne:|||Funds sufficient (available:
+brak danych|||no data
+Błąd sieci przy sprawdzaniu środków.|||Network error while checking funds.
+Na pewno usunąć ten koszyk? Aktywa w nim znikną (historia zleceń zostaje).|||Delete this pie for sure? Its assets will disappear (order history stays).
+Pobieranie w toku:|||Fetching in progress:
+Gotowe - przetworzono|||Done - processed
+Błąd sieci przy sprawdzaniu postępu.|||Network error while checking progress.
+
+# --- static/js/warp.js + focus.js + portfolio.js ---
+Podaj cenę LIMIT > 0 (pole ceny powyżej)|||Enter LIMIT price > 0 (price field above)
+Podaj cenę STOP > 0 (pole ceny powyżej)|||Enter STOP price > 0 (price field above)
+Podaj cenę STOP (pole u góry) i cenę LIMIT (pole niżej), obie > 0|||Enter STOP price (field above) and LIMIT price (field below), both > 0
+Duże zlecenie|||Large order
+wysyłanie|||sending
+ZABLOKOWANE|||BLOCKED
+BŁĄD|||ERROR
+brak pozycji|||no position
+saldo: niedostępne (brak uprawnień klucza API)|||balance: unavailable (API key lacks permission)
+saldo|||balance
+saldo: brak danych|||balance: no data
+Błąd sieci przy ładowaniu konta.|||Network error while loading account.
+Anulowanie wszystkich zleceń|||Cancelling all orders
+Anulowano|||Cancelled
+zleceń|||orders
+Błąd sieci przy anulowaniu.|||Network error while cancelling.
+Brak oczekujących zleceń.|||No pending orders.
+Nie udało się zmienić zlecenia.|||Failed to change order.
+Nie udało się zmienić siatki.|||Failed to update grid.
+Podaj cenę LIMIT (po triggerze) > 0|||Enter LIMIT price (after trigger) > 0
+Błąd sieci|||Network error
+Nie udało się zresetować punktu startowego|||Failed to reset starting point
+Błąd sieci przy resetowaniu punktu startowego.|||Network error while resetting starting point.
+Aktualne|||Live
+nie jest jeszcze na liście|||is not yet on the list for
+podaj kwotę wejścia (na przyszłe poziomy DCA):|||enter entry amount (for future DCA levels):
+Przekazać|||Hand over
+silnikowi|||to
+? Od tego momentu przejmuje zarządzanie WYJŚCIEM z tej pozycji (trailing stop).|||? From now on it takes over managing the EXIT from this position (trailing stop).
+Nie udało się przekazać|||Failed to hand over
+Błąd sieci przy przekazywaniu pozycji botowi.|||Network error while handing over position to bot.
+Cofnąć tę pozycję spod zarządzania|||Release this position from
+? Udziały ZOSTAJĄ na koncie - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).|||? Shares STAY in the account - the bot just stops watching them (trailing STOP will be cancelled).
+Nie udało się cofnąć pozycji|||Failed to release position
+Błąd sieci przy cofaniu pozycji.|||Network error while releasing position.

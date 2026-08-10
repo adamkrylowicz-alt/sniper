@@ -1,20 +1,20 @@
 {% extends "base.html" %}
-{% block title %}SNAJPER — Aktywa{% endblock %}
+{% block title %}SNAJPER — {{ t("Aktywa") }}{% endblock %}
 
 {% block content %}
 <div class="history-box">
-    <h1 class="auth-box__title">AKTYWA</h1>
+    <h1 class="auth-box__title">{{ t("AKTYWA") }}</h1>
 
     <div class="portfolio-summary" id="account-summary">
         <div class="portfolio-summary__cell">
-            <span class="instrument-detail__position-label">Całość konta (gotówka + pozycje)</span>
+            <span class="instrument-detail__position-label">{{ t("Całość konta (gotówka + pozycje)") }}</span>
             <span class="instrument-detail__position-value js-money" id="account-total-value">
                 {{ "%.2f"|format(account.account_total) + " €" if account.account_total is not none else "…" }}
             </span>
         </div>
         <div class="portfolio-summary__cell">
             <span class="instrument-detail__position-label" id="account-baseline-label">
-                vs punkt startowy
+                {{ t("vs punkt startowy") }}
                 {% if account.account_baseline_equity is not none %}
                 ({{ "%.0f"|format(account.account_baseline_equity) }}€{% if account.account_baseline_at %}, {{ account.account_baseline_at }}{% endif %})
                 {% endif %}
@@ -28,29 +28,29 @@
             </span>
         </div>
         <div class="portfolio-summary__cell portfolio-summary__cell--action">
-            <button type="button" class="account-bar__btn js-money-toggle-btn" title="Ukryj wartości (np. przed screen-share)">👁️</button>
-            <button type="button" class="account-bar__btn" id="account-baseline-reset-btn" title="Zapisz aktualną wartość konta jako nowy punkt odniesienia - np. po ręcznym resecie konta demo">
-                Resetuj punkt startowy
+            <button type="button" class="account-bar__btn js-money-toggle-btn" title="{{ t('Ukryj wartości (np. przed screen-share)') }}">👁️</button>
+            <button type="button" class="account-bar__btn" id="account-baseline-reset-btn" title="{{ t('Zapisz aktualną wartość konta jako nowy punkt odniesienia - np. po ręcznym resecie konta demo') }}">
+                {{ t("Resetuj punkt startowy") }}
             </button>
         </div>
     </div>
 
     <div id="portfolio-content">
         {% if error %}
-        <p class="auth-box__hint auth-box__hint--warn">Błąd pobierania portfela: {{ error }}</p>
+        <p class="auth-box__hint auth-box__hint--warn">{{ t("Błąd pobierania portfela:") }} {{ error }}</p>
         {% elif not has_cache %}
-        <p class="auth-box__hint">Ładowanie…</p>
+        <p class="auth-box__hint">{{ t("Ładowanie…") }}</p>
         {% elif not positions %}
-        <p class="auth-box__hint">Brak otwartych pozycji.</p>
+        <p class="auth-box__hint">{{ t("Brak otwartych pozycji.") }}</p>
         {% else %}
         <div class="portfolio-summary">
             <div class="portfolio-summary__cell">
-                <span class="instrument-detail__position-label">Wartość portfela</span>
+                <span class="instrument-detail__position-label">{{ t("Wartość portfela") }}</span>
                 <span class="instrument-detail__position-value js-money">{{ "%.2f"|format(total_value) }}</span>
-                <span class="portfolio-freshness portfolio-freshness--cached" id="portfolio-freshness">Z cache</span>
+                <span class="portfolio-freshness portfolio-freshness--cached" id="portfolio-freshness">{{ t("Z cache") }}</span>
             </div>
             <div class="portfolio-summary__cell">
-                <span class="instrument-detail__position-label">Zysk / strata</span>
+                <span class="instrument-detail__position-label">{{ t("Zysk / strata") }}</span>
                 <span class="instrument-detail__position-value js-money {{ 'focus-tile__pnl--profit' if total_ppl >= 0 else 'focus-tile__pnl--loss' }}">
                     {{ "+" if total_ppl >= 0 else "" }}{{ "%.2f"|format(total_ppl) }}
                     ({{ "+" if total_ppl_pct >= 0 else "" }}{{ "%.1f"|format(total_ppl_pct) }}%)
@@ -61,13 +61,13 @@
         <table class="history-table" id="portfolio-table">
             <thead>
                 <tr>
-                    <th class="history-table__th--sortable" data-sort-key="name">Aktywo <span class="sort-arrow">⇅</span></th>
-                    <th class="history-table__th--sortable" data-sort-key="currency">Waluta <span class="sort-arrow">⇅</span></th>
-                    <th class="history-table__th--sortable" data-sort-key="quantity">Ilość <span class="sort-arrow">⇅</span></th>
-                    <th class="history-table__th--sortable" data-sort-key="avg_price">Średnia cena <span class="sort-arrow">⇅</span></th>
-                    <th class="history-table__th--sortable" data-sort-key="current_price">Cena teraz <span class="sort-arrow">⇅</span></th>
-                    <th class="history-table__th--sortable" data-sort-key="value">Wartość <span class="sort-arrow">⇅</span></th>
-                    <th class="history-table__th--sortable" data-sort-key="ppl">Zysk / strata <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="name">{{ t("Aktywo") }} <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="currency">{{ t("Waluta") }} <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="quantity">{{ t("Ilość") }} <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="avg_price">{{ t("Średnia cena") }} <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="current_price">{{ t("Cena teraz") }} <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="value">{{ t("Wartość") }} <span class="sort-arrow">⇅</span></th>
+                    <th class="history-table__th--sortable" data-sort-key="ppl">{{ t("Zysk / strata") }} <span class="sort-arrow">⇅</span></th>
                     <th>Bot</th>
                 </tr>
             </thead>
@@ -85,7 +85,7 @@
                                 <span class="pie-asset-row__ticker">
                                     {% if p.market_open is not none %}
                                     <span class="market-dot {{ 'market-dot--open' if p.market_open else 'market-dot--closed' }}"
-                                          title="{{ 'Giełda otwarta' if p.market_open else 'Giełda zamknięta' }}"></span>
+                                          title="{{ t('Giełda otwarta') if p.market_open else t('Giełda zamknięta') }}"></span>
                                     {% endif %}
                                     {{ p.name or p.display_ticker }}
                                 </span>
@@ -104,9 +104,9 @@
                     </td>
                     <td class="portfolio-bot-cell" data-ticker="{{ p.ticker }}">
                         {% if p.managed_by %}
-                        <span class="badge badge--bot">Zarządzane przez {{ {"bot": "Micro-Grid", "signal": "Sygnał", "eod": "EOD"}[p.managed_by] }}</span>
+                        <span class="badge badge--bot">{{ t("Zarządzane przez") }} {{ {"bot": "Micro-Grid", "signal": t("Sygnał"), "eod": "EOD"}[p.managed_by] }}</span>
                         <button type="button" class="account-bar__btn portfolio-release-btn" data-engine="{{ p.managed_by }}" data-trade-id="{{ p.managed_trade_id }}">
-                            Cofnij
+                            {{ t("Cofnij") }}
                         </button>
                         {% else %}
                         <div class="portfolio-adopt-group">
@@ -116,7 +116,7 @@
                             </button>
                             <button type="button" class="account-bar__btn portfolio-adopt-btn"
                                     data-engine="signal" data-ticker="{{ p.ticker }}" data-on-list="{{ 'true' if p.on_signal_list else 'false' }}">
-                                → Sygnał
+                                → {{ t("Sygnał") }}
                             </button>
                             <button type="button" class="account-bar__btn portfolio-adopt-btn"
                                     data-engine="eod" data-ticker="{{ p.ticker }}" data-on-list="{{ 'true' if p.on_eod_list else 'false' }}">
@@ -136,7 +136,7 @@
     {% endif %}
 
     <p class="auth-box__footer">
-        <a href="{{ url_for('scalping.warp_view') }}">← Wróć do Warp Mode</a>
+        <a href="{{ url_for('scalping.warp_view') }}">← {{ t("Wróć do") }} Warp Mode</a>
     </p>
 </div>
 {% endblock %}

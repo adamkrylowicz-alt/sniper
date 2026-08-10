@@ -86,7 +86,7 @@ function updateLivePriceLine(price) {
         lineWidth: 1,
         lineStyle: LightweightCharts.LineStyle.Solid,
         axisLabelVisible: true,
-        title: "Cena teraz",
+        title: t("Cena teraz"),
     });
 }
 
@@ -117,13 +117,13 @@ function updateOverlayLines() {
 
     if (heldAveragePrice) {
         const color = heldPpl >= 0 ? themeColor("--buy-green") : themeColor("--sell-red");
-        addOverlayLine(heldAveragePrice, color, LightweightCharts.LineStyle.Dashed, 2, "Twoja średnia");
+        addOverlayLine(heldAveragePrice, color, LightweightCharts.LineStyle.Dashed, 2, t("Twoja średnia"));
     }
     tradeLevels.forEach((lvl) => {
         if (lvl.type === "stop_loss") {
-            addOverlayLine(lvl.price, themeColor("--sell-red"), LightweightCharts.LineStyle.Dotted, 1, `Stop-loss (${lvl.source})`);
+            addOverlayLine(lvl.price, themeColor("--sell-red"), LightweightCharts.LineStyle.Dotted, 1, `${t("Stop-loss")} (${lvl.source})`);
         } else if (lvl.type === "take_profit") {
-            addOverlayLine(lvl.price, themeColor("--accent-amber"), LightweightCharts.LineStyle.Dotted, 1, `Take-profit (${lvl.source})`);
+            addOverlayLine(lvl.price, themeColor("--accent-amber"), LightweightCharts.LineStyle.Dotted, 1, `${t("Take-profit")} (${lvl.source})`);
         } else if (lvl.type === "pending_buy") {
             // Dodane 2026-07-30 (Adam: "chce zeby tez byla taka kreska jak
             // odpale np buy limit order recznie") - LargeDashed odroznia
@@ -134,7 +134,7 @@ function updateOverlayLines() {
             // mousedown w ich poblizu nic nie robi.
             const line = addOverlayLine(
                 lvl.price, themeColor("--accent-blue"), LightweightCharts.LineStyle.LargeDashed, 1,
-                `Kupno LIMIT (${lvl.source})`,
+                `${t("Kupno LIMIT")} (${lvl.source})`,
             );
             if (lvl.editable && line) {
                 draggablePendingBuys.push({ line, orderId: lvl.order_id, price: lvl.price, source: lvl.source });
@@ -166,7 +166,7 @@ function updateDragPriceLabel(y, price, container) {
     const marketPrice = lastQuote && lastQuote.c != null ? Number(lastQuote.c) : null;
     const crossesMarket = marketPrice != null && price >= marketPrice;
     dragPriceLabelEl.classList.toggle("chart-drag-price-label--warn", crossesMarket);
-    dragPriceLabelEl.textContent = crossesMarket ? `${price.toFixed(4)} ⚠ kupi po rynku` : price.toFixed(4);
+    dragPriceLabelEl.textContent = crossesMarket ? `${price.toFixed(4)} ⚠ ${t("kupi po rynku")}` : price.toFixed(4);
 }
 
 function hideDragPriceLabel() {
@@ -192,7 +192,7 @@ function applyDragLineAppearance(entry, price) {
         price,
         color: themeColor(crosses ? "--sell-red" : "--accent-blue"),
         lineStyle: crosses ? LightweightCharts.LineStyle.Solid : LightweightCharts.LineStyle.LargeDashed,
-        title: crosses ? `Kupno MARKET, natychmiast (${entry.source})` : `Kupno LIMIT (${entry.source})`,
+        title: crosses ? `${t("Kupno MARKET, natychmiast")} (${entry.source})` : `${t("Kupno LIMIT")} (${entry.source})`,
     });
     entry.price = price;
 }
@@ -206,13 +206,13 @@ async function commitReprice(entry) {
         });
         const data = await resp.json();
         if (!data.ok) {
-            alert(data.error || data.reason || "Nie udało się zmienić ceny zlecenia.");
+            alert(t(data.error) || t(data.reason) || t("Nie udało się zmienić ceny zlecenia."));
             return false;
         }
         return true;
     } catch (err) {
         console.error("Błąd repricingu zlecenia:", err);
-        alert("Błąd połączenia przy zmianie ceny zlecenia.");
+        alert(t("Błąd połączenia przy zmianie ceny zlecenia."));
         return false;
     }
 }
@@ -222,13 +222,13 @@ async function commitCancelOrder(entry) {
         const resp = await fetch(`/warp/order/${encodeURIComponent(entry.orderId)}/cancel`, { method: "POST" });
         const data = await resp.json();
         if (!data.ok) {
-            alert(data.error || data.reason || "Nie udało się skasować zlecenia.");
+            alert(t(data.error) || t(data.reason) || t("Nie udało się skasować zlecenia."));
             return false;
         }
         return true;
     } catch (err) {
         console.error("Błąd kasowania zlecenia:", err);
-        alert("Błąd połączenia przy kasowaniu zlecenia.");
+        alert(t("Błąd połączenia przy kasowaniu zlecenia."));
         return false;
     }
 }
@@ -253,9 +253,9 @@ function showRepricePopover(entry, startPrice, container) {
     el.style.right = "44px";
     el.innerHTML = `
         <span class="chart-reprice-popover__price">${entry.price.toFixed(4)}</span>
-        <button type="button" class="pending-orders-list__action-btn pending-orders-list__action-btn--confirm" data-action="confirm">Zatwierdź</button>
-        <button type="button" class="pending-orders-list__action-btn pending-orders-list__action-btn--cancel" data-action="cancel-order">Skasuj</button>
-        <button type="button" class="pending-orders-list__action-btn" data-action="cancel">Anuluj</button>
+        <button type="button" class="pending-orders-list__action-btn pending-orders-list__action-btn--confirm" data-action="confirm">${t("Zatwierdź")}</button>
+        <button type="button" class="pending-orders-list__action-btn pending-orders-list__action-btn--cancel" data-action="cancel-order">${t("Skasuj")}</button>
+        <button type="button" class="pending-orders-list__action-btn" data-action="cancel">${t("Anuluj")}</button>
     `;
     // KLUCZOWY fix (2026-07-30, Adam: "kliknalem i chuja sie dzieje" - zero
     // logow w konsoli nawet dla samego kliknięcia): popover jest DZIECKIEM
@@ -303,7 +303,7 @@ function showRepricePopover(entry, startPrice, container) {
     }
 
     const confirmBtn = el.querySelector('[data-action="confirm"]');
-    const confirmArm = armTwoStep(confirmBtn, "Kupi PO RYNKU - kliknij ponownie");
+    const confirmArm = armTwoStep(confirmBtn, t("Kupi PO RYNKU - kliknij ponownie"));
     confirmBtn.addEventListener("click", async () => {
         // Ostrzezenie (Adam: "daj warna jak wyjedzie za wysoko ze kupno
         // market") - LIMIT BUY z cena >= aktualnej ceny rynkowej wykona sie
@@ -473,7 +473,7 @@ async function loadCandles(days, interval) {
         const resp = await fetch(`/warp/candles?${params.toString()}`);
         const data = await resp.json();
         if (!data.ok || !data.candles || data.candles.length < 2) {
-            emptyEl.textContent = (!data.ok && data.error) ? data.error : DEFAULT_CHART_EMPTY_TEXT;
+            emptyEl.textContent = (!data.ok && t(data.error)) ? t(data.error) : DEFAULT_CHART_EMPTY_TEXT;
             emptyEl.style.display = "";
             return;
         }
@@ -636,14 +636,14 @@ function updateRangeMarkers() {
 
 function formatMarketCap(millions) {
     if (millions == null) return "—";
-    if (millions >= 1e6) return `${(millions / 1e6).toFixed(2)} bln`;
-    if (millions >= 1e3) return `${(millions / 1e3).toFixed(2)} mld`;
-    return `${millions.toFixed(1)} mln`;
+    if (millions >= 1e6) return `${(millions / 1e6).toFixed(2)} ${t("bln")}`;
+    if (millions >= 1e3) return `${(millions / 1e3).toFixed(2)} ${t("mld")}`;
+    return `${millions.toFixed(1)} ${t("mln")}`;
 }
 
 function formatVolume(millions) {
     if (millions == null) return "—";
-    return `${millions.toFixed(1)} mln`;
+    return `${millions.toFixed(1)} ${t("mln")}`;
 }
 
 async function loadStats() {
@@ -685,8 +685,8 @@ async function loadPosition() {
             // "Max kupno/sprzedaz" po prostu zostawaly na "-" bez wyjasnienia.
             const buyEl = document.getElementById("max-buy-hint");
             const sellEl = document.getElementById("max-sell-hint");
-            if (buyEl) buyEl.textContent = `Max kupno: błąd (${data.error || "T212"})`;
-            if (sellEl) sellEl.textContent = "Max sprzedaż: błąd";
+            if (buyEl) buyEl.textContent = `${t("Max kupno:")} ${t("błąd")} (${t(data.error) || "T212"})`;
+            if (sellEl) sellEl.textContent = `${t("Max sprzedaż:")} ${t("błąd")}`;
             return;
         }
 
@@ -721,8 +721,8 @@ async function loadPosition() {
         console.error("Błąd pozycji:", err);
         const buyEl = document.getElementById("max-buy-hint");
         const sellEl = document.getElementById("max-sell-hint");
-        if (buyEl) buyEl.textContent = "Max kupno: błąd sieci";
-        if (sellEl) sellEl.textContent = "Max sprzedaż: błąd sieci";
+        if (buyEl) buyEl.textContent = `${t("Max kupno:")} ${t("błąd sieci")}`;
+        if (sellEl) sellEl.textContent = `${t("Max sprzedaż:")} ${t("błąd sieci")}`;
     }
 }
 
@@ -770,8 +770,8 @@ function updateMaxHints() {
     if (!buyEl || !sellEl) return;
 
     const maxBuy = maxBuyQuantity();
-    buyEl.textContent = `Max kupno: ${maxBuy != null ? maxBuy.toFixed(4) : "—"} szt.`;
-    sellEl.textContent = `Max sprzedaż: ${heldQuantity != null ? heldQuantity : "—"} szt.`;
+    buyEl.textContent = `${t("Max kupno:")} ${maxBuy != null ? maxBuy.toFixed(4) : "—"} ${t("szt.")}`;
+    sellEl.textContent = `${t("Max sprzedaż:")} ${heldQuantity != null ? heldQuantity : "—"} ${t("szt.")}`;
 }
 
 function getQuantity(side) {
@@ -824,10 +824,10 @@ async function sendOrder(side) {
             // MAX policzyl 0 - wyjasnij dlaczego zamiast ogolnego "podaj ilosc"
             // (myli, skoro user NIC nie musial wpisywac recznie).
             statusEl.textContent = side === "sell"
-                ? "Nie masz nic do sprzedania (posiadasz 0 szt.)."
-                : "Brak środków na zakup (albo nie udało się pobrać salda/ceny).";
+                ? t("Nie masz nic do sprzedania (posiadasz 0 szt.).")
+                : t("Brak środków na zakup (albo nie udało się pobrać salda/ceny).");
         } else {
-            statusEl.textContent = "Podaj ilość > 0";
+            statusEl.textContent = t("Podaj ilość > 0");
         }
         return;
     }
@@ -837,7 +837,7 @@ async function sendOrder(side) {
     if (orderMode === "limit" || orderMode === "stoplimit") {
         limitPrice = limitPriceInput.value;
         if (!limitPrice || Number(limitPrice) <= 0) {
-            statusEl.textContent = "Podaj cenę LIMIT > 0";
+            statusEl.textContent = t("Podaj cenę LIMIT > 0");
             limitPriceInput.focus();
             return;
         }
@@ -846,7 +846,7 @@ async function sendOrder(side) {
     if (orderMode === "stop" || orderMode === "stoplimit") {
         stopPrice = stopPriceInput.value;
         if (!stopPrice || Number(stopPrice) <= 0) {
-            statusEl.textContent = "Podaj cenę STOP > 0";
+            statusEl.textContent = t("Podaj cenę STOP > 0");
             stopPriceInput.focus();
             return;
         }
@@ -856,18 +856,18 @@ async function sendOrder(side) {
         const estValue = Number(quantity) * marketPrice;
         if (estValue >= cachedMaxOrderValue * CONFIRM_THRESHOLD_RATIO) {
             const confirmed = await confirmDialog(
-                `Duże zlecenie: ${side === "buy" ? "KUP" : "SPRZEDAJ"} ${quantity} × ${ticker.split("_")[0]} ` +
-                `≈ ${estValue.toFixed(2)} (limit: ${cachedMaxOrderValue.toFixed(2)}). Kontynuować?`
+                `${t("Duże zlecenie:")} ${side === "buy" ? t("KUP") : t("SPRZEDAJ")} ${quantity} × ${ticker.split("_")[0]} ` +
+                `≈ ${estValue.toFixed(2)} (${t("limit:")} ${cachedMaxOrderValue.toFixed(2)}). ${t("Kontynuować?")}`
             );
             if (!confirmed) return;
         }
     }
 
     btns.forEach((b) => (b.disabled = true));
-    statusEl.textContent = orderMode === "limit" ? "wysyłanie LIMIT…"
-        : orderMode === "stop" ? "wysyłanie STOP…"
-        : orderMode === "stoplimit" ? "wysyłanie STOP-LIMIT…"
-        : "wysyłanie…";
+    statusEl.textContent = orderMode === "limit" ? t("wysyłanie LIMIT…")
+        : orderMode === "stop" ? t("wysyłanie STOP…")
+        : orderMode === "stoplimit" ? t("wysyłanie STOP-LIMIT…")
+        : t("wysyłanie…");
 
     try {
         const url = orderMode === "limit" ? "/warp/order/limit"
@@ -902,14 +902,14 @@ async function sendOrder(side) {
             }
         } else if (data.blocked) {
             playError();
-            statusEl.textContent = `ZABLOKOWANE: ${data.reason ?? data.decision}`;
+            statusEl.textContent = `${t("ZABLOKOWANE:")} ${t(data.reason) ?? t(data.decision)}`;
         } else {
             playError();
-            statusEl.textContent = `BŁĄD: ${data.error ?? "nieznany"}`;
+            statusEl.textContent = `${t("BŁĄD:")} ${t(data.error) ?? t("nieznany")}`;
         }
     } catch (err) {
         playError();
-        statusEl.textContent = "BŁĄD SIECI";
+        statusEl.textContent = t("BŁĄD SIECI");
         console.error(err);
     } finally {
         btns.forEach((b) => (b.disabled = false));
