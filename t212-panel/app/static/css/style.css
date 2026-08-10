@@ -34,6 +34,28 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
     --currency-eur: #FF9F45;
     --currency-usd: #4EA1FF;
 
+    /* Tinty buy/sell do hoverów/flashy/tła plakietek - dawniej każde miejsce
+       miało własny odcień rgba "na oko" (3 różne czerwienie, 2 zielenie),
+       rozjeżdżający się od --sell-red/--buy-green powyżej. Teraz jedno
+       źródło, pochodne od tych samych kolorów. */
+    --sell-red-tint: rgba(255, 92, 92, 0.12);
+    --sell-red-tint-strong: rgba(255, 92, 92, 0.25);
+    --buy-green-tint: rgba(47, 217, 138, 0.12);
+    --buy-green-tint-strong: rgba(47, 217, 138, 0.25);
+
+    /* Tekst na nasyconym tle (plakietki, przyciski buy/sell, awatary) -
+       zawsze biały niezależnie od motywu; nazwane żeby intencja była jawna. */
+    --on-accent: #fff;
+    /* Tekst inicjałów na awatarze bez logo (tło hsl(hue,55%,38%) - patrz
+       .avatar--hued niżej). Dwa miejsca (pie-asset-row, instrument-detail)
+       dawniej miały #0B0D0F zamiast białego - na tle o stałej ciemnej
+       jasności 38% to był realny błąd kontrastu, nie świadomy wybór. */
+    --avatar-text: #fff;
+    --avatar-sat: 55%;
+    --avatar-light: 38%;
+    --radius-xs: 2px;
+    --radius-pill: 999px;
+
     /* Skala odstępów (2026-08-08, redesign "Signal Room" - patrz notatka
        autorska u góry pliku) - jeden wspólny rytm zamiast osobnych, przypadkowych
        wartości (12px/14px/16px/20px w kółko) rozsianych po całym pliku. */
@@ -84,9 +106,27 @@ html[data-theme="light"] {
     --accent-blue: #2563EB;
     --currency-eur: #C2560B;
     --currency-usd: #1D6FD1;
+
+    --sell-red-tint: rgba(220, 38, 38, 0.1);
+    --sell-red-tint-strong: rgba(220, 38, 38, 0.2);
+    --buy-green-tint: rgba(21, 128, 61, 0.1);
+    --buy-green-tint-strong: rgba(21, 128, 61, 0.2);
+
+    /* Awatary bez logo (patrz .avatar--hued niżej) - jaśniejsze na jasnym
+       tle, żeby nie wyglądały ubłocone obok bieli --panel. */
+    --avatar-light: 45%;
 }
 
 * { box-sizing: border-box; }
+
+/* Awatar bez logo (fallback na pierwszą literę tickera) - tło z hue liczonym
+   per-ticker w app/utils.py::avatar_hue() (jedno wspólne miejsce po stronie
+   backendu). --avatar-hue jest jedyną częścią która faktycznie zmienia się
+   per-element (ustawiana inline w szablonie); nasycenie/jasność to stałe,
+   więc żyją tutaj zamiast być powtarzane w 10 różnych plikach HTML. */
+.avatar--hued {
+    background: hsl(var(--avatar-hue), var(--avatar-sat), var(--avatar-light));
+}
 
 /* Głębia warstw - subtelny "top highlight" na głównych kartach/panelach,
    żeby odróżniały się od tła nawet gdy --panel jest blisko --bg. */
@@ -190,7 +230,7 @@ html[data-theme="light"] .topbar__mark {
     color: var(--text-muted);
     border: 1px solid var(--hairline);
     padding: 2px 8px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 }
 
 /* Przełącznik demo/live (2026-08-06) - <button>, nie <span>, na kontach z
@@ -200,8 +240,8 @@ html[data-theme="light"] .topbar__mark {
 button.topbar__env { cursor: pointer; font-family: inherit; font-weight: 600; letter-spacing: 0.04em; background: transparent; }
 .topbar__env--demo { color: var(--text-muted); border-color: var(--hairline); }
 .topbar__env--demo:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
-.topbar__env--live { color: var(--sell-red); border-color: var(--sell-red); background: rgba(239, 68, 68, 0.1); box-shadow: 0 0 6px rgba(239, 68, 68, 0.35); }
-.topbar__env--live:hover { background: rgba(239, 68, 68, 0.18); }
+.topbar__env--live { color: var(--sell-red); border-color: var(--sell-red); background: var(--sell-red-tint); box-shadow: 0 0 6px rgba(255, 92, 92, 0.35); }
+.topbar__env--live:hover { background: var(--sell-red-tint-strong); }
 
 .topbar__nav {
     grid-column: 2;
@@ -250,7 +290,7 @@ button.topbar__env { cursor: pointer; font-family: inherit; font-weight: 600; le
     min-width: 15px;
     height: 15px;
     padding: 0 4px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     font-size: 9px;
     font-weight: 700;
     color: var(--bg);
@@ -316,7 +356,7 @@ main {
     color: var(--text-bright);
     text-decoration: none;
     border: 1px solid var(--hairline);
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     padding: 10px 20px;
     background: var(--panel);
     transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
@@ -486,7 +526,7 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 }
 .sidebar-favorites__toggle .icon { width: 13px; height: 13px; }
 .sidebar-favorites__toggle:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
@@ -507,7 +547,7 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--avatar-text);
     font-weight: 700;
     font-size: 13px;
 }
@@ -603,7 +643,7 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     font-family: inherit;
     font-size: 11px;
     padding: 3px 7px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     cursor: pointer;
     flex-shrink: 0;
 }
@@ -611,13 +651,13 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
 .pending-orders-list__action-btn--confirm { border-color: var(--accent-blue); color: var(--accent-blue); }
 .pending-orders-list__action-btn--confirm:hover { background: rgba(74, 158, 255, 0.1); }
 .pending-orders-list__action-btn--cancel { border-color: var(--sell-red); color: var(--sell-red); }
-.pending-orders-list__action-btn--cancel:hover { background: rgba(255, 92, 92, 0.1); }
+.pending-orders-list__action-btn--cancel:hover { background: var(--sell-red-tint); }
 /* Stan "uzbrojony" (czeka na drugie kliknięcie) - patrz armTwoStep()
    w instrument.js / cancelBtn w warp.js. Wyraźnie inny niż zwykły hover,
    żeby było widać że wymagane jest jeszcze jedno kliknięcie. */
 .pending-orders-list__action-btn--armed {
     background: var(--sell-red);
-    color: #fff;
+    color: var(--on-accent);
     border-color: var(--sell-red);
 }
 
@@ -631,7 +671,7 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     gap: 4px;
     background: var(--panel);
     border: 1px solid var(--accent-blue);
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
     padding: 4px 6px;
     font-size: 11px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -647,8 +687,8 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
     position: absolute;
     right: 44px;
     background: var(--accent-blue);
-    color: #fff;
-    border-radius: 3px;
+    color: var(--on-accent);
+    border-radius: var(--radius-sm);
     padding: 3px 8px;
     font-size: 12px;
     font-weight: 700;
@@ -749,7 +789,7 @@ klik w nazwe/logo nie moze juz jednoczesnie przelaczac obecnosci w siatce.
 }
 
 .tile__logo--fallback {
-    color: #fff;
+    color: var(--avatar-text);
     font-weight: 700;
     font-size: 13px;
 }
@@ -792,7 +832,7 @@ img.tile__logo {
     font-size: 11px;
     padding: 4px 6px;
     text-align: right;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 }
 .tile__price:focus {
     outline: none;
@@ -811,7 +851,7 @@ img.tile__logo {
     font-size: 11px;
     padding: 4px 6px;
     text-align: right;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     margin-top: 4px;
 }
 .tile__stoplimit-price:focus {
@@ -843,7 +883,7 @@ img.tile__logo {
     font-family: inherit;
     font-size: 11px;
     padding: 5px 0;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     cursor: pointer;
 }
 .tile__preset:hover { border-color: var(--accent-amber); color: var(--text-bright); }
@@ -862,7 +902,7 @@ img.tile__logo {
     font-family: inherit;
     font-size: 11px;
     padding: 5px 6px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     text-align: right;
 }
 .tile__qty-custom-input--hidden { display: none; }
@@ -896,7 +936,7 @@ img.tile__logo {
     border: 1px solid var(--hairline);
     background: transparent;
     cursor: pointer;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     transition: transform 0.06s ease, background-color 0.1s ease;
 }
 .tile__btn:active { transform: scale(0.97); }
@@ -905,13 +945,13 @@ img.tile__logo {
     color: var(--buy-green);
     border-color: var(--buy-green);
 }
-.tile__btn--buy:hover { background: rgba(51, 193, 123, 0.12); }
+.tile__btn--buy:hover { background: var(--buy-green-tint); }
 
 .tile__btn--sell {
     color: var(--sell-red);
     border-color: var(--sell-red);
 }
-.tile__btn--sell:hover { background: rgba(229, 72, 77, 0.12); }
+.tile__btn--sell:hover { background: var(--sell-red-tint); }
 
 /* Przelacznik trybu zlecenia RYNEK/LIMIT (2026-07-31, Adam: "zrob po
    prostu switch market/limit a guziki zostaw te same") - ZASTĘPUJE
@@ -922,7 +962,7 @@ img.tile__logo {
 .tile__mode-toggle {
     display: flex;
     border: 1px solid var(--hairline);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     overflow: hidden;
 }
 .tile__mode-btn {
@@ -940,9 +980,9 @@ img.tile__logo {
 .tile__mode-btn:hover { color: var(--text-bright); }
 .tile__mode-btn--active {
     background: var(--accent-blue);
-    color: #fff;
+    color: var(--on-accent);
 }
-.tile__mode-btn--active:hover { color: #fff; }
+.tile__mode-btn--active:hover { color: var(--on-accent); }
 
 .tile__btn:disabled {
     opacity: 0.35;
@@ -957,8 +997,8 @@ img.tile__logo {
     opacity: 0;
     transition: opacity 0.25s ease;
 }
-.tile__flash--ok { background: rgba(51, 193, 123, 0.25); opacity: 1; }
-.tile__flash--error { background: rgba(229, 72, 77, 0.25); opacity: 1; }
+.tile__flash--ok { background: var(--buy-green-tint-strong); opacity: 1; }
+.tile__flash--error { background: var(--sell-red-tint-strong); opacity: 1; }
 
 @media (prefers-reduced-motion: reduce) {
     .tile__btn, .tile__flash, .tile__corner { transition: none !important; }
@@ -1079,7 +1119,7 @@ img.tile__logo {
     font-size: 11px;
     letter-spacing: 0.03em;
     padding: 6px 10px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     cursor: pointer;
 }
 .account-bar__btn:hover { border-color: var(--accent-amber); color: var(--text-bright); }
@@ -1137,8 +1177,8 @@ img.tile__logo {
 .auth-box--wide { max-width: 620px; }
 
 .auth-box__title {
-    font-size: 15px;
-    letter-spacing: 0.1em;
+    font-size: var(--text-xl);
+    letter-spacing: 0.06em;
     color: var(--accent-amber);
     margin: 0 0 18px;
 }
@@ -1155,22 +1195,22 @@ img.tile__logo {
    tekst (linia + większy odstęp), żeby było widać gdzie się jest przy
    scrollowaniu, w odróżnieniu od poprzedniego 13px bez żadnego wyróżnienia. */
 .section-heading {
-    font-size: 14px;
-    letter-spacing: 0.08em;
+    font-size: var(--text-lg);
+    letter-spacing: 0.06em;
     color: var(--text-bright);
-    margin: 32px 0 12px;
-    padding-bottom: 8px;
+    margin: var(--space-6) 0 var(--space-3);
+    padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--hairline);
     scroll-margin-top: 16px;
 }
 .section-heading--with-action { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .section-heading__action {
-    font-size: 12px;
+    font-size: var(--text-sm);
     letter-spacing: normal;
     color: var(--text-muted);
     background: none;
     border: 1px solid var(--hairline);
-    border-radius: 6px;
+    border-radius: var(--radius-md);
     padding: 4px 10px;
     cursor: pointer;
     white-space: nowrap;
@@ -1201,13 +1241,13 @@ img.tile__logo {
 }
 
 .auth-box__error {
-    background: rgba(229, 72, 77, 0.12);
+    background: var(--sell-red-tint);
     border: 1px solid var(--sell-red);
     color: var(--sell-red);
     font-size: 12px;
     padding: 8px 10px;
     margin-bottom: 16px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 }
 
 .auth-box__hint {
@@ -1218,6 +1258,36 @@ img.tile__logo {
 }
 .auth-box__hint--warn {
     color: var(--sell-red);
+}
+
+/* Rząd statusów klucza API (zapisany/brak + ewentualny przycisk "Usuń") -
+   dawniej rozdzielane literalnym tekstem "&nbsp;|&nbsp;" między inline
+   formularzami; teraz flex + separator jako ::after, żeby nie polegać na
+   tym że treść i przyciski akurat zmieszczą się w jednej linii. */
+.key-status-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-1) var(--space-4);
+}
+.key-status-row__item {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+.key-status-row__item::after {
+    content: "|";
+    margin-left: var(--space-4);
+    color: var(--hairline);
+}
+.key-status-row__item:last-child::after {
+    content: none;
+}
+
+.button-row {
+    display: flex;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
 }
 
 .auth-box__footer {
@@ -1279,8 +1349,8 @@ img.tile__logo {
 /* Wariant "kasowanie" (Usuń klucz API itp.) - czerwony zamiast bursztynowego
    akcentu, inline zamiast block (obok tekstu statusu, nie osobna sekcja). */
 .auth-form__submit--danger { border-color: var(--sell-red); color: var(--sell-red); }
-.auth-form__submit--danger:hover { background: rgba(239, 68, 68, 0.14); box-shadow: 0 0 10px var(--sell-red); }
-.auth-form__submit--inline { display: inline-block; margin-top: 0; padding: 2px 10px; font-size: 11px; }
+.auth-form__submit--danger:hover { background: var(--sell-red-tint); box-shadow: 0 0 10px var(--sell-red); }
+.auth-form__submit--inline { display: inline-block; margin-top: 0; padding: var(--space-1) 10px; font-size: var(--text-xs); }
 
 /* Przypięty na stałe do dołu viewportu (nie tylko sekcji) - na życzenie
    Adama, żeby przy długiej stronie (Bot: dużo pól ustawień + dziennik pod
@@ -1375,7 +1445,7 @@ img.tile__logo {
     font-weight: 600;
     letter-spacing: 0.05em;
     padding: 10px 0;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     cursor: pointer;
 }
 
@@ -1428,18 +1498,18 @@ img.tile__logo {
 .history-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 11px;
+    font-size: var(--text-sm);
 }
 .history-table th {
     text-align: left;
     color: var(--text-muted);
     font-weight: 500;
     letter-spacing: 0.05em;
-    padding: 6px 8px;
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--hairline);
 }
 .history-table td {
-    padding: 6px 8px;
+    padding: var(--space-2) var(--space-3);
     border-bottom: 1px solid var(--hairline);
     color: var(--text-bright);
 }
@@ -1465,7 +1535,7 @@ img.tile__logo {
     font-size: 11px;
     line-height: 1;
     padding: 3px 7px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
 }
 .reorderable-panel__move:hover { color: var(--text-bright); border-color: var(--accent-amber); }
 
@@ -1542,7 +1612,7 @@ img.tile__logo {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--avatar-text);
     font-weight: 700;
     font-size: 15px;
 }
@@ -1602,7 +1672,7 @@ img.tile__logo {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 }
 .watchlist-favorites__icon-btn .icon { width: 14px; height: 14px; }
 .watchlist-favorites__icon-btn:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
@@ -1637,7 +1707,7 @@ img.tile__logo {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #fff;
+    color: var(--avatar-text);
     font-weight: 700;
     font-size: 13px;
 }
@@ -1683,7 +1753,7 @@ img.tile__logo {
     cursor: pointer;
     font-size: 10px;
     padding: 3px 10px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 }
 .watchlist-results__add:hover { background: rgba(168, 85, 255, 0.12); }
 
@@ -1716,7 +1786,7 @@ img.tile__logo {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     margin-left: 4px;
 }
 .watchlist-results__icon-btn .icon { width: 13px; height: 13px; }
@@ -1826,19 +1896,26 @@ img.tile__logo {
 
 .pie-detail__budget-row--disabled { opacity: 0.45; }
 
-/* Podnagłówki grupujące pola wewnątrz .collapsible (np. "Ustawienia ryzyka"
-   w bot.html) - lżejsze niż .section-heading, bez linii pod spodem, tylko
-   cienka linia górna odseparowująca kolejne grupy pól. */
+/* Podnagłówki grupujące pola (np. 4 grupy "Ustawienia ryzyka" w bot.html,
+   albo pojedyncze podsekcje w Ustawieniach/Kosztach) - lżejsze niż
+   .section-heading. Dawniej sama linia górna + tekst gubiła się na szybkim
+   scrollu długiej, płaskiej listy pól (Adam: sekcja Risk czytała się jako
+   jedna ściana, nie 4 grupy) - teraz "chip" z tłem/obramowaniem, żeby
+   każda grupa miała wyraźny, samodzielny punkt zaczepienia niezależnie od
+   tego ile paddingu ma akurat rodzic. */
 .settings-subheading {
-    font-size: 11px;
+    display: inline-block;
+    font-size: var(--text-xs);
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--text-muted);
-    margin: 24px 0 10px;
-    padding-top: 16px;
-    border-top: 1px solid var(--hairline);
+    margin: var(--space-6) 0 var(--space-3);
+    padding: var(--space-1) var(--space-3);
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
 }
-.settings-subheading:first-of-type { margin-top: 12px; padding-top: 0; border-top: none; }
+.settings-subheading:first-of-type { margin-top: var(--space-3); }
 
 .pie-fx-banner {
     background: rgba(168, 85, 255, 0.1);
@@ -1882,7 +1959,7 @@ img.tile__logo {
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #0B0D0F;
+    color: var(--avatar-text);
     font-weight: 700;
     font-size: 15px;
     flex-shrink: 0;
@@ -1961,7 +2038,7 @@ img.tile__logo {
     font-family: inherit;
     font-size: 12px;
     padding: 6px 8px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     width: 100px;
 }
 .pie-asset-row__fields input:focus { outline: none; border-color: var(--accent-amber); }
@@ -1982,7 +2059,7 @@ img.tile__logo {
     background: transparent;
     border: 1px solid var(--hairline);
     color: var(--text-muted);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     cursor: pointer;
 }
 .pie-asset-row__icon-btn .icon { width: 15px; height: 15px; }
@@ -2041,7 +2118,7 @@ img.tile__logo {
     font-size: 9px;
     color: var(--text-muted);
     background: var(--panel);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     padding: 1px 6px;
 }
 .tab--active { color: var(--accent-amber); border-bottom-color: var(--accent-amber); box-shadow: 0 1px 8px var(--accent-glow); }
@@ -2056,11 +2133,11 @@ img.tile__logo {
     font-weight: 600;
     letter-spacing: 0.03em;
     padding: 2px 6px;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
 }
 .badge--leverage {
     color: var(--sell-red);
-    background: rgba(229, 72, 77, 0.12);
+    background: var(--sell-red-tint);
     border: 1px solid var(--sell-red);
 }
 
@@ -2095,7 +2172,7 @@ img.tile__logo {
     color: var(--text-muted);
     cursor: pointer;
     padding: 12px;
-    border-radius: 4px;
+    border-radius: var(--radius-sm);
     flex-shrink: 0;
 }
 .focus-nav__btn:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
@@ -2168,7 +2245,7 @@ img.tile__logo {
     justify-content: center;
 }
 .focus-tile__logo--fallback {
-    color: #fff;
+    color: var(--avatar-text);
     font-weight: 700;
     font-size: 15px;
 }
@@ -2272,7 +2349,7 @@ img.focus-tile__logo {
     font-size: 16px;
     letter-spacing: 0.06em;
     padding: 14px 0;
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     cursor: pointer;
     border: 1px solid var(--hairline);
     background: transparent;
@@ -2347,7 +2424,7 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #0B0D0F;
+    color: var(--avatar-text);
     font-weight: 700;
     font-size: 22px;
 }
@@ -2470,7 +2547,7 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
     position: relative;
     height: 4px;
     background: var(--hairline);
-    border-radius: 2px;
+    border-radius: var(--radius-xs);
     margin-bottom: 6px;
 }
 .instrument-stats-range__bar-fill {
@@ -2519,10 +2596,10 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
     font-weight: 700;
     letter-spacing: 0.03em;
     padding: 2px 8px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm);
 }
-.portfolio-freshness--cached { background: rgba(229, 72, 77, 0.15); color: var(--sell-red); }
-.portfolio-freshness--live { background: rgba(51, 193, 123, 0.15); color: var(--buy-green); }
+.portfolio-freshness--cached { background: var(--sell-red-tint); color: var(--sell-red); }
+.portfolio-freshness--live { background: var(--buy-green-tint); color: var(--buy-green); }
 
 /*
 Wyrazisty wizualny puls przy zywym odswiezeniu (portfolio.js) - NIEZALEZNY

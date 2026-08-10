@@ -8,7 +8,7 @@
         {% if logo_filename %}
         <img class="instrument-detail__logo" src="{{ url_for('static', filename='logos/' + logo_filename) }}" alt="{{ display_ticker }}">
         {% else %}
-        <span class="instrument-detail__logo instrument-detail__logo--fallback" style="background: hsl({{ hue }}, 55%, 38%);">{{ initial }}</span>
+        <span class="instrument-detail__logo instrument-detail__logo--fallback avatar--hued" style="--avatar-hue: {{ hue }};">{{ initial }}</span>
         {% endif %}
 
         <div class="instrument-detail__title">

@@ -54,7 +54,7 @@
                              src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
                              alt="{{ f.ticker }}">
                         {% else %}
-                        <span class="sidebar-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
+                        <span class="sidebar-favorites__avatar avatar--hued" style="--avatar-hue: {{ f.hue }};">
                             {{ f.initial }}
                         </span>
                         {% endif %}
@@ -133,7 +133,7 @@
                         {% if tile.logo_filename %}
                         <img class="tile__logo" src="{{ url_for('static', filename='logos/' + tile.logo_filename) }}" alt="{{ tile.ticker }}">
                         {% else %}
-                        <span class="tile__logo tile__logo--fallback" style="background: hsl({{ tile.hue }}, 55%, 38%);">{{ tile.initial }}</span>
+                        <span class="tile__logo tile__logo--fallback avatar--hued" style="--avatar-hue: {{ tile.hue }};">{{ tile.initial }}</span>
                         {% endif %}
                         <span class="tile__name-wrap">
                             <span class="tile__name">

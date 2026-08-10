@@ -16,8 +16,7 @@
         </a>
     </div>
 
-    <hr class="watchlist-divider">
-    <h2 class="auth-box__title" style="font-size:12px">FOCUS MODE — {{ t("LICZBA KAFELKÓW") }}</h2>
+    <h2 class="settings-subheading">FOCUS MODE — {{ t("LICZBA KAFELKÓW") }}</h2>
     <p class="auth-box__hint">
         {{ t("Ile kafelków widać jednocześnie (1–9). Odświeżanie ceny live dopasowuje się automatycznie żeby nie przekroczyć limitu Finnhub (60 req/min).") }}
     </p>
@@ -30,8 +29,7 @@
         <button type="submit" class="account-bar__btn">{{ t("Zapisz") }}</button>
     </form>
 
-    <hr class="watchlist-divider">
-    <h2 class="auth-box__title" style="font-size:12px">{{ t("POWIADOMIENIA DŹWIĘKOWE") }}</h2>
+    <h2 class="settings-subheading">{{ t("POWIADOMIENIA DŹWIĘKOWE") }}</h2>
     <p class="auth-box__hint">
         {{ t("Głośność dźwięków przy zleceniach (Kup/Sprzedaj) i cichych odświeżeniach danych. Zapamiętane w tej przeglądarce, 0% = wyciszone.") }}
     </p>
@@ -42,8 +40,7 @@
     </div>
 
     {% if is_admin %}
-    <hr class="watchlist-divider">
-    <h2 class="auth-box__title" style="font-size:12px">{{ t("OCZEKUJĄCE KONTA") }} ({{ pending_users|length }})</h2>
+    <h2 class="settings-subheading">{{ t("OCZEKUJĄCE KONTA") }} ({{ pending_users|length }})</h2>
     {% if not pending_users %}
     <p class="auth-box__hint">{{ t("Brak kont czekających na zatwierdzenie.") }}</p>
     {% else %}

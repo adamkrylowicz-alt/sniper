@@ -32,7 +32,7 @@
              data-currency="{{ a.currency }}"
              data-weight="{{ a.target_weight }}">
 
-            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="{{ t('Szczegóły') }} {{ a.display_ticker }}">
+            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar avatar--hued" style="--avatar-hue: {{ a.hue }};" title="{{ t('Szczegóły') }} {{ a.display_ticker }}">
                 {{ a.display_ticker[0] }}
             </a>
 

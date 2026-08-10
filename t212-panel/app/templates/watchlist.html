@@ -5,7 +5,7 @@
 <div class="watchlist-layout">
 
     <div class="history-box watchlist-layout__browse">
-        <h2 class="auth-box__title" style="font-size:13px">{{ t("WSZYSTKIE INSTRUMENTY") }}</h2>
+        <h2 class="auth-box__title">{{ t("WSZYSTKIE INSTRUMENTY") }}</h2>
         <input
             type="text"
             id="watchlist-search"
@@ -51,7 +51,7 @@
                          src="{{ url_for('static', filename='logos/' + f.logo_filename) }}"
                          alt="{{ f.ticker }}">
                     {% else %}
-                    <span class="watchlist-favorites__avatar" style="background: hsl({{ f.hue }}, 55%, 38%);">
+                    <span class="watchlist-favorites__avatar avatar--hued" style="--avatar-hue: {{ f.hue }};">
                         {{ f.initial }}
                     </span>
                     {% endif %}

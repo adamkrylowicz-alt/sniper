@@ -80,7 +80,7 @@
                             {% if p.logo_filename %}
                             <img class="pie-asset-row__avatar" style="width:28px;height:28px" src="{{ url_for('static', filename='logos/' + p.logo_filename) }}" alt="{{ p.display_ticker }}">
                             {% else %}
-                            <span class="pie-asset-row__avatar" style="width:28px;height:28px;font-size:12px;background: hsl({{ p.hue }}, 55%, 38%);">{{ p.initial }}</span>
+                            <span class="pie-asset-row__avatar avatar--hued" style="width:28px;height:28px;font-size:12px;--avatar-hue: {{ p.hue }};">{{ p.initial }}</span>
                             {% endif %}
                             <span>
                                 <span class="pie-asset-row__ticker">

@@ -62,7 +62,7 @@
     <div class="pie-assets" id="bot-assets-list">
         {% for a in bot_assets %}
         <div class="pie-asset-row" data-asset-id="{{ a.id }}" data-ticker="{{ a.ticker }}">
-            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar" style="background: hsl({{ a.hue }}, 55%, 38%);" title="{{ t('Szczegóły') }} {{ a.display_ticker }}">
+            <a href="{{ url_for('instrument.detail', ticker=a.ticker) }}" class="pie-asset-row__avatar avatar--hued" style="--avatar-hue: {{ a.hue }};" title="{{ t('Szczegóły') }} {{ a.display_ticker }}">
                 {{ a.display_ticker[0] }}
             </a>
 
@@ -181,7 +181,7 @@
     <div class="pie-detail__add-asset" id="section-activation">
         <label class="auth-form__label" for="bot-password">{{ t("Hasło (do aktywacji bota)") }}</label>
         <input type="password" id="bot-password" class="auth-form__input" autocomplete="current-password">
-        <div style="display:flex; gap:8px; margin-top:8px">
+        <div class="button-row">
             <button type="button" id="btn-bot-activate" class="account-bar__btn account-bar__btn--start">{{ t("Uruchom bota") }}</button>
             <button type="button" id="btn-bot-deactivate" class="account-bar__btn account-bar__btn--stop">{{ t("Wyłącz bota") }}</button>
         </div>
