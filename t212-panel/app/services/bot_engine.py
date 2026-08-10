@@ -1498,10 +1498,23 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         # obsługiwane WYŁĄCZNIE jako jednorazowy fallback przy samym
         # wystawianiu zlecenia (patrz niżej), bez dotykania trade.quantity.
         actual_owned = owned_map.get(trade.ticker) if owned_map is not None else None
+        stop_undersized_after_sync = False
         if actual_owned is not None and actual_owned != trade.quantity:
             old_quantity = trade.quantity
             old_average_price = trade.average_price
             price_note = ""
+            # Zlecenie STOP już wystawione na STARĄ (mniejszą) ilość, jeśli
+            # user dokupił (2026-08-10, TSLA_US_EQ na żywo - Adam ręcznie
+            # dokupił, ilość zsynchronizowała się 0.35->0.5, ale realny
+            # resting STOP na T212 dalej wystawiony na 0.35, bo dopisanie
+            # trade.quantity samo w sobie NIE wymusza Cancel-Replace, tylko
+            # następna PRICE-DRIVEN poprawa stopu (compute_trailing_stop przy
+            # is_first_arm=False zwraca None gdy cena się nie ruszyła) - do
+            # tego czasu 0.15 akcji siedziało BEZ ŻADNEJ ochrony). Flaga niżej
+            # wymusza natychmiastowy Cancel-Replace na TEJ SAMEJ cenie stopu,
+            # tylko ze świeżą ilością, zamiast czekać na ruch ceny.
+            if actual_owned > trade.quantity and trade.stop_order_id is not None:
+                stop_undersized_after_sync = True
             # Przeliczenie average_price TYLKO przy wzroście (dokupienie) -
             # dodane 2026-08-07 (Adam: "popraw żeby przeliczał average_price
             # przy dokupieniu"). Przy spadku (częściowa sprzedaż) średnia
@@ -1613,6 +1626,12 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
                     current_price, atr_distance, fallback_pct,
                 )
                 pending.append((trade, candidate_stop, milestone_steps, current_price))
+            elif stop_undersized_after_sync and trade.stop_order_id is not None:
+                # Ta sama naprawa co przy is_first_arm=False nizej, ale dla
+                # pozycji ktora akurat teraz jest ponizej 2 progow zysku -
+                # dokupienie i tak zostawilo istniejacy STOP niedowymiarowany,
+                # naprawiamy niezaleznie od tego gdzie akurat jest cena.
+                pending.append((trade, trade.stop_target_price, milestone_steps, current_price))
             continue
 
         # Matematyka (floor ATR/fallback, max(floor, ciasny_target) przy
@@ -1636,6 +1655,13 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             min_requote_fraction=MIN_TRAIL_REQUOTE_FRACTION,
         )
         if candidate_stop is None:
+            if stop_undersized_after_sync:
+                # Cena nie dala normalnej poprawy, ale ilosc sie zmienila po
+                # dokupieniu (patrz komentarz przy stop_undersized_after_sync
+                # wyzej) - wymuszamy Cancel-Replace na TEJ SAMEJ cenie stopu,
+                # zeby zlecenie natychmiast pokrylo CALA aktualna ilosc,
+                # zamiast czekac az cena sama da powod do przesuniecia.
+                pending.append((trade, trade.stop_target_price, milestone_steps, current_price))
             continue  # juz uzbrojony, ale poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
 
         pending.append((trade, candidate_stop, milestone_steps, current_price))
