@@ -8,6 +8,7 @@
 
 # --- base.html: nawigacja, modale, stopka ---
 Aktywa|||Assets
+Pomoc|||Help
 Sygnał|||Signal
 Ustawienia|||Settings
 Zgłoś problem|||Report a problem

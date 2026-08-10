@@ -331,6 +331,7 @@ def _register_blueprints(app: Flask) -> None:
     from .routes.signal import signal_bp
     from .routes.eod import eod_bp
     from .routes.i18n import i18n_bp
+    from .routes.help import help_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(scalping_bp)
@@ -343,3 +344,4 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(signal_bp)
     app.register_blueprint(eod_bp)
     app.register_blueprint(i18n_bp)
+    app.register_blueprint(help_bp)

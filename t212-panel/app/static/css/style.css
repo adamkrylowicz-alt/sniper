@@ -2537,3 +2537,47 @@ odblokowane.
     30% { box-shadow: 0 0 24px 6px var(--accent-glow); }
     100% { box-shadow: 0 0 0 0 transparent; }
 }
+
+/* --- /help (docs/help_pl.md, docs/help_en.md przez simple_markdown.py) --- */
+.help-content h1 {
+    color: var(--accent-amber);
+    font-size: var(--text-lg);
+    letter-spacing: 0.04em;
+    margin: 0 0 var(--space-5);
+}
+.help-content h2 {
+    color: var(--text-bright);
+    font-size: var(--text-md);
+    margin: var(--space-6) 0 var(--space-3);
+    padding-top: var(--space-4);
+    border-top: 1px solid var(--hairline);
+}
+.help-content h2:first-of-type { border-top: none; padding-top: 0; margin-top: var(--space-2); }
+.help-content h3 {
+    color: var(--accent-amber);
+    font-size: var(--text-base);
+    margin: var(--space-4) 0 var(--space-2);
+}
+.help-content p {
+    color: var(--text-muted);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    margin: 0 0 var(--space-3);
+}
+.help-content ul, .help-content ol {
+    color: var(--text-muted);
+    font-size: var(--text-base);
+    line-height: 1.6;
+    margin: 0 0 var(--space-4);
+    padding-left: 1.4em;
+}
+.help-content li { margin-bottom: var(--space-2); }
+.help-content strong { color: var(--text-bright); }
+.help-content code {
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    padding: 1px 5px;
+    font-size: 0.95em;
+    color: var(--accent-amber);
+}

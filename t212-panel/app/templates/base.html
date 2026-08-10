@@ -16,6 +16,10 @@
         <span class="topbar__mark"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" class="topbar__logo"><span>SNAJPER</span></span>
         <nav class="topbar__nav">
             <div class="topbar__links">
+            <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'help.view' }}" href="{{ url_for('help.view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 1 1 4.9 2.5c-.7.6-1.5 1.1-1.5 2.5M12 17h.01"/></svg>
+                {{ t("Pomoc") }}
+            </a>
             {% if is_authenticated %}
             <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.warp_view' }}" href="{{ url_for('scalping.warp_view') }}">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
