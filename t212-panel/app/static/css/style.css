@@ -213,6 +213,12 @@ button.topbar__env { cursor: pointer; font-family: inherit; font-weight: 600; le
     justify-content: center;
 }
 
+/* .topbar__links - wrapper WYŁĄCZNIE do mobilnego scrolla (patrz media
+   query niżej). display:contents na desktopie = wrapper znika z layoutu,
+   dzieci zachowują się jak bezpośrednie flex-itemy .topbar__nav dokładnie
+   jak przed dodaniem tego diva - zero zmiany na desktopie. */
+.topbar__links { display: contents; }
+
 .topbar__link {
     display: flex;
     align-items: center;
@@ -961,6 +967,60 @@ img.tile__logo {
 @media (max-width: 620px) {
     .warp-grid { grid-template-columns: repeat(1, minmax(220px, 320px)); }
 }
+
+/* Mobile topbar (10.08.2026 - "kaszana się rozjeżdża" na smartfonach):
+   na wąskim ekranie flex-wrap w .topbar__nav rozbijał nawigację na 5-6
+   wyśrodkowanych wierszy, zjadając pół ekranu przed jakąkolwiek treścią.
+   Zamiast tego - JEDEN poziomy, przewijalny pasek (.topbar__links, patrz
+   wyżej) ze stronami, a theme/lang/T212/DEMO-LIVE zostają PRZYPIĘTE po
+   prawej poza scrollem (env-toggle to jedyny stały sygnał "to są prawdziwe
+   pieniądze" widoczny na każdej stronie - nie może wymagać przewinięcia,
+   żeby go zobaczyć). */
+@media (max-width: 700px) {
+    .topbar {
+        grid-template-columns: auto 1fr;
+        padding: 10px 12px;
+        column-gap: 8px;
+    }
+    .topbar__mark { grid-column: 1; }
+    .topbar__mark span { display: none; } /* logo zostaje, tekst "SNAJPER" znika - oszczędza miejsce */
+    .topbar__nav {
+        grid-column: 2;
+        justify-self: stretch;
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        gap: 10px;
+    }
+    .topbar__links {
+        display: flex;
+        flex: 1 1 auto;
+        min-width: 0; /* bez tego flex-item w gridzie nie chce się skurczyć poniżej treści, scroll nigdy by się nie włączył */
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 14px;
+        padding-bottom: 2px;
+    }
+    .topbar__links::-webkit-scrollbar { display: none; }
+    .topbar__link, .topbar__logout { flex-shrink: 0; }
+    .topbar__theme-toggle, .topbar__lang, .topbar__conn, .topbar__env {
+        flex-shrink: 0;
+    }
+    .topbar__conn span:last-child { display: none; } /* "T212" tekst - sama kropka wystarczy, oszczędza miejsce w przypiętym pasku */
+}
+
+/* Karty podsumowania (Aktywa/instrument) - na desktopie mieszczą się w
+   jednym rzędzie, na wąskim ekranie flex bez wrap ściskał tekst do
+   pionowego "schodka" (patrz zrzut ekranu 10.08) zamiast po prostu zawinąć
+   do kolejnego wiersza - bezpieczne też na desktopie, tam po prostu nigdy
+   się nie uruchomi. */
+.portfolio-summary { flex-wrap: wrap; }
+
+/* Tabele (.history-table, współdzielone przez Aktywa/Bot/Sygnał/EOD/
+   Historię/Koszty) - owinięte w .table-scroll pozwalają na poziomy scroll
+   zamiast łamania layoutu strony, kolumny nie są ściskane do nieczytelności. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll .history-table { min-width: 640px; }
 
 /* --- Ikony (inline SVG) --- */
 .icon {

@@ -13,8 +13,9 @@
 </head>
 <body class="{{ 'page-bot' if request.blueprint in ('bot', 'signal', 'eod') }}">
     <header class="topbar">
-        <span class="topbar__mark"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" class="topbar__logo">SNAJPER</span>
+        <span class="topbar__mark"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" class="topbar__logo"><span>SNAJPER</span></span>
         <nav class="topbar__nav">
+            <div class="topbar__links">
             {% if is_authenticated %}
             <a class="topbar__link {{ 'topbar__link--active' if request.endpoint == 'scalping.warp_view' }}" href="{{ url_for('scalping.warp_view') }}">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
@@ -69,6 +70,7 @@
                 </button>
             </form>
             {% endif %}
+            </div>
             <button type="button" class="topbar__theme-toggle" id="theme-toggle" title="{{ t('Przełącz jasny/ciemny motyw') }}">
                 <svg class="icon icon--sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>
@@ -82,7 +84,7 @@
                 <button type="submit" class="topbar__link topbar__link--btn" title="{{ t('Przełącz język') }} / Switch language">{{ 'EN' if current_lang == 'pl' else 'PL' }}</button>
             </form>
             <span class="topbar__conn" id="t212-status-dot" title="{{ t('Status połączenia z T212 (nieznany)') }}">
-                <span class="topbar__conn-dot topbar__conn-dot--unknown"></span> T212
+                <span class="topbar__conn-dot topbar__conn-dot--unknown"></span> <span>T212</span>
             </span>
             {% if is_authenticated %}
             <button type="button" class="topbar__env topbar__env--{{ active_environment }}" id="env-toggle" title="{{ t('Kliknij, żeby przełączyć demo/live') }}">{{ active_environment|upper }}</button>
