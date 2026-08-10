@@ -17,8 +17,3 @@ socketio = SocketIO()
 # jeden scheduler. Start w app/__init__.py::create_app(), z ochroną przed
 # podwójnym startem (Flask debug reloader woła create_app() dwa razy).
 scheduler = BackgroundScheduler()
-
-# Singleton klienta Finnhub - inicjalizowany w create_app() gdy klucz API jest dostępny.
-# None gdy brak klucza (FINNHUB_API_KEY nie ustawiony w .env) - wszystkie endpointy
-# korzystające z Finnhub sprawdzają czy to None i zwracają graceful fallback.
-finnhub: "FinnhubClient | None" = None  # type: ignore[name-defined]

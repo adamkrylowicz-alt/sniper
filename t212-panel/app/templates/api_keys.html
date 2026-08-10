@@ -47,6 +47,59 @@
         <button class="auth-form__submit" type="submit">{{ t("ZAPISZ (ZASZYFROWANE)") }}</button>
     </form>
 
+    <hr class="watchlist-divider">
+    <h2 class="auth-box__title" style="font-size:12px">{{ t("KLUCZE DANYCH RYNKOWYCH (WŁASNE)") }}</h2>
+    <p class="auth-box__hint">
+        {{ t("Opcjonalne — bez nich appka i tak działa (Yahoo Finance jako darmowe źródło zapasowe), ale z własnymi kluczami dane są szybsze i pełniejsze. To TWOJE klucze, nie admina appki — darmowe konto na finnhub.io / alpaca.markets wystarczy.") }}
+    </p>
+
+    <p class="auth-box__hint">
+        Finnhub: {{ t("✅ zapisany") if has_finnhub else t("— brak") }}
+        {% if has_finnhub %}
+        <form method="post" action="{{ url_for('api_keys.delete_market_data') }}" style="display:inline">
+            <input type="hidden" name="field" value="finnhub">
+            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">{{ t("Usuń") }}</button>
+        </form>
+        {% endif %}
+        &nbsp;|&nbsp;
+        Alpaca: {{ t("✅ zapisany") if has_alpaca else t("— brak") }}
+        {% if has_alpaca %}
+        <form method="post" action="{{ url_for('api_keys.delete_market_data') }}" style="display:inline">
+            <input type="hidden" name="field" value="alpaca">
+            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">{{ t("Usuń") }}</button>
+        </form>
+        {% endif %}
+        &nbsp;|&nbsp;
+        IBKR: {{ t("✅ zapisany") if ibkr_host else t("— brak") }}
+        {% if ibkr_host %}
+        <form method="post" action="{{ url_for('api_keys.delete_market_data') }}" style="display:inline">
+            <input type="hidden" name="field" value="ibkr">
+            <button type="submit" class="auth-form__submit auth-form__submit--danger auth-form__submit--inline">{{ t("Usuń") }}</button>
+        </form>
+        {% endif %}
+    </p>
+
+    <form method="post" action="{{ url_for('api_keys.save_market_data') }}" class="auth-form">
+        <label class="auth-form__label" for="finnhub_key">Finnhub API Key</label>
+        <input class="auth-form__input" type="text" id="finnhub_key" name="finnhub_key" placeholder="{{ t('zostaw puste, żeby nie zmieniać') }}">
+
+        <label class="auth-form__label" for="alpaca_key" style="margin-top:16px">Alpaca API Key</label>
+        <input class="auth-form__input" type="text" id="alpaca_key" name="alpaca_key" placeholder="{{ t('zostaw puste, żeby nie zmieniać') }}">
+        <label class="auth-form__label" for="alpaca_secret">Alpaca API Secret</label>
+        <input class="auth-form__input" type="text" id="alpaca_secret" name="alpaca_secret" placeholder="{{ t('zostaw puste, żeby nie zmieniać') }}">
+
+        <label class="auth-form__label" for="ibkr_host" style="margin-top:16px">{{ t("Adres własnej bramki IBKR (opcjonalne, zaawansowane)") }}</label>
+        <input class="auth-form__input" type="text" id="ibkr_host" name="ibkr_host" placeholder="np. 127.0.0.1" value="{{ ibkr_host }}">
+        <label class="auth-form__label" for="ibkr_port">{{ t("Port bramki IBKR") }}</label>
+        <input class="auth-form__input" type="number" id="ibkr_port" name="ibkr_port" placeholder="np. 4002" value="{{ ibkr_port }}">
+
+        <p class="auth-box__hint">
+            {{ t("IBKR wymaga WŁASNEJ, samodzielnie uruchomionej bramki IB Gateway - to nie jest zwykły klucz. Bez tego pola appka używa wspólnej bramki (tylko wykresy, nie handel) jak dotychczas.") }}
+        </p>
+
+        <button class="auth-form__submit" type="submit">{{ t("ZAPISZ (ZASZYFROWANE)") }}</button>
+    </form>
+
     <p class="auth-box__footer">
         <a href="{{ url_for('settings.index') }}">{{ t("← Wróć do Ustawień") }}</a>
         &nbsp;|&nbsp;

@@ -81,6 +81,7 @@ from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
 from . import bot_credentials, diagnostics, market_hours, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
+from .market_data_keys import get_decrypted_market_data_keys
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import eod_strategy
 from .strategy.microgrid_strategy import compute_equity_scaled_amount
@@ -267,10 +268,11 @@ def close_trade_manual(user_id: int, trade: EODTrade) -> tuple[bool, str]:
     signal_engine.py::close_trade_manual (identyczny kształt, osobna kopia
     bo osobny silnik/model - patrz komentarz tam).
     """
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
-    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    price = price_feed.get_live_price(
+        market_keys.get("finnhub_api_key"), trade.ticker,
+        market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+    )
     name = ticker_display_name(trade.ticker)
 
     if trade.is_paper:
@@ -458,9 +460,10 @@ def _process_entries(
         )
         return  # limit otwartych pozycji osiągnięty - nic nowego dziś
 
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     # ZMIANA 2026-08-05 (Adam: "napraw to", po ustaleniu że ta pętla wchodziła
     # w pierwszego pasującego zamiast oceniać wszystkich - patrz identyczna
@@ -660,6 +663,7 @@ def _retry_pending_buys(
         return
 
     pending_by_id = {str(o.get("id")): o for o in pending}
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
 
     for trade in candidates:
         pending_order = pending_by_id.get(trade.buy_order_id)
@@ -670,8 +674,8 @@ def _retry_pending_buys(
             continue  # częściowo już wypełnione - nie anulujemy w połowie, niech dokończy
 
         current_price = price_feed.get_live_price(
-            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
-            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+            market_keys.get("finnhub_api_key"), trade.ticker,
+            market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
         )
         if current_price is None or current_price <= 0:
             _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
@@ -741,10 +745,11 @@ def _force_close_real(user_id: int, client: T212Client, trade: EODTrade) -> None
             _log(user_id, "INFO", f"{trade.ticker}: anulowanie stop-loss przy wymuszonym zamknięciu EOD nie powiodło się (mógł się właśnie wykonać) - {exc}")
             return  # kolejny tick wykryje ewentualne wykonanie STOP-a (zniknie z pending)
 
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
-    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    price = price_feed.get_live_price(
+        market_keys.get("finnhub_api_key"), trade.ticker,
+        market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+    )
 
     try:
         sell_result = client.place_market_order(trade.ticker, -trade.quantity)
@@ -857,9 +862,10 @@ def _manage_exits(
     # ten sam fix w signal_engine.py tego samego dnia) - fetch_ok=False
     # wylacza WYLACZNIE detekcje "czy stop juz sam sie wykonal", reszta
     # petli leci dalej (nie potrzebuje pending, tylko ceny).
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     for trade in open_trades:
         # Stop-loss zniknal z pending - MOZE oznaczac wykonanie, ale samo
@@ -936,9 +942,10 @@ def _manage_paper_exits(user_id: int, settings: EODSettings) -> None:
         return
 
     force_close = _should_force_close(settings)
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     for trade in open_trades:
         price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)

@@ -171,6 +171,7 @@ from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
 from . import bot_credentials, bot_entry_filters, diagnostics, mailer, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
+from .market_data_keys import get_decrypted_market_data_keys
 from .strategy import microgrid_strategy
 from .t212_client import T212APIError, T212Client
 
@@ -400,12 +401,13 @@ def _compute_atr(candles: list[dict] | None, period: int = ATR_PERIOD) -> Decima
     return sum(true_ranges) / len(true_ranges)
 
 
-def _get_atr_stop_distance(ticker: str) -> Decimal | None:
+def _get_atr_stop_distance(user_id: int, ticker: str) -> Decimal | None:
     """Dystans W WALUCIE INSTRUMENTU (nie %) = ATR(14) * ATR_STOP_MULTIPLIER, albo None gdy brak danych."""
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
     candles = price_feed.get_mini_chart_ohlc(
-        current_app.config.get("FINNHUB_API_KEY"), ticker, days=ATR_LOOKBACK_DAYS,
-        alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
-        alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
+        market_keys.get("finnhub_api_key"), ticker, days=ATR_LOOKBACK_DAYS,
+        alpaca_api_key=market_keys.get("alpaca_api_key"),
+        alpaca_api_secret=market_keys.get("alpaca_api_secret"),
     )
     atr = _compute_atr(candles)
     if atr is None:
@@ -1074,6 +1076,7 @@ def _retry_pending_buys(
             _log(user_id, "ERROR", f"Retry LIMIT BUY: błąd pobierania pending orders - {exc}")
             return
     pending_by_id = {str(o.get("id")): o for o in pending}
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
 
     for trade in candidates:
         pending_order = pending_by_id.get(trade.buy_order_id)
@@ -1086,8 +1089,8 @@ def _retry_pending_buys(
             continue  # częściowo już wypełnione - nie anulujemy w połowie, niech dokończy
 
         current_price = price_feed.get_live_price(
-            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
-            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+            market_keys.get("finnhub_api_key"), trade.ticker,
+            market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
         )
         if current_price is None or current_price <= 0:
             _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
@@ -1558,9 +1561,10 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
                 trade.position_group_id,
             )
 
+        market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
         current_price = price_feed.get_live_price(
-            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
-            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+            market_keys.get("finnhub_api_key"), trade.ticker,
+            market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
         )
         if current_price is None or current_price <= 0:
             # Watchdog (dodany 2026-08-05 po buggu RHMd_EQ - zły symbol Yahoo
@@ -1618,7 +1622,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
                 trade.dca_level >= settings.max_dca_levels - 1 or settings.stop_loss_only_mode
             )
             if needs_immediate_floor and trade.stop_order_id is None:
-                atr_distance = _get_atr_stop_distance(trade.ticker)
+                atr_distance = _get_atr_stop_distance(user_id, trade.ticker)
                 fallback_pct = (
                     MANUAL_PROTECTION_FALLBACK_PCT if settings.stop_loss_only_mode else settings.stop_loss_pct
                 )
@@ -1643,7 +1647,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         # docstringu tej funkcji wyzej - tu tylko wolanie juz zweryfikowanej
         # formuly.
         is_first_arm = trade.stop_order_id is None
-        atr_distance = _get_atr_stop_distance(trade.ticker) if is_first_arm else None
+        atr_distance = _get_atr_stop_distance(user_id, trade.ticker) if is_first_arm else None
         candidate_stop = microgrid_strategy.compute_trailing_stop(
             is_first_arm=is_first_arm,
             ref_price=ref_price,
@@ -1859,6 +1863,7 @@ def _trigger_dca_buys(
         return
 
     multipliers = _parse_dca_scenario(settings.dca_scenario)
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
 
     for trade in candidates:
         next_level = trade.dca_level + 1
@@ -1867,8 +1872,8 @@ def _trigger_dca_buys(
             continue  # grid_anchor_price=0 (np. stara pozycja sprzed migracji) - DCA celowo wyłączone
 
         current_price = price_feed.get_live_price(
-            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
-            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+            market_keys.get("finnhub_api_key"), trade.ticker,
+            market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
         )
         if current_price is None or current_price <= 0 or current_price > trigger_price:
             continue  # cena jeszcze nie spadła dość nisko (albo brak danych) - nic do zrobienia
@@ -1881,9 +1886,9 @@ def _trigger_dca_buys(
         # zapytanie sieciowe.
         if microgrid_strategy.SHOCK_FILTER_ENABLED:
             shock_candles = price_feed.get_mini_chart_ohlc(
-                current_app.config.get("FINNHUB_API_KEY"), trade.ticker, days=ATR_LOOKBACK_DAYS,
-                alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
-                alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
+                market_keys.get("finnhub_api_key"), trade.ticker, days=ATR_LOOKBACK_DAYS,
+                alpaca_api_key=market_keys.get("alpaca_api_key"),
+                alpaca_api_secret=market_keys.get("alpaca_api_secret"),
             )
             atr = _compute_atr(shock_candles, ATR_PERIOD)
             atr_pct = (atr / current_price) if atr is not None and current_price > 0 else None
@@ -2380,13 +2385,14 @@ def tick(app) -> None:
             # panic-sell po przekroczeniu progu potrafi zrealizować stratę
             # dokładnie w dołku. Bot przestaje DOKŁADAĆ, resztą zarządzasz ręcznie.
             if not settings.is_paper_trading:
+                _daily_loss_market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
                 breach = bot_entry_filters.check_daily_loss_limit(
                     user_id,
                     settings,
                     lambda ticker: price_feed.get_live_price(
-                        current_app.config.get("FINNHUB_API_KEY"), ticker,
-                        current_app.config.get("ALPACA_API_KEY"),
-                        current_app.config.get("ALPACA_API_SECRET"),
+                        _daily_loss_market_keys.get("finnhub_api_key"), ticker,
+                        _daily_loss_market_keys.get("alpaca_api_key"),
+                        _daily_loss_market_keys.get("alpaca_api_secret"),
                     ),
                 )
                 if breach is not None:
@@ -2612,15 +2618,16 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
         bot_entry_filters.HURST_LOOKBACK_DAYS if bot_entry_filters.HURST_FILTER_ENABLED
         else bot_entry_filters.TREND_LOOKBACK_DAYS
     )
+    _entries_market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
     scored, stats = bot_entry_filters.rank_candidates(
         eligible,
         settings,
         candles_getter=lambda ticker: price_feed.get_mini_chart_ohlc(
-            current_app.config.get("FINNHUB_API_KEY"),
+            _entries_market_keys.get("finnhub_api_key"),
             ticker,
             days=scoring_days,
-            alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
-            alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
+            alpaca_api_key=_entries_market_keys.get("alpaca_api_key"),
+            alpaca_api_secret=_entries_market_keys.get("alpaca_api_secret"),
         ),
     )
 
@@ -2719,9 +2726,10 @@ def _enter_position(
         _log(user_id, "ERROR", f"{asset.ticker}: brak zapisanego klucza API demo.")
         return False
 
+    market_keys = get_decrypted_market_data_keys(user_id, master_key)
     price = price_feed.get_live_price(
-        current_app.config.get("FINNHUB_API_KEY"), asset.ticker,
-        current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+        market_keys.get("finnhub_api_key"), asset.ticker,
+        market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
     )
     if price is None or price <= 0:
         _log(user_id, "ERROR", f"{asset.ticker}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
@@ -2895,10 +2903,13 @@ def daily_report(app) -> None:
             unrealized_total = Decimal("0")
             unrealized_known = 0
             open_lines = []
+            _report_market_keys = get_decrypted_market_data_keys(
+                settings.user_id, bot_credentials.get_master_key(settings.user_id),
+            )
             for t in open_trades:
                 price = price_feed.get_live_price(
-                    current_app.config.get("FINNHUB_API_KEY"), t.ticker,
-                    current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+                    _report_market_keys.get("finnhub_api_key"), t.ticker,
+                    _report_market_keys.get("alpaca_api_key"), _report_market_keys.get("alpaca_api_secret"),
                 )
                 if price is None:
                     open_lines.append(f"  OTWARTA {t.ticker}: brak żywej ceny")

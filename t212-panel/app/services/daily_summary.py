@@ -34,6 +34,7 @@ from ..models import ActiveTrade, EODSettings, EODTrade, RiskSettings, SignalSet
 from ..routes.api_keys import get_decrypted_credentials
 from ..utils import current_environment, telegram_env_tag
 from . import bot_credentials, price_feed, telegram_notify
+from .market_data_keys import get_decrypted_market_data_keys
 from .t212_client import T212APIError, T212Client
 
 _AMSTERDAM_TZ = pytz.timezone("Europe/Amsterdam")
@@ -92,9 +93,11 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper",
     unrealized = Decimal("0")
     unrealized_unpriced = 0
     open_positions = []  # [(ticker, pnl, currency)] - patrz telegram_commands.py::_status_message
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
     for t in open_trades:
         price = price_feed.get_live_price(
-            _api_key(), t.ticker, _alpaca_key(), _alpaca_secret(),
+            market_keys.get("finnhub_api_key"), t.ticker,
+            market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
         )
         if price is None or price <= 0:
             unrealized_unpriced += 1
@@ -110,21 +113,6 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper",
         "unrealized": unrealized, "open_n": len(open_trades), "unrealized_unpriced": unrealized_unpriced,
         "open_positions": open_positions,
     }
-
-
-def _api_key() -> str | None:
-    from flask import current_app
-    return current_app.config.get("FINNHUB_API_KEY")
-
-
-def _alpaca_key() -> str | None:
-    from flask import current_app
-    return current_app.config.get("ALPACA_API_KEY")
-
-
-def _alpaca_secret() -> str | None:
-    from flask import current_app
-    return current_app.config.get("ALPACA_API_SECRET")
 
 
 def _account_total(user_id: int) -> Decimal | None:

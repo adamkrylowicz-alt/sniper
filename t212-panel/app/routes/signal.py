@@ -21,6 +21,7 @@ from .. import cipher
 from ..extensions import db
 from ..models import ApiKeySet, Instrument, RiskSettings, SignalAsset, SignalAuditLog, SignalSettings, SignalTrade, User
 from ..services import bot_credentials, price_feed, signal_engine
+from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.t212_client import T212APIError, T212Client
 from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
@@ -191,9 +192,10 @@ def update_entry_amount(asset_id):
 def asset_prices():
     """Cena na żywo + przybliżona liczba akcji dla WSZYSTKICH aktywów strategii naraz - ten sam wzorzec co routes/bot.py::bot_asset_prices."""
     user_id = current_user_id()
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, current_master_key())
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     result = {}
     for asset in SignalAsset.query.filter_by(user_id=user_id, environment=current_environment(user_id)).all():
@@ -435,9 +437,10 @@ def adopt_position():
     if quantity <= 0:
         return jsonify(ok=False, error=f"{ticker}: ilość w portfelu wynosi 0."), 400
 
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, current_master_key())
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
     candles = price_feed.get_mini_chart_ohlc(
         api_key, ticker, days=signal_engine.SIGNAL_LOOKBACK_DAYS,
         alpaca_api_key=alpaca_key, alpaca_api_secret=alpaca_secret,

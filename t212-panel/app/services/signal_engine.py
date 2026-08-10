@@ -77,6 +77,7 @@ from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
 from . import bot_credentials, diagnostics, market_hours, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
+from .market_data_keys import get_decrypted_market_data_keys
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import signal_strategy
 from .strategy.microgrid_strategy import compute_equity_scaled_amount
@@ -281,10 +282,11 @@ def close_trade_manual(user_id: int, trade: SignalTrade) -> tuple[bool, str]:
     wzorzec co `bot_engine.py::adopt_confirmed_signal`). Zwraca (ok, msg)
     zamiast `jsonify` - wołający (route czy Telegram) decyduje o prezentacji.
     """
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
-    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    price = price_feed.get_live_price(
+        market_keys.get("finnhub_api_key"), trade.ticker,
+        market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+    )
     name = ticker_display_name(trade.ticker)
 
     if trade.is_paper:
@@ -481,9 +483,10 @@ def _process_entries(
         )
         return  # limit otwartych pozycji osiągnięty (patrz SignalSettings.max_concurrent_positions) - nic nowego dziś
 
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     # ZMIANA 2026-08-05 (Adam: "czy spr tez inne i wybiera najlepsze czy wali
     # po kolei i spr czy sie lapia?" -> "napraw to") - do tej pory ta pętla
@@ -713,6 +716,7 @@ def _retry_pending_buys(
         return
 
     pending_by_id = {str(o.get("id")): o for o in pending}
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
 
     for trade in candidates:
         pending_order = pending_by_id.get(trade.buy_order_id)
@@ -723,8 +727,8 @@ def _retry_pending_buys(
             continue  # częściowo już wypełnione - nie anulujemy w połowie, niech dokończy
 
         current_price = price_feed.get_live_price(
-            current_app.config.get("FINNHUB_API_KEY"), trade.ticker,
-            current_app.config.get("ALPACA_API_KEY"), current_app.config.get("ALPACA_API_SECRET"),
+            market_keys.get("finnhub_api_key"), trade.ticker,
+            market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
         )
         if current_price is None or current_price <= 0:
             _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
@@ -888,9 +892,10 @@ def _manage_exits(
     # stop-loss - ochrona zysku, patrz
     # [[feedback_snajper_profit_protection_priority]]) leci dalej normalnie,
     # bo nie potrzebuje pending wcale (tylko ceny z Finnhub/Alpaca/Yahoo).
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     for trade in open_trades:
         if not market_hours.is_position_management_hours(trade.currency):
@@ -961,9 +966,10 @@ def _manage_paper_exits(user_id: int, settings: SignalSettings) -> None:
     if not open_trades:
         return
 
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     for trade in open_trades:
         if not market_hours.is_position_management_hours(trade.currency):

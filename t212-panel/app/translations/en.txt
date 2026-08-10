@@ -117,6 +117,13 @@ Usuń|||Delete
 Środowisko|||Environment
 Wygeneruj w aplikacji T212: Ustawienia → API (Beta). Wartości są szyfrowane Twoim kluczem prywatnym zanim trafią do bazy — admin tej appki nie ma do nich dostępu.|||Generate it in the T212 app: Settings → API (Beta). Values are encrypted with your private key before they reach the database — this app's admin has no access to them.
 ZAPISZ (ZASZYFROWANE)|||SAVE (ENCRYPTED)
+KLUCZE DANYCH RYNKOWYCH (WŁASNE)|||MARKET DATA KEYS (YOUR OWN)
+Opcjonalne — bez nich appka i tak działa (Yahoo Finance jako darmowe źródło zapasowe), ale z własnymi kluczami dane są szybsze i pełniejsze. To TWOJE klucze, nie admina appki — darmowe konto na finnhub.io / alpaca.markets wystarczy.|||Optional — the app works fine without them (Yahoo Finance as a free fallback source), but your own keys give faster, fuller data. These are YOUR keys, not the app admin's — a free account at finnhub.io / alpaca.markets is enough.
+zostaw puste, żeby nie zmieniać|||leave empty to keep unchanged
+Adres własnej bramki IBKR (opcjonalne, zaawansowane)|||Your own IBKR gateway address (optional, advanced)
+Port bramki IBKR|||IBKR gateway port
+IBKR wymaga WŁASNEJ, samodzielnie uruchomionej bramki IB Gateway - to nie jest zwykły klucz. Bez tego pola appka używa wspólnej bramki (tylko wykresy, nie handel) jak dotychczas.|||IBKR requires your OWN, self-hosted IB Gateway - this isn't a simple key. Without this field the app uses the shared gateway (charts only, not trading) like before.
+Podaj Alpaca key i secret razem, oba pola.|||Enter the Alpaca key and secret together, both fields.
 ← Wróć do Ustawień|||← Back to Settings
 
 # --- templates/pie_list.html + pie_detail.html + instrument_detail.html ---

@@ -37,6 +37,7 @@ from ..models import (
 from ..routes.api_keys import get_decrypted_credentials
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name as _display_name
 from . import bot_credentials, bot_engine, daily_summary, eod_engine, price_feed, signal_engine, telegram_notify, weekend_guard
+from .market_data_keys import get_decrypted_market_data_keys
 from .t212_client import T212APIError, T212Client
 
 # Pozycje czekające na potwierdzenie /close (Adam, 2026-08-09) - "tak" w
@@ -245,12 +246,13 @@ def _close_trade(engine_name: str, trade) -> tuple[bool, str]:
 
     user_id = trade.user_id
     name = _display_name(trade.ticker)
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
-    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
-
     master_key = bot_credentials.get_master_key(user_id)
+    market_keys = get_decrypted_market_data_keys(user_id, master_key)
+    price = price_feed.get_live_price(
+        market_keys.get("finnhub_api_key"), trade.ticker,
+        market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+    )
+
     if master_key is None:
         return False, f"{name}: Micro-Grid nie ma aktywnych poświadczeń."
     env = current_environment(user_id)
@@ -351,12 +353,13 @@ def poll_and_handle(app) -> None:
                     telegram_notify.send_telegram_message(token, chat_id, "Nie znalazłem otwartej pozycji do zamknięcia.")
                     continue
 
-                api_key = current_app.config.get("FINNHUB_API_KEY")
-                alpaca_key = current_app.config.get("ALPACA_API_KEY")
-                alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+                market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
                 lines = ["⚠️ Na pewno zamknąć (Market Sell)?", ""]
                 for name, trade in matches:
-                    price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+                    price = price_feed.get_live_price(
+                        market_keys.get("finnhub_api_key"), trade.ticker,
+                        market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+                    )
                     cost_basis = getattr(trade, "average_price", None) or trade.buy_price
                     pnl_txt = ""
                     if price:

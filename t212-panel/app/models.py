@@ -122,6 +122,51 @@ class ApiKeySet(db.Model):
         return f"<ApiKeySet user_id={self.user_id} env={self.environment}>"
 
 
+class MarketDataKeySet(db.Model):
+    """
+    Klucze do ŹRÓDEŁ DANYCH CENOWYCH (Finnhub/Alpaca) + opcjonalny adres
+    własnej bramki IBKR - per user (2026-08-10, Adam: "kazdy user ma miec
+    swoje klucze... nie moze korzystac z moich"). Jeden wiersz na usera
+    (NIE per environment jak ApiKeySet - te klucze nie mają rozróżnienia
+    demo/live, to źródła danych rynkowych, nie broker).
+
+    encrypted_finnhub_key: pojedynczy string zaszyfrowany master_key.
+    encrypted_alpaca: JSON {"api_key": "...", "api_secret": "..."}
+    zaszyfrowany razem, ten sam powód co ApiKeySet.encrypted_key (klucz i
+    sekret Alpaca nie mogą się rozjechać).
+
+    ibkr_host/ibkr_port: JAWNY tekst, NIE szyfrowany - to adres sieciowy
+    (host:port) WŁASNEJ bramki IB Gateway usera, nie sekret. Brak (None) =
+    price_feed.py spada na wspólną, domyślną bramkę (patrz
+    IB_GATEWAY_HOST/PORT) - świadomie łagodniejsze niż Finnhub/Alpaca, bo
+    IBKR tu służy WYŁĄCZNIE do wykresów, nie do decyzji tradingowych.
+
+    Brak wiersza / puste pola = get_decrypted_market_data_keys() zwraca same
+    None - price_feed.py ma już wbudowany bezpieczny fallback na Yahoo
+    Finance (nie wymaga żadnego klucza), więc user bez tych kluczy nie traci
+    funkcjonalności appki, tylko jakość/redundancję danych.
+    """
+    __tablename__ = "market_data_key_sets"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, unique=True)
+
+    encrypted_finnhub_key = db.Column(db.LargeBinary, nullable=True)
+    encrypted_alpaca = db.Column(db.LargeBinary, nullable=True)
+
+    ibkr_host = db.Column(db.String(255), nullable=True)
+    ibkr_port = db.Column(db.Integer, nullable=True)
+
+    created_at = db.Column(db.DateTime, default=dt.datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=dt.datetime.utcnow, onupdate=dt.datetime.utcnow,
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<MarketDataKeySet user_id={self.user_id}>"
+
+
 class Instrument(db.Model):
     """
     Lokalny CACHE listy instrumentów z T212 (/equity/metadata/instruments).

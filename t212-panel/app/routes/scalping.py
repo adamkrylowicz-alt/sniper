@@ -30,11 +30,26 @@ from flask import Blueprint, current_app, jsonify, render_template, request
 from ..extensions import db
 from ..models import ActiveTrade, BotAsset, EODAsset, EODTrade, Instrument, OrderLog, SignalAsset, SignalTrade
 from ..services import logo_cache, price_feed
+from ..services.finnhub_client import FinnhubClient
+from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
 from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
+
+
+def _user_finnhub_client() -> FinnhubClient | None:
+    """
+    Klient Finnhub zbudowany z WŁASNEGO klucza zalogowanego usera (10.08.2026
+    - koniec ze wspólnym FINNHUB_API_KEY z .env, patrz market_data_keys.py).
+    None gdy user nie ma zapisanego klucza - wywołujący ma wtedy zwrócić 503
+    z jasnym komunikatem, zamiast fallować cicho na Yahoo (w przeciwieństwie
+    do get_live_price - te trzy endpointy SĄ czysto finnhubowe, bez fallbacku).
+    """
+    market_keys = get_decrypted_market_data_keys(current_user_id(), current_master_key())
+    finnhub_key = market_keys.get("finnhub_api_key")
+    return FinnhubClient(finnhub_key) if finnhub_key else None
 
 scalping_bp = Blueprint("scalping", __name__, url_prefix="/warp")
 
@@ -588,12 +603,12 @@ def quote():
     Odpytywane przez JS co dynamicznie obliczony interwał
     (ceil(liczba_kafelkow * 1.2) sekund, patrz warp.js/focus.js).
     """
-    from ..extensions import finnhub
+    finnhub = _user_finnhub_client()
     ticker = request.args.get("ticker", "").strip()
     if not ticker:
         return jsonify(ok=False, error="Brak tickera."), 400
     if not finnhub:
-        return jsonify(ok=False, error="Finnhub nie skonfigurowany - brak FINNHUB_API_KEY w .env."), 503
+        return jsonify(ok=False, error="Brak własnego klucza Finnhub - dodaj go w Ustawieniach -> Klucze API."), 503
 
     data = finnhub.get_quote(ticker)
     if not data:
@@ -609,12 +624,12 @@ def sparkline():
     Dane historyczne (7 dni, ceny zamknięcia) do miniaturowego wykresu.
     Cache 1h po stronie serwera - dane dzienne nie zmieniają się co minutę.
     """
-    from ..extensions import finnhub
+    finnhub = _user_finnhub_client()
     ticker = request.args.get("ticker", "").strip()
     if not ticker:
         return jsonify(ok=False, error="Brak tickera."), 400
     if not finnhub:
-        return jsonify(ok=False, error="Finnhub nie skonfigurowany."), 503
+        return jsonify(ok=False, error="Brak własnego klucza Finnhub - dodaj go w Ustawieniach -> Klucze API."), 503
 
     closes = finnhub.get_sparkline(ticker)
     if not closes:
@@ -633,12 +648,12 @@ def stats():
     finnhub_client.py - te liczby nie zmieniaja sie w ciagu dnia, jeden
     request na wejscie na strone (nie pollowane).
     """
-    from ..extensions import finnhub
+    finnhub = _user_finnhub_client()
     ticker = request.args.get("ticker", "").strip()
     if not ticker:
         return jsonify(ok=False, error="Brak tickera."), 400
     if not finnhub:
-        return jsonify(ok=False, error="Finnhub nie skonfigurowany."), 503
+        return jsonify(ok=False, error="Brak własnego klucza Finnhub - dodaj go w Ustawieniach -> Klucze API."), 503
 
     financials = finnhub.get_basic_financials(ticker)
     profile = finnhub.get_profile(ticker)
@@ -684,20 +699,24 @@ def candles():
     if not ticker:
         return jsonify(ok=False, error="Brak tickera."), 400
 
+    market_keys = get_decrypted_market_data_keys(current_user_id(), current_master_key())
+
     interval = request.args.get("interval", default="", type=str)
     if interval:
         candles = price_feed.get_intraday_chart(
             ticker, interval,
-            current_app.config.get("ALPACA_API_KEY"),
-            current_app.config.get("ALPACA_API_SECRET"),
+            market_keys.get("alpaca_api_key"),
+            market_keys.get("alpaca_api_secret"),
+            market_keys.get("ibkr_host"),
+            market_keys.get("ibkr_port"),
         )
         if not candles:
             return jsonify(ok=False, error=f"Brak danych ({interval}) dla {ticker} (poza sesją albo źródło niedostępne)."), 404
         return jsonify(ok=True, ticker=ticker, candles=candles)
 
-    from ..extensions import finnhub
+    finnhub = FinnhubClient(market_keys["finnhub_api_key"]) if market_keys.get("finnhub_api_key") else None
     if not finnhub:
-        return jsonify(ok=False, error="Finnhub nie skonfigurowany."), 503
+        return jsonify(ok=False, error="Brak własnego klucza Finnhub - dodaj go w Ustawieniach -> Klucze API."), 503
 
     days = request.args.get("days", default=30, type=int) or 30
     days = min(max(days, 1), 1825)  # 1 dzien .. 5 lat

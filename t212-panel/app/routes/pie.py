@@ -26,9 +26,10 @@ from ..extensions import db
 from ..i18n import current_lang, t
 from ..models import Instrument, Pie, PieAsset
 from ..services import price_feed
+from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.market_hours import is_market_open as _market_open
 from ..services.t212_client import T212APIError
-from ..utils import avatar_hue, current_environment, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
 from .scalping import _get_client, _get_guard, _log_order
 
 pie_bp = Blueprint("pie", __name__, url_prefix="/pie")
@@ -279,11 +280,12 @@ def charts(pie_id):
     """
     pie = _get_owned_pie(pie_id)
     tickers = [a.ticker for a in pie.assets]
-    api_key = current_app.config.get("FINNHUB_API_KEY")
+    market_keys = get_decrypted_market_data_keys(current_user_id(), current_master_key())
+    api_key = market_keys.get("finnhub_api_key")
     data = price_feed.get_mini_charts_ohlc(
         api_key, tickers,
-        alpaca_api_key=current_app.config.get("ALPACA_API_KEY"),
-        alpaca_api_secret=current_app.config.get("ALPACA_API_SECRET"),
+        alpaca_api_key=market_keys.get("alpaca_api_key"),
+        alpaca_api_secret=market_keys.get("alpaca_api_secret"),
     )
     return jsonify(ok=True, charts=data, has_api_key=bool(api_key))
 

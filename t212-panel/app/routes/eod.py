@@ -19,6 +19,7 @@ from .. import cipher
 from ..extensions import db
 from ..models import ApiKeySet, EODAsset, EODAuditLog, EODSettings, EODTrade, Instrument, RiskSettings, SignalSettings, User
 from ..services import bot_credentials, eod_engine, price_feed
+from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.t212_client import T212APIError, T212Client
 from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
 from .api_keys import get_decrypted_credentials
@@ -190,9 +191,10 @@ def update_entry_amount(asset_id):
 @login_required
 def asset_prices():
     user_id = current_user_id()
-    api_key = current_app.config.get("FINNHUB_API_KEY")
-    alpaca_key = current_app.config.get("ALPACA_API_KEY")
-    alpaca_secret = current_app.config.get("ALPACA_API_SECRET")
+    market_keys = get_decrypted_market_data_keys(user_id, current_master_key())
+    api_key = market_keys.get("finnhub_api_key")
+    alpaca_key = market_keys.get("alpaca_api_key")
+    alpaca_secret = market_keys.get("alpaca_api_secret")
 
     result = {}
     for asset in EODAsset.query.filter_by(user_id=user_id, environment=current_environment(user_id)).all():

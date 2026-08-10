@@ -53,17 +53,18 @@ class Config:
 
     # Klucz do Finnhub (mini-wykresy w Smart Virtual Pie, patrz services/price_feed.py) -
     # źródło notowań NIEZALEŻNE od T212, żeby nie zjadać jego wąskiego rate limitu.
-    # Etap 1: jeden globalny klucz (jak dawniej T212_DEMO_API_KEY_TEMP) - mechanizm
-    # "klucz per użytkownik z fallbackiem na globalny" (PDF sekcja 6.1) to Etap 3.
+    # Etap 3 (10.08.2026, Adam: "kazdy user ma miec swoje klucze... nie moze
+    # korzystac z moich") dotarty - wszystkie LIVE trasy (routes/*.py,
+    # services/bot_engine.py/signal_engine.py/eod_engine.py) czytają teraz
+    # klucz Finnhub/Alpaca WŁASNY usera (models.py::MarketDataKeySet,
+    # services/market_data_keys.py), nie ten globalny. Te dwie zmienne
+    # zostają WYŁĄCZNIE dla backtest/data.py (jednoosobowe narzędzie
+    # deweloperskie Adama, poza zakresem "per user").
     # Darmowe konto: https://finnhub.io/register
     FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY")
 
-    # Alpaca Market Data API - główne źródło ceny "na żywo" dla tickerów
-    # `*_US_EQ` w bocie (patrz services/price_feed.py::get_live_price),
-    # Finnhub->Yahoo zostaje jako fallback. Dodane 2026-07-22 na życzenie
-    # Adama (nowy dostawca danych dla rynków USA). Endpoint Market Data jest
-    # wspólny dla kluczy paper/live - klucz zaczynający się na "PK" działa
-    # tu tak samo jak klucz live.
+    # Alpaca Market Data API - jak wyżej, WYŁĄCZNIE dla backtest/data.py od
+    # 10.08.2026 - live trasy mają własny klucz usera.
     ALPACA_API_KEY = os.environ.get("ALPACA_API_KEY")
     ALPACA_API_SECRET = os.environ.get("ALPACA_API_SECRET")
 

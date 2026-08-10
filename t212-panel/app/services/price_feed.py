@@ -496,7 +496,10 @@ IB_GATEWAY_HOST = "127.0.0.1"
 IB_GATEWAY_PORT = 4002  # PAPER API - patrz docker-compose.yml::ib-gateway
 
 
-def _fetch_ibkr_intraday(symbol: str, exchange: str, currency: str, bar_size: str, lookback_days: int) -> list[dict] | None:
+def _fetch_ibkr_intraday(
+    symbol: str, exchange: str, currency: str, bar_size: str, lookback_days: int,
+    ibkr_host: str | None = None, ibkr_port: int | None = None,
+) -> list[dict] | None:
     """
     Świece śróddzienne z IBKR (ten sam kontener/gateway co backtest/ibkr_data.py,
     ale timeouty KRÓTKIE - to blokuje wątek żądania Flask, strona nie może
@@ -504,14 +507,21 @@ def _fetch_ibkr_intraday(symbol: str, exchange: str, currency: str, bar_size: st
     padnie/zwolni). Fail-open jak Finnhub/Yahoo wszędzie indziej w tym pliku -
     KAŻDY błąd (brak połączenia, timeout, brak kontraktu) -> None, żeby
     przejściowa awaria źródła nie wywalała strony instrumentu.
+
+    ibkr_host/ibkr_port: WŁASNA bramka usera (10.08.2026, opcjonalne, patrz
+    models.py::MarketDataKeySet.ibkr_host) - None (brak własnej) spada na
+    IB_GATEWAY_HOST/PORT, wspólną bramkę jak dotychczas. Świadomie łagodniej
+    niż Finnhub/Alpaca - to tylko wykresy, nie decyzje tradingowe.
     """
+    host = ibkr_host or IB_GATEWAY_HOST
+    port = ibkr_port or IB_GATEWAY_PORT
     try:
         from ib_insync import IB, Contract
         import random
 
         ib = IB()
         try:
-            ib.connect(IB_GATEWAY_HOST, IB_GATEWAY_PORT, clientId=random.randint(100, 999999), readonly=True, timeout=8)
+            ib.connect(host, port, clientId=random.randint(100, 999999), readonly=True, timeout=8)
         except Exception:
             return None
         try:
@@ -537,6 +547,7 @@ def _fetch_ibkr_intraday(symbol: str, exchange: str, currency: str, bar_size: st
 
 def get_intraday_chart(
     ticker: str, interval: str, alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
+    ibkr_host: str | None = None, ibkr_port: int | None = None,
 ) -> list[dict] | None:
     """
     Świece śróddzienne (1min/5min/15min/1h) do wykresu na stronie szczegółów
@@ -585,7 +596,7 @@ def get_intraday_chart(
             return None
         symbol, exchange, currency = ibkr_contract
         bar_size = _IBKR_BAR_SIZES[interval]
-        candles = _fetch_ibkr_intraday(symbol, exchange, currency, bar_size, lookback_days)
+        candles = _fetch_ibkr_intraday(symbol, exchange, currency, bar_size, lookback_days, ibkr_host, ibkr_port)
 
     _cache_1m[cache_key] = (now, candles)
     return candles

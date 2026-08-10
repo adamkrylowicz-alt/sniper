@@ -45,17 +45,6 @@ def create_app(config_object: type = Config) -> Flask:
     db.init_app(app)
     socketio.init_app(app, cors_allowed_origins="*")
 
-    finnhub_key = app.config.get("FINNHUB_API_KEY")
-    if finnhub_key:
-        from .services.finnhub_client import FinnhubClient
-        import app.extensions as _ext
-        _ext.finnhub = FinnhubClient(finnhub_key)
-    else:
-        import logging
-        logging.getLogger(__name__).warning(
-            "FINNHUB_API_KEY nie ustawiony w .env - ceny live i wykresy niedostepne."
-        )
-
     with app.app_context():
         db.create_all()
 
