@@ -990,6 +990,15 @@ img.tile__logo {
         flex-wrap: nowrap;
         justify-content: flex-start;
         gap: 10px;
+        min-width: 0; /* KRYTYCZNE - domyślnie grid-item ma min-width:auto, więc
+                         mimo overflow-x:auto na .topbar__links poniżej, SAM
+                         .topbar__nav odmawiał skurczenia się poniżej sumy
+                         swoich flex-shrink:0 dzieci i rozpychał grid-column
+                         (1fr) → .topbar → body/html na całą swoją naturalną
+                         szerokość. Efekt na żywo (Adam, telefon, 10.08): cała
+                         strona miała realny poziomy scroll (911px na 360px
+                         ekranie), przewijanie topbaru w prawo przesuwało
+                         WSZYSTKO, nie tylko przyciski. */
     }
     .topbar__links {
         display: flex;
