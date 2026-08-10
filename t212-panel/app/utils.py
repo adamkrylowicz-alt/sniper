@@ -151,12 +151,16 @@ def telegram_env_tag(user_id: int) -> str:
     """
     Krótki, wizualnie mocny tag środowiska do KAŻDEJ wiadomości Telegram
     (Adam, 2026-08-07: "zrób coś żeby rozróżniać konto dev od real w
-    telegramie") - dev/prod dzielą tego samego bota Telegram (@Snajper2026_
-    bot) i ten sam chat_id, więc bez tego nie dało się na pierwszy rzut oka
-    odróżnić, czy alert/sygnał dotyczy prawdziwych pieniędzy czy demo. Patrz
-    current_environment() wyżej - "live" tu ZAWSZE znaczy realne pieniądze
-    (patrz [[feedback_snajper_is_paper_trading_not_demo_flag]] w pamięci
-    Claude - is_paper_trading to coś innego, nie mylić).
+    telegramie"). Pierwotnie dev/prod miały dzielić jednego bota (@Snajper2026_
+    bot) i ten sam chat_id, więc tag miał być JEDYNYM sposobem odróżnienia
+    alertu w jednej rozmowie. Od 10.08.2026 dev/prod mają OSOBNE boty
+    (@Snajperdev2026_bot / @Snajper2026_bot, potwierdzone Adamowi, świadomie
+    zostaje tak - jasny fizyczny podział, zero ryzyka pomylenia alertu demo z
+    realnymi pieniędzmi) - tag zostaje jako dodatkowe zabezpieczenie/
+    czytelność w treści samej wiadomości, nie jedyny sposób rozróżnienia.
+    Patrz current_environment() wyżej - "live" tu ZAWSZE znaczy realne
+    pieniądze (patrz [[feedback_snajper_is_paper_trading_not_demo_flag]] w
+    pamięci Claude - is_paper_trading to coś innego, nie mylić).
     """
     return "💰 LIVE" if current_environment(user_id) == "live" else "🧪 DEMO"
 
