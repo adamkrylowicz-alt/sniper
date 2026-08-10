@@ -109,6 +109,7 @@
     {% if not open_positions %}
     <p class="auth-box__hint">{{ t("Brak otwartych pozycji.") }}</p>
     {% else %}
+    <div class="table-scroll">
     <table class="history-table" id="signal-positions-table">
         <thead>
             <tr>
@@ -155,6 +156,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% endif %}
     </div>
 
@@ -259,6 +261,7 @@
     {% if not logs %}
     <p class="auth-box__hint" id="signal-log-empty-hint">{{ t("Brak wpisów.") }}</p>
     {% else %}
+    <div class="table-scroll">
     <table class="history-table" id="signal-log-table">
         <thead>
             <tr>
@@ -277,6 +280,7 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
     {% endif %}
     </div>
 
