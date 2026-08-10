@@ -2386,6 +2386,8 @@ img.focus-tile__logo {
 
 .focus-footer {
     display: flex;
+    flex-wrap: wrap;
+    row-gap: 4px;
     justify-content: space-between;
     align-items: center;
     width: 100%;
@@ -2394,6 +2396,13 @@ img.focus-tile__logo {
     color: var(--text-muted);
     padding: 0 8px;
 }
+
+/* Flex-child default min-width:auto nie pozwala tej linijce skurczyć się
+   poniżej naturalnej szerokości tekstu - na wąskich telefonach (~390px)
+   3 elementy w jednym wierszu (space-between) przelewały stronę o kilka px
+   w bok (znalezione 10.08.2026, ten sam wzorzec co topbar__nav wcześniej
+   tego dnia). flex-wrap wyżej pozwala im spaść do 2 linii zamiast przelewać. */
+.focus-footer > * { min-width: 0; }
 
 .focus-footer__info { color: var(--text-muted); }
 
