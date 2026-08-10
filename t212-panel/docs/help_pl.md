@@ -8,11 +8,24 @@ Panel do tradingu na Trading 212: ręczne zlecenia (Warp Mode/Focus) + trzy auto
 - **Zapomniane hasło** — `/auth/recover`, potrzebny kod odzyskiwania z rejestracji.
 - Klucze API do T212 są szyfrowane Twoim hasłem (zero-knowledge) — nikt poza Tobą nie może ich odczytać, nawet z dostępem do bazy danych.
 
-## Pierwsze kroki
+## Pierwsze kroki (od rejestracji do działającego silnika)
 
-1. **Ustawienia → Klucze API** — wklej klucz i sekret z aplikacji T212 (Ustawienia → API (Beta) w apce T212). Osobno dla konta demo i live.
-2. **Ustawienia → Watchlist** — wyszukaj interesujące Cię spółki i dodaj do ulubionych (max 9 do siatki Warp Mode).
-3. Przełącznik **DEMO/LIVE** w górnym pasku (obok statusu T212) pokazuje i przełącza, na którym koncie aktualnie pracujesz. **LIVE = prawdziwe pieniądze** — czerwony, migoczący, zawsze widoczny.
+1. **Zarejestruj się i zapisz kod odzyskiwania** (patrz wyżej) — bez tego nie da się odzyskać dostępu po zapomnianym haśle.
+
+2. **Ustawienia → Klucze API → klucz T212** (wymagane do handlu) — wklej klucz i sekret z aplikacji T212 (Ustawienia → API (Beta) w apce T212), osobno dla konta demo i live. Przełącznik **DEMO/LIVE** w górnym pasku pokazuje i przełącza, na którym koncie aktualnie pracujesz — **LIVE = prawdziwe pieniądze**, czerwony i zawsze widoczny.
+
+3. **Ustawienia → Klucze API → dane rynkowe (Finnhub/Alpaca)** — **to Twoje WŁASNE klucze, nie admina appki.** Darmowe konto na [finnhub.io](https://finnhub.io/register) i/albo [alpaca.markets](https://alpaca.markets) wystarczy. Appka działa i bez nich (spada na Yahoo Finance, które nie wymaga żadnego klucza), ale z własnymi kluczami ceny/wykresy są szybsze i pełniejsze, bez dzielenia limitu zapytań z innymi userami.
+
+4. **IBKR (opcjonalnie, zaawansowane)** — to NIE jest zwykły klucz, tylko adres (host:port) Twojej WŁASNEJ, samodzielnie uruchomionej bramki IB Gateway (osobna aplikacja od Interactive Brokers, musi cały czas działać). Bez tego pola appka używa wspólnej bramki jak dotychczas — dotyczy wyłącznie wykresów świecowych na stronie instrumentu, nigdy decyzji tradingowych.
+
+5. **Ustawienia → Watchlist** (opcjonalnie, do trybów ręcznych Warp/Focus) — wyszukaj interesujące Cię spółki i dodaj do ulubionych (max 9 do siatki Warp Mode).
+
+6. **Uruchomienie silnika automatycznego** (Bot / Sygnał / EOD — ten sam schemat dla każdego):
+   - Wejdź na stronę silnika (link w górnym pasku).
+   - W sekcji **"Aktywa [silnika]"** dodaj przynajmniej jeden ticker + kwotę wejścia — bez tego aktywny silnik nie ma czego kupować.
+   - (opcjonalnie) dostosuj **"Ustawienia ryzyka"** — domyślne wartości są bezpieczne do startu.
+   - W sekcji **"Aktywacja"** wpisz swoje hasło i kliknij **"Uruchom"** — to WŁĄCZA silnik (na czas działania appki odszyfrowuje Twój klucz T212 w pamięci serwera, żeby mógł samodzielnie składać zlecenia).
+   - Silnik zacznie działać od najbliższego cyklu (do ~60 sekund) — sprawdzisz to po statusie "AKTYWNY" w banerze u góry strony i nowych wpisach w **"Dzienniku"** na dole.
 
 ## Górny pasek nawigacji
 
