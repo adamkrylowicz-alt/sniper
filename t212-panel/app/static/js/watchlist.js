@@ -38,8 +38,8 @@ function renderResults(results) {
             row.appendChild(img);
         } else {
             const avatar = document.createElement("span");
-            avatar.className = "watchlist-results__avatar";
-            avatar.style.background = `hsl(${avatarHue(r.ticker)}, 55%, 38%)`;
+            avatar.className = "watchlist-results__avatar avatar--hued";
+            avatar.style.setProperty("--avatar-hue", avatarHue(r.ticker));
             avatar.textContent = r.ticker[0].toUpperCase();
             row.appendChild(avatar);
         }

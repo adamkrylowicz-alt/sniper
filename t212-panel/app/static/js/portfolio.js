@@ -129,7 +129,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
     const rows = positions.map((p) => {
         const avatar = p.logo_filename
             ? `<img class="pie-asset-row__avatar" style="width:28px;height:28px" src="/static/logos/${encodeURIComponent(p.logo_filename)}" alt="${escapeHtml(p.display_ticker)}">`
-            : `<span class="pie-asset-row__avatar" style="width:28px;height:28px;font-size:12px;background: hsl(${p.hue}, 55%, 38%);">${escapeHtml(p.initial)}</span>`;
+            : `<span class="pie-asset-row__avatar avatar--hued" style="width:28px;height:28px;font-size:12px;--avatar-hue: ${p.hue};">${escapeHtml(p.initial)}</span>`;
 
         const marketDot = p.market_open === null || p.market_open === undefined
             ? ""
@@ -180,6 +180,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
                 <span class="instrument-detail__position-value js-money ${pplClass(totalPpl)}" data-real="${totalPpl >= 0 ? "+" : ""}${totalPpl.toFixed(2)} (${totalPplPct >= 0 ? "+" : ""}${totalPplPct.toFixed(1)}%)"></span>
             </div>
         </div>
+        <div class="table-scroll">
         <table class="history-table" id="portfolio-table">
             <thead>
                 <tr>
@@ -194,7 +195,8 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
                 </tr>
             </thead>
             <tbody>${rows}</tbody>
-        </table>`;
+        </table>
+        </div>`;
     applyMoneyHiding();  // patrz common.js - totalValue/totalPpl wyżej mają świeże data-real, trzeba je od razu ukryć jeśli tryb aktywny
 }
 
