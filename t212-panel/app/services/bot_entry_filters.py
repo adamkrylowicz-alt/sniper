@@ -556,7 +556,7 @@ def compute_today_pnl(user_id: int, live_price_getter, settings: RiskSettings | 
         if trade.close_price is None:
             unpriced += 1
             continue
-        cost_basis = fx_adjusted_cost_basis(trade.buy_price, trade.currency, settings, trade.ticker)
+        cost_basis = fx_adjusted_cost_basis(trade.buy_price, trade.currency, settings, trade.ticker, trade.buy_order_id)
         realized += (trade.close_price - cost_basis) * trade.quantity
 
     unrealized = Decimal("0")
@@ -566,7 +566,7 @@ def compute_today_pnl(user_id: int, live_price_getter, settings: RiskSettings | 
         if price is None or price <= 0:
             unpriced += 1
             continue
-        cost_basis = fx_adjusted_cost_basis(trade.average_price, trade.currency, settings, trade.ticker)
+        cost_basis = fx_adjusted_cost_basis(trade.average_price, trade.currency, settings, trade.ticker, trade.buy_order_id)
         unrealized += (price - cost_basis) * trade.quantity
 
     return {

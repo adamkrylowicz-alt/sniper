@@ -97,7 +97,7 @@ def _engine_pnl_24h(user_id: int, trade_model, settings=None, is_paper_field: st
         # Micro-Grid liczy od average_price (koszt bazowy po DCA), Sygnał/EOD
         # od buy_price (jedno wejście, bez DCA) - oba modele mają buy_price,
         # tylko ActiveTrade ma DODATKOWO average_price jako właściwy koszt.
-        cost_basis = fx_adjusted_cost_basis(getattr(t, "average_price", None) or t.buy_price, t.currency, settings, t.ticker)
+        cost_basis = fx_adjusted_cost_basis(getattr(t, "average_price", None) or t.buy_price, t.currency, settings, t.ticker, t.buy_order_id)
         realized += (t.close_price - cost_basis) * t.quantity
 
     open_trades = trade_model.query.filter_by(user_id=user_id, status="OPEN", environment=env, **{is_paper_field: False}).all()
@@ -114,7 +114,7 @@ def _engine_pnl_24h(user_id: int, trade_model, settings=None, is_paper_field: st
             unrealized_unpriced += 1
             open_positions.append((t.ticker, None, t.currency))
             continue
-        cost_basis = fx_adjusted_cost_basis(getattr(t, "average_price", None) or t.buy_price, t.currency, settings, t.ticker)
+        cost_basis = fx_adjusted_cost_basis(getattr(t, "average_price", None) or t.buy_price, t.currency, settings, t.ticker, t.buy_order_id)
         pnl = (price - cost_basis) * t.quantity
         unrealized += pnl
         open_positions.append((t.ticker, pnl, t.currency))

@@ -194,15 +194,38 @@ FR_FTT_PCT = Decimal("0.004")
 FR_FTT_TICKERS = frozenset({"FPp_EQ", "SUp_EQ"})
 
 
-def fx_adjusted_cost_basis(cost_basis, currency: str, settings, ticker: str = "") -> object:
+# Prefiksy sztucznego buy_order_id nadawane przy adopcji już-posiadanej
+# pozycji (routes/bot.py::adopt_position + _auto_adopt_all_positions w
+# bot_engine.py) - w OBU przypadkach kupno NIGDY nie przeszło przez bota/API
+# (pozycja już leżała w portfelu T212, kupiona ręcznie w appce), więc
+# rozliczyła się natywnie w walucie instrumentu, BEZ konwersji. Odróżnia to
+# od realnego buy_order_id bota (numeryczne ID zwrócone przez T212 przy
+# _enter_position()) - tam zakup FAKTYCZNIE poszedł przez API, czyli przez
+# EUR (patrz FX round-trip nizej).
+_MANUAL_BUY_PREFIXES = ("ADOPTED-", "AUTOADOPTED-")
+
+
+def fx_adjusted_cost_basis(cost_basis, currency: str, settings, ticker: str = "", buy_order_id: str = "") -> object:
     """
     Podbija koszt bazowy (buy_price/average_price) o:
-    - round-trip koszt przewalutowania (2x fx_fee_pct) dla tickerów USD,
-      TYLKO gdy settings.fx_cost_adjustment_enabled (opt-in, per-user)
+    - koszt przewalutowania dla tickerów USD, TYLKO gdy
+      settings.fx_cost_adjustment_enabled (opt-in, per-user):
+        * kupno PRZEZ BOTA (realny buy_order_id z T212, obie nogi - kupno i
+          sprzedaż SL - lecą przez API czyli przez EUR) -> round-trip 2x fee
+        * kupno RĘCZNE, zaadoptowane przez bota (buy_order_id zaczyna się od
+          "ADOPTED-"/"AUTOADOPTED-" - patrz _MANUAL_BUY_PREFIXES wyżej;
+          zakup rozliczył się natywnie w USD bez konwersji, TYLKO ewentualna
+          sprzedaż botowym SL pójdzie przez API/EUR) -> tylko 1x fee
+      Adam, 2026-08-11: "jesi usa i kupione recznie za usd doliczaj fx tylko
+      przy sprzedazy... jesli sam bot kupi i sprzeda doliczaj fx x2" -
+      potwierdzone na żywo: WSZYSTKIE obecne ActiveTrade w bazie mają
+      buy_order_id="ADOPTED-..." (żadna pozycja nie została jeszcze kupiona
+      bezpośrednio przez _enter_position()), więc do tego dnia round-trip x2
+      był naliczany dla realnych pozycji błędnie (powinno być x1).
     - francuski FTT (FR_FTT_PCT, jednorazowo - podatek jest tylko przy
       kupnie, nie przy sprzedaży) dla tickerów z FR_FTT_TICKERS,
-      NIEZALEŻNIE od powyższego ustawienia (realny, zawsze naliczany koszt,
-      nie coś opcjonalnego jak próg FX)
+      NIEZALEŻNIE od powyższego (realny, zawsze naliczany koszt, T212 bierze
+      go nawet przy ręcznych kupnach - potwierdzone eksportem CSV)
     - żeby raportowany/liczony P&L odzwierciedlał realny pieniądz, nie
       surową różnicę cen instrumentu.
 
@@ -215,10 +238,14 @@ def fx_adjusted_cost_basis(cost_basis, currency: str, settings, ticker: str = ""
     identyczna logika w kilku miejscach zamiast kopiowanej.
 
     `settings` może być None (wywołujący bez skonfigurowanych ustawień) -
-    wtedy brak korekty FX (FTT nadal się liczy, patrz wyżej).
+    wtedy brak korekty FX (FTT nadal się liczy, patrz wyżej). Sygnał/EOD nie
+    mają mechanizmu adopcji (zawsze kupują same przez API) - pusty/brak
+    `buy_order_id` traktowany jak "kupno przez bota", czyli x2, co jest dla
+    nich zawsze poprawne.
     """
     if settings is not None and currency == "USD" and settings.fx_cost_adjustment_enabled:
-        cost_basis = cost_basis * (1 + settings.fx_fee_pct * 2)
+        multiplier = 1 if buy_order_id.startswith(_MANUAL_BUY_PREFIXES) else 2
+        cost_basis = cost_basis * (1 + settings.fx_fee_pct * multiplier)
     if ticker in FR_FTT_TICKERS:
         cost_basis = cost_basis * (1 + FR_FTT_PCT)
     return cost_basis

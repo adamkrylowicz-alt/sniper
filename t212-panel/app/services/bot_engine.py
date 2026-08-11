@@ -1591,7 +1591,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         # zero konwersji) ref_price == average_price, zero zmiany zachowania.
         # Francuski FTT nalicza się NIEZALEŻNIE od powyższego (patrz
         # utils.py::fx_adjusted_cost_basis - ten sam helper co reszta P&L).
-        ref_price = fx_adjusted_cost_basis(trade.average_price, trade.currency, settings, trade.ticker)
+        ref_price = fx_adjusted_cost_basis(trade.average_price, trade.currency, settings, trade.ticker, trade.buy_order_id)
 
         milestone_steps = microgrid_strategy.compute_milestone_steps(ref_price, current_price, step)
         if milestone_steps < 2:
@@ -2887,7 +2887,7 @@ def daily_report(app) -> None:
                     # dolicza FX, bo inaczej będę robił za darmo") - patrz
                     # utils.py::fx_adjusted_cost_basis, ten sam mechanizm co
                     # ref_price przy trailing stopie, tu reużyty do raportu.
-                    cost_basis = fx_adjusted_cost_basis(t.buy_price, t.currency, settings, t.ticker)
+                    cost_basis = fx_adjusted_cost_basis(t.buy_price, t.currency, settings, t.ticker, t.buy_order_id)
                     pnl = (t.close_price - cost_basis) * t.quantity
                     realized_total += pnl
                     closed_lines.append(f"  ZAMKNIĘTA {ticker_display_name(t.ticker)}: {pnl:+.2f} {t.currency} (wejście {t.buy_price}, wyjście {t.close_price})")
@@ -2910,7 +2910,7 @@ def daily_report(app) -> None:
                 if price is None:
                     open_lines.append(f"  OTWARTA {ticker_display_name(t.ticker)}: brak żywej ceny")
                     continue
-                cost_basis = fx_adjusted_cost_basis(t.average_price, t.currency, settings, t.ticker)
+                cost_basis = fx_adjusted_cost_basis(t.average_price, t.currency, settings, t.ticker, t.buy_order_id)
                 pnl = (price - cost_basis) * t.quantity
                 unrealized_total += pnl
                 unrealized_known += 1

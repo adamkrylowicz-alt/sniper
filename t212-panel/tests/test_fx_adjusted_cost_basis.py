@@ -1,7 +1,9 @@
 """
 Self-check dla app/utils.py::fx_adjusted_cost_basis (2026-08-11, Adam:
 "otwiera i zamyka po API niech dolicza FX, bo inaczej będę robił za darmo",
-potem "sprawdz ile pobiera kosztow gielda francuska" -> dolozony FR FTT).
+potem "sprawdz ile pobiera kosztow gielda francuska" -> dolozony FR FTT,
+potem "kupione recznie za usd doliczaj fx tylko przy sprzedazy... jesli sam
+bot kupi i sprzeda doliczaj fx x2" -> x1/x2 wg buy_order_id).
 Uruchom: python3 tests/test_fx_adjusted_cost_basis.py
 """
 import sys
@@ -24,12 +26,19 @@ def demo() -> None:
     on = FakeSettings(fx_cost_adjustment_enabled=True, fx_fee_pct=Decimal("0.0015"))
     off = FakeSettings(fx_cost_adjustment_enabled=False, fx_fee_pct=Decimal("0.0015"))
 
-    # USD + enabled -> koszt bazowy podbity o round-trip (2x fee)
+    # USD, brak buy_order_id (domyslnie traktowane jak kupno przez bota,
+    # poprawne dla Sygnalu/EOD ktore zawsze kupuja same) -> round-trip 2x fee
     assert fx_adjusted_cost_basis(Decimal("100"), "USD", on) == Decimal("100") * Decimal("1.003")
+    # USD, realny buy_order_id bota (kupno TEZ przez API) -> rowniez 2x
+    assert fx_adjusted_cost_basis(Decimal("100"), "USD", on, "", "55401734179") == Decimal("100") * Decimal("1.003")
+    # USD, buy_order_id="ADOPTED-..." (kupno RECZNE, zaadoptowane) -> TYLKO 1x
+    # (jedyna konwersja to ewentualna botowa sprzedaz SL przez API)
+    assert fx_adjusted_cost_basis(Decimal("100"), "USD", on, "", "ADOPTED-abc123") == Decimal("100") * Decimal("1.0015")
+    assert fx_adjusted_cost_basis(Decimal("100"), "USD", on, "", "AUTOADOPTED-xyz") == Decimal("100") * Decimal("1.0015")
     # EUR (konto Adama jest w EUR) -> zero zmiany niezaleznie od enabled
     assert fx_adjusted_cost_basis(Decimal("100"), "EUR", on) == Decimal("100")
-    # wylaczone w ustawieniach -> zero zmiany nawet dla USD
-    assert fx_adjusted_cost_basis(Decimal("100"), "USD", off) == Decimal("100")
+    # wylaczone w ustawieniach -> zero zmiany nawet dla USD, nawet reczne kupno
+    assert fx_adjusted_cost_basis(Decimal("100"), "USD", off, "", "ADOPTED-abc") == Decimal("100")
     # brak ustawien (None) -> zero zmiany, fail-safe
     assert fx_adjusted_cost_basis(Decimal("100"), "USD", None) == Decimal("100")
 
