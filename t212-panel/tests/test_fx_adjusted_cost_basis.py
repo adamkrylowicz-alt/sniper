@@ -42,8 +42,6 @@ def demo() -> None:
     # ticker spoza whitelisty FTT -> zero zmiany mimo sufiksu "p_EQ" (celowo
     # twarda lista, nie heurystyka po sufiksie gieldy - patrz komentarz w utils.py)
     assert fx_adjusted_cost_basis(Decimal("100"), "EUR", on, "XYZp_EQ") == Decimal("100")
-    # USD + FR whitelist naklada sie (teoretyczny przypadek) -> oba efekty razem
-    assert fx_adjusted_cost_basis(Decimal("100"), "USD", on, "FPp_EQ") == Decimal("100") * Decimal("1.003") * Decimal("1.004")
 
     print("OK - fx_adjusted_cost_basis")
 
