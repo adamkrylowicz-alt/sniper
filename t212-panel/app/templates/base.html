@@ -11,7 +11,7 @@
         window.SNAJPER_I18N = {{ i18n_json|tojson }};
     </script>
 </head>
-<body class="{{ 'page-bot' if request.blueprint in ('bot', 'signal', 'eod') }}">
+<body class="{{ 'page-bot' if request.blueprint in ('bot', 'signal', 'eod') }} {{ 'has-bottom-nav' if is_authenticated }}">
     <header class="topbar">
         <span class="topbar__mark"><img src="{{ url_for('static', filename='img/logo.png') }}" alt="" class="topbar__logo"><span>SNAJPER</span></span>
         <nav class="topbar__nav">
@@ -158,6 +158,85 @@
             {{ t("Koszty i opłaty") }}
         </a>
     </footer>
+    {% endif %}
+    {% if is_authenticated %}
+    <!-- Dolna belka nawigacji (tylko telefon, patrz @media max-width:700px w
+         style.css) - Adam 10.08.2026: "zrobmy ja na wzor czegos co dziala i
+         jest intuicyjne... jakies ikonki na dole a nie lista pierdyliard
+         linii tekstu na gorze" - wzorzec z natywnych aplikacji (4-5 ikon +
+         Więcej), zamiast przewijanego poziomo paska tekstowych linków u
+         góry. Ikony 1:1 skopiowane z .topbar__links wyżej, żeby był ten sam
+         język wizualny. Reszta stron (Focus/Virtual Pie/Sygnał/EOD/Pomoc/
+         Zgłoś problem/Wyloguj/DEV) - w panelu #more-sheet niżej. -->
+    <nav class="bottom-nav" aria-label="{{ t('Główna nawigacja') }}">
+        <a class="bottom-nav__item {{ 'bottom-nav__item--active' if request.endpoint == 'scalping.warp_view' }}" href="{{ url_for('scalping.warp_view') }}">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+            <span>Warp</span>
+        </a>
+        <a class="bottom-nav__item {{ 'bottom-nav__item--active' if request.endpoint == 'scalping.portfolio_view' }}" href="{{ url_for('scalping.portfolio_view') }}">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18"/></svg>
+            <span>{{ t("Aktywa") }}</span>
+            {% if open_position_counts.aktywa %}<span class="bottom-nav__badge">{{ open_position_counts.aktywa }}</span>{% endif %}
+        </a>
+        <a class="bottom-nav__item {{ 'bottom-nav__item--active' if request.blueprint == 'bot' }}" href="{{ url_for('bot.view') }}">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><path d="M9 18h6"/><circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/></svg>
+            <span>Bot</span>
+            {% if open_position_counts.bot %}<span class="bottom-nav__badge">{{ open_position_counts.bot }}</span>{% endif %}
+        </a>
+        <a class="bottom-nav__item {{ 'bottom-nav__item--active' if request.blueprint in ('settings', 'api_keys') }}" href="{{ url_for('settings.index') }}">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.6 1z"/></svg>
+            <span>{{ t("Ustawienia") }}</span>
+        </a>
+        <button type="button" class="bottom-nav__item" id="more-menu-btn" aria-haspopup="true" aria-expanded="false" aria-controls="more-sheet">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></svg>
+            <span>{{ t("Więcej") }}</span>
+            {% if open_position_counts.signal or open_position_counts.eod %}<span class="bottom-nav__badge bottom-nav__badge--dot"></span>{% endif %}
+        </button>
+    </nav>
+
+    <div class="more-sheet-overlay" id="more-sheet-overlay" hidden>
+        <div class="more-sheet" id="more-sheet" role="menu">
+            <div class="more-sheet__handle"></div>
+            <a class="more-sheet__item {{ 'more-sheet__item--active' if request.endpoint == 'scalping.focus_view' }}" href="{{ url_for('scalping.focus_view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg>
+                Focus
+            </a>
+            <a class="more-sheet__item {{ 'more-sheet__item--active' if request.blueprint == 'pie' }}" href="{{ url_for('pie.list_view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10h-10z"/><path d="M12 2v10"/></svg>
+                Virtual Pie
+            </a>
+            <a class="more-sheet__item {{ 'more-sheet__item--active' if request.blueprint == 'signal' }}" href="{{ url_for('signal.view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l5-6 4 4 8-10"/><path d="M15 5h6v6"/></svg>
+                {{ t("Sygnał") }}
+                {% if open_position_counts.signal %}<span class="more-sheet__badge">{{ open_position_counts.signal }}</span>{% endif %}
+            </a>
+            <a class="more-sheet__item {{ 'more-sheet__item--active' if request.blueprint == 'eod' }}" href="{{ url_for('eod.view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+                EOD
+                {% if open_position_counts.eod %}<span class="more-sheet__badge">{{ open_position_counts.eod }}</span>{% endif %}
+            </a>
+            <a class="more-sheet__item {{ 'more-sheet__item--active' if request.endpoint == 'help.view' }}" href="{{ url_for('help.view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 1 1 4.9 2.5c-.7.6-1.5 1.1-1.5 2.5M12 17h.01"/></svg>
+                {{ t("Pomoc") }}
+            </a>
+            {% if config.DEV_LINK_URL and is_admin %}
+            <a class="more-sheet__item" href="{{ config.DEV_LINK_URL }}" target="_blank" rel="noopener">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3H4a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1v-5"/><path d="M14 3h7v7"/><path d="M10 14 21 3"/></svg>
+                DEV
+            </a>
+            {% endif %}
+            <button type="button" class="more-sheet__item" id="more-sheet-report-btn">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 2.7 17a2 2 0 0 0 1.7 3h15.2a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+                {{ t("Zgłoś problem") }}
+            </button>
+            <form method="post" action="{{ url_for('auth.logout_view') }}">
+                <button type="submit" class="more-sheet__item">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></svg>
+                    {{ t("Wyloguj") }}
+                </button>
+            </form>
+        </div>
+    </div>
     {% endif %}
     <script src="{{ url_for('static', filename='js/common.js') }}"></script>
     {% block scripts %}{% endblock %}

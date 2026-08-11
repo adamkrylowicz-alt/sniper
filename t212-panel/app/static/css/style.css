@@ -1040,22 +1040,150 @@ img.tile__logo {
                          ekranie), przewijanie topbaru w prawo przesuwało
                          WSZYSTKO, nie tylko przyciski. */
     }
-    .topbar__links {
-        display: flex;
-        flex: 1 1 auto;
-        min-width: 0; /* bez tego flex-item w gridzie nie chce się skurczyć poniżej treści, scroll nigdy by się nie włączył */
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
-        gap: 14px;
-        padding-bottom: 2px;
-    }
-    .topbar__links::-webkit-scrollbar { display: none; }
-    .topbar__link, .topbar__logout { flex-shrink: 0; }
+    /* 10.08.2026 (ciąg dalszy) - Adam: "ikonki na dole a nie lista
+       pierdyliard linii tekstu na gorze". Zamiast przewijanego poziomo
+       paska tekstowych linków (poprzednia poprawka tego samego dnia) -
+       nawigacja stron (Warp/Focus/Aktywa/Pie/Bot/Sygnał/EOD/Ustawienia)
+       znika z górnego paska NA TELEFONIE, zastąpiona przez .bottom-nav
+       niżej (wzorzec z natywnych aplikacji). Theme/lang/T212/DEMO-LIVE
+       ZOSTAJĄ na górze - to stałe wskaźniki statusu, nie nawigacja
+       (env-toggle musi być zawsze widoczny bez dodatkowej interakcji, to
+       jedyny sygnał "to są prawdziwe pieniądze"). */
+    .topbar__links { display: none; }
     .topbar__theme-toggle, .topbar__lang, .topbar__conn, .topbar__env {
         flex-shrink: 0;
     }
     .topbar__conn span:last-child { display: none; } /* "T212" tekst - sama kropka wystarczy, oszczędza miejsce w przypiętym pasku */
+}
+
+/* Dolna belka nawigacji + panel "Więcej" (tylko telefon) - patrz komentarz
+   przy .topbar__links wyżej i base.html. Ukryte domyślnie (display:none)
+   nawet bez media query, na wypadek gdyby kiedyś ktoś zapomniał obwarować
+   wywołanie tych klas gdzie indziej - bezpieczny fallback na desktop. */
+.bottom-nav, .more-sheet-overlay { display: none; }
+
+@media (max-width: 700px) {
+    body.has-bottom-nav {
+        padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    }
+    .bottom-nav {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 60;
+        background: var(--panel);
+        border-top: 1px solid var(--hairline);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    .bottom-nav__item {
+        flex: 1 1 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        position: relative;
+        padding: 8px 2px 6px;
+        background: none;
+        border: none;
+        font-family: inherit;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: var(--text-2xs);
+        letter-spacing: 0.02em;
+        cursor: pointer;
+    }
+    .bottom-nav__item .icon { width: 20px; height: 20px; }
+    .bottom-nav__item--active { color: var(--accent-amber); }
+    .bottom-nav__badge {
+        position: absolute;
+        top: 2px;
+        left: calc(50% + 6px);
+        min-width: 15px;
+        height: 15px;
+        padding: 0 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--sell-red);
+        color: var(--on-accent);
+        font-size: 9px;
+        font-weight: 700;
+        border-radius: var(--radius-pill);
+    }
+    .bottom-nav__badge--dot {
+        min-width: 8px;
+        width: 8px;
+        height: 8px;
+        padding: 0;
+    }
+
+    /* Panel "Więcej" - reszta stron które nie zmieściły się w 5 slotach
+       dolnej belki (Focus/Virtual Pie/Sygnał/EOD/Pomoc/Zgłoś problem/
+       Wyloguj/DEV). Wysuwany od dołu, zamykany kliknięciem w tło (patrz
+       common.js). */
+    .more-sheet-overlay {
+        display: block;
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        background: rgba(0, 0, 0, 0.5);
+    }
+    .more-sheet-overlay[hidden] { display: none; }
+    .more-sheet {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        max-height: 75vh;
+        overflow-y: auto;
+        background: var(--panel);
+        border-top: 1px solid var(--hairline);
+        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        padding: var(--space-2) 0 calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+        box-shadow: var(--shadow-card);
+    }
+    .more-sheet__handle {
+        width: 36px;
+        height: 4px;
+        border-radius: var(--radius-pill);
+        background: var(--hairline);
+        margin: var(--space-2) auto var(--space-3);
+    }
+    .more-sheet__item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-3);
+        width: 100%;
+        padding: var(--space-3) var(--space-5);
+        background: none;
+        border: none;
+        font-family: inherit;
+        font-size: var(--text-base);
+        color: var(--text-bright);
+        text-decoration: none;
+        text-align: left;
+        cursor: pointer;
+    }
+    .more-sheet__item .icon { width: 18px; height: 18px; color: var(--text-muted); }
+    .more-sheet__item--active { color: var(--accent-amber); }
+    .more-sheet__item--active .icon { color: var(--accent-amber); }
+    .more-sheet__badge {
+        margin-left: auto;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--sell-red-tint);
+        color: var(--sell-red);
+        font-size: var(--text-2xs);
+        font-weight: 700;
+        border-radius: var(--radius-pill);
+    }
 }
 
 /* Karty podsumowania (Aktywa/instrument) - na desktopie mieszczą się w

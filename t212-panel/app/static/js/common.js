@@ -649,3 +649,44 @@ async function fetchCategoryCounts() {
         return null;
     }
 }
+
+/*
+Panel "Wiecej" dolnej belki nawigacji na telefonie (10.08.2026, patrz
+base.html/.bottom-nav w style.css) - zwykly wysuwany panel, otwierany
+przyciskiem #more-menu-btn, zamykany klikniеciem w tlo albo Escape.
+"Zglos problem" w panelu NIE duplikuje logiki modala zgloszenia - tylko
+przekazuje klikniеcie do juz istniejacego #report-problem-btn (desktopowy
+przycisk w .topbar__links, ukryty na telefonie ale wciaz w DOM z pelnym
+podpiеciem z bloku wyzej), zeby nie powielac kodu wysylki.
+*/
+document.addEventListener("DOMContentLoaded", () => {
+    const menuBtn = document.getElementById("more-menu-btn");
+    const overlay = document.getElementById("more-sheet-overlay");
+    if (!menuBtn || !overlay) return;
+
+    const open = () => {
+        overlay.hidden = false;
+        menuBtn.setAttribute("aria-expanded", "true");
+    };
+    const close = () => {
+        overlay.hidden = true;
+        menuBtn.setAttribute("aria-expanded", "false");
+    };
+
+    menuBtn.addEventListener("click", open);
+    overlay.addEventListener("click", (e) => {
+        if (e.target === overlay) close();
+    });
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && !overlay.hidden) close();
+    });
+
+    const reportForwardBtn = document.getElementById("more-sheet-report-btn");
+    const realReportBtn = document.getElementById("report-problem-btn");
+    if (reportForwardBtn && realReportBtn) {
+        reportForwardBtn.addEventListener("click", () => {
+            close();
+            realReportBtn.click();
+        });
+    }
+});
