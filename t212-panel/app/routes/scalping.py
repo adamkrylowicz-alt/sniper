@@ -35,7 +35,7 @@ from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.market_hours import is_market_open as _market_open
 from ..services.risk_guard import RiskGuard
 from ..services.t212_client import T212APIError, T212Client
-from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required, ticker_display_name
 from .api_keys import get_decrypted_credentials
 
 
@@ -612,7 +612,7 @@ def quote():
 
     data = finnhub.get_quote(ticker)
     if not data:
-        return jsonify(ok=False, error=f"Brak danych dla {ticker} (nieznany symbol lub brak połączenia)."), 404
+        return jsonify(ok=False, error=f"Brak danych dla {ticker_display_name(ticker)} (nieznany symbol lub brak połączenia)."), 404
 
     return jsonify(ok=True, ticker=ticker, quote=data)
 
@@ -633,7 +633,7 @@ def sparkline():
 
     closes = finnhub.get_sparkline(ticker)
     if not closes:
-        return jsonify(ok=False, error=f"Brak danych historycznych dla {ticker}."), 404
+        return jsonify(ok=False, error=f"Brak danych historycznych dla {ticker_display_name(ticker)}."), 404
 
     return jsonify(ok=True, ticker=ticker, closes=closes)
 
@@ -659,7 +659,7 @@ def stats():
     profile = finnhub.get_profile(ticker)
 
     if not financials and not profile:
-        return jsonify(ok=False, error=f"Brak statystyk dla {ticker}."), 404
+        return jsonify(ok=False, error=f"Brak statystyk dla {ticker_display_name(ticker)}."), 404
 
     return jsonify(
         ok=True,
@@ -711,7 +711,7 @@ def candles():
             market_keys.get("ibkr_port"),
         )
         if not candles:
-            return jsonify(ok=False, error=f"Brak danych ({interval}) dla {ticker} (poza sesją albo źródło niedostępne)."), 404
+            return jsonify(ok=False, error=f"Brak danych ({interval}) dla {ticker_display_name(ticker)} (poza sesją albo źródło niedostępne)."), 404
         return jsonify(ok=True, ticker=ticker, candles=candles)
 
     finnhub = FinnhubClient(market_keys["finnhub_api_key"]) if market_keys.get("finnhub_api_key") else None
@@ -723,7 +723,7 @@ def candles():
 
     data = finnhub.get_candles(ticker, days=days)
     if not data:
-        return jsonify(ok=False, error=f"Brak danych świecowych dla {ticker}."), 404
+        return jsonify(ok=False, error=f"Brak danych świecowych dla {ticker_display_name(ticker)}."), 404
 
     return jsonify(ok=True, ticker=ticker, candles=data)
 
@@ -1524,6 +1524,13 @@ def history_view():
         .limit(100)
         .all()
     )
+    # Adam 11.08.2026: "wszędzie pełne nazwy, nie tickery" - kolumna Ticker
+    # pokazywała goły kod (np. "FPp_EQ") bez nazwy spółki, jedyne takie
+    # miejsce w appce (reszta stron już od dawna pokazuje a.name/a.display_ticker
+    # razem, patrz bot.html/portfolio.html itd.) - doklejony atrybut zamiast
+    # kolejnego zapytania per wiersz, ten sam koszt co friendly_name() niżej.
+    for e in entries:
+        e.company_name = ticker_display_name(e.ticker)
     return render_template("history.html", entries=entries)
 
 

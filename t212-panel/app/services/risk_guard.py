@@ -36,6 +36,8 @@ from decimal import Decimal
 from enum import Enum
 from typing import Optional
 
+from ..utils import ticker_display_name
+
 
 class GuardDecision(str, Enum):
     ALLOW = "ALLOW"
@@ -122,7 +124,7 @@ class RiskGuard:
         if not self._check_cooldown(ticker):
             return GuardResult(
                 decision=GuardDecision.BLOCKED_COOLDOWN,
-                reason=f"Cooldown {self.cooldown_ms}ms dla {ticker} jeszcze nie minął.",
+                reason=f"Cooldown {self.cooldown_ms}ms dla {ticker_display_name(ticker)} jeszcze nie minął.",
             )
 
         if estimated_price is None or self.max_order_value is None:

@@ -29,7 +29,7 @@ from ..services import price_feed
 from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.market_hours import is_market_open as _market_open
 from ..services.t212_client import T212APIError
-from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required, ticker_display_name
 from .scalping import _get_client, _get_guard, _log_order
 
 pie_bp = Blueprint("pie", __name__, url_prefix="/pie")
@@ -149,7 +149,7 @@ def add_asset(pie_id):
         return redirect(url_for("pie.detail", pie_id=pie.id))
 
     if PieAsset.query.filter_by(pie_id=pie.id, ticker=ticker).first() is not None:
-        flash(f"{ticker} {t('jest już w tym koszyku.', current_lang())}")
+        flash(f"{ticker_display_name(ticker)} {t('jest już w tym koszyku.', current_lang())}")
         return redirect(url_for("pie.detail", pie_id=pie.id))
 
     asset = PieAsset(
@@ -162,7 +162,7 @@ def add_asset(pie_id):
     )
     db.session.add(asset)
     db.session.commit()
-    flash(f"Dodano {ticker} do koszyka.")
+    flash(f"Dodano {ticker_display_name(ticker)} do koszyka.")
     return redirect(url_for("pie.detail", pie_id=pie.id))
 
 

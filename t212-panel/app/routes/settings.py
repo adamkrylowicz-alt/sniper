@@ -25,7 +25,7 @@ from ..models import ApiKeySet, EODSettings, RiskSettings, SignalSettings, User,
 from ..services import instrument_cache, logo_cache
 from ..services.market_hours import is_market_open as _market_open
 from ..services.t212_client import T212APIError
-from ..utils import avatar_hue, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_user_id, friendly_name, login_required, ticker_display_name
 from .scalping import _get_client
 
 settings_bp = Blueprint("settings", __name__, url_prefix="/settings")
@@ -320,13 +320,13 @@ def watchlist_add():
     if not ticker:
         flash(t("Brak tickera.", current_lang()))
     elif ticker in tickers:
-        flash(f"{ticker} {t('jest już w ulubionych.', current_lang())}")
+        flash(f"{ticker_display_name(ticker)} {t('jest już w ulubionych.', current_lang())}")
     elif len(tickers) >= MAX_FAVORITES_SIZE:
         flash(f"{t('Lista ulubionych jest pełna (max', current_lang())} {MAX_FAVORITES_SIZE}).")
     else:
         tickers.append(ticker)
         _save_favorites(settings, tickers)
-        flash(f"{t('Dodano', current_lang())} {ticker} {t('do ulubionych.', current_lang())}")
+        flash(f"{t('Dodano', current_lang())} {ticker_display_name(ticker)} {t('do ulubionych.', current_lang())}")
 
     return redirect(url_for("settings.watchlist_view"))
 
@@ -348,7 +348,7 @@ def watchlist_remove():
         grid.remove(ticker)
         _save_grid(settings, grid)
 
-    flash(f"{t('Usunięto', current_lang())} {ticker} {t('z ulubionych.', current_lang())}")
+    flash(f"{t('Usunięto', current_lang())} {ticker_display_name(ticker)} {t('z ulubionych.', current_lang())}")
     return redirect(url_for("settings.watchlist_view"))
 
 
@@ -370,7 +370,7 @@ def grid_add():
     grid = _get_grid(settings)
 
     if ticker in grid:
-        flash(f"{ticker} {t('jest już w siatce.', current_lang())}")
+        flash(f"{ticker_display_name(ticker)} {t('jest już w siatce.', current_lang())}")
         return redirect(url_for("settings.watchlist_view"))
 
     if len(grid) >= MAX_GRID_SIZE:
@@ -386,7 +386,7 @@ def grid_add():
 
     grid.append(ticker)
     _save_grid(settings, grid)
-    flash(f"{t('Dodano', current_lang())} {ticker} {t('do siatki.', current_lang())}")
+    flash(f"{t('Dodano', current_lang())} {ticker_display_name(ticker)} {t('do siatki.', current_lang())}")
 
     return redirect(url_for("settings.watchlist_view"))
 
@@ -402,7 +402,7 @@ def grid_remove():
     if ticker in grid:
         grid.remove(ticker)
         _save_grid(settings, grid)
-        flash(f"{t('Usunięto', current_lang())} {ticker} {t('z siatki.', current_lang())}")
+        flash(f"{t('Usunięto', current_lang())} {ticker_display_name(ticker)} {t('z siatki.', current_lang())}")
 
     return redirect(url_for("settings.watchlist_view"))
 

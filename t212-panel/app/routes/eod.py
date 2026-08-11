@@ -21,7 +21,7 @@ from ..models import ApiKeySet, EODAsset, EODAuditLog, EODSettings, EODTrade, In
 from ..services import bot_credentials, eod_engine, price_feed
 from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.t212_client import T212APIError, T212Client
-from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required, ticker_display_name
 from .api_keys import get_decrypted_credentials
 
 eod_bp = Blueprint("eod", __name__, url_prefix="/eod")
@@ -148,7 +148,7 @@ def add_asset():
 
     env = current_environment(user_id)
     if EODAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first() is not None:
-        return jsonify(ok=False, error=f"{ticker} jest już na liście modułu EOD."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już na liście modułu EOD."), 400
 
     asset = EODAsset(
         user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
@@ -390,12 +390,12 @@ def adopt_position():
 
     env = current_environment(user_id)
     if EODTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first() is not None:
-        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez EOD."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już zarządzany przez EOD."), 400
 
     from ..services.market_hours import held_by_other_engine
     other = held_by_other_engine(user_id, ticker, "eod")
     if other is not None:
-        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
 
     creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
     if creds is None:
@@ -410,7 +410,7 @@ def adopt_position():
     except T212APIError as exc:
         return jsonify(ok=False, error=str(exc)), 502
     if position is None:
-        return jsonify(ok=False, error=f"Nie posiadasz {ticker} w portfelu T212 (demo)."), 400
+        return jsonify(ok=False, error=f"Nie posiadasz {ticker_display_name(ticker)} w portfelu T212 (demo)."), 400
 
     try:
         quantity = Decimal(str(position["quantity"]))
@@ -418,7 +418,7 @@ def adopt_position():
     except (KeyError, InvalidOperation, TypeError):
         return jsonify(ok=False, error="Nieprawidłowe dane pozycji zwrócone przez T212."), 502
     if quantity <= 0:
-        return jsonify(ok=False, error=f"{ticker}: ilość w portfelu wynosi 0."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)}: ilość w portfelu wynosi 0."), 400
 
     stop_loss_price = avg_price * (1 - settings.stop_loss_pct)
     take_profit_price = avg_price * (1 + settings.take_profit_pct)
@@ -432,7 +432,7 @@ def adopt_position():
         except (InvalidOperation, ValueError, TypeError):
             return jsonify(
                 ok=False,
-                error=f"{ticker} nie jest jeszcze na liście EOD - podaj kwotę wejścia (entry_amount, > 0).",
+                error=f"{ticker_display_name(ticker)} nie jest jeszcze na liście EOD - podaj kwotę wejścia (entry_amount, > 0).",
             ), 400
         asset = EODAsset(
             user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],

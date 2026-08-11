@@ -197,7 +197,7 @@ def _log(user_id: int, action_type: str, message: str) -> None:
             f"🔴 [{telegram_env_tag(user_id)}] Sygnał ERROR (user {user_id}): {humanize_ticker_prefix(message)}",
         )
     entry = SignalAuditLog(
-        user_id=user_id, action_type=action_type, message=message,
+        user_id=user_id, action_type=action_type, message=humanize_ticker_prefix(message),
         environment=current_environment(user_id),
     )
     db.session.add(entry)
@@ -406,7 +406,7 @@ def _enter_position(
         db.session.commit()
         _log(
             user_id, "BUY",
-            f"[PAPER] {asset.ticker}: sygnał wejścia, {quantity} @ ~{price} - "
+            f"[PAPER] {ticker_display_name(asset.ticker)}: sygnał wejścia, {quantity} @ ~{price} - "
             f"SL {stop_loss_price:.4f} (trailing) / TP orientacyjny {take_profit_price:.4f} (ATR={atr:.4f}).",
         )
         return True

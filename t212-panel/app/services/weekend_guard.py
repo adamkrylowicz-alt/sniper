@@ -109,7 +109,7 @@ def suspend_all(app) -> None:
                     except T212APIError as exc:
                         db.session.add(audit_model(
                             user_id=user_id, action_type="ERROR", environment=env,
-                            message=f"{trade.ticker}: nie udało się anulować SL przed weekendem - {exc}. Zostaje aktywny.",
+                            message=f"{ticker_display_name(trade.ticker)}: nie udało się anulować SL przed weekendem - {exc}. Zostaje aktywny.",
                         ))
                         continue
                     trade.stop_order_id = None
@@ -117,7 +117,7 @@ def suspend_all(app) -> None:
                     suspended.append((name, trade.ticker))
                     db.session.add(audit_model(
                         user_id=user_id, action_type="INFO", environment=env,
-                        message=f"{trade.ticker}: SL zawieszony na weekend (pt 21:00 - pon 11:00), pozycja bez ochrony do przywrócenia.",
+                        message=f"{ticker_display_name(trade.ticker)}: SL zawieszony na weekend (pt 21:00 - pon 11:00), pozycja bez ochrony do przywrócenia.",
                     ))
             db.session.commit()
 
@@ -182,7 +182,7 @@ def restore_all(app) -> None:
                                 restored.append((name, trade.ticker))
                                 db.session.add(audit_model(
                                     user_id=user_id, action_type="INFO", environment=env,
-                                    message=f"{trade.ticker}: SL przywrócony po weekendzie na {stop_price:.4f} "
+                                    message=f"{ticker_display_name(trade.ticker)}: SL przywrócony po weekendzie na {stop_price:.4f} "
                                     f"(ilość skorygowana do prawdziwej z T212: {real_qty}, w bazie było {trade.quantity}).",
                                 ))
                                 continue
@@ -190,7 +190,7 @@ def restore_all(app) -> None:
                         failed.append((name, trade.ticker, str(exc)))
                         db.session.add(audit_model(
                             user_id=user_id, action_type="ERROR", environment=env,
-                            message=f"{trade.ticker}: nie udało się przywrócić SL po weekendzie - {exc}. "
+                            message=f"{ticker_display_name(trade.ticker)}: nie udało się przywrócić SL po weekendzie - {exc}. "
                             "Odblokowana do zwykłego ticku (rekoncyliacja/ponowne uzbrojenie w ciągu ~1 min), "
                             "sprawdź na wszelki wypadek ręcznie.",
                         ))
@@ -200,7 +200,7 @@ def restore_all(app) -> None:
                     restored.append((name, trade.ticker))
                     db.session.add(audit_model(
                         user_id=user_id, action_type="INFO", environment=env,
-                        message=f"{trade.ticker}: SL przywrócony po weekendzie na {stop_price:.4f}.",
+                        message=f"{ticker_display_name(trade.ticker)}: SL przywrócony po weekendzie na {stop_price:.4f}.",
                     ))
             db.session.commit()
 

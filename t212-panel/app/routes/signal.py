@@ -23,7 +23,7 @@ from ..models import ApiKeySet, Instrument, RiskSettings, SignalAsset, SignalAud
 from ..services import bot_credentials, price_feed, signal_engine
 from ..services.market_data_keys import get_decrypted_market_data_keys
 from ..services.t212_client import T212APIError, T212Client
-from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required
+from ..utils import avatar_hue, current_environment, current_master_key, current_user_id, friendly_name, login_required, ticker_display_name
 from .api_keys import get_decrypted_credentials
 
 signal_bp = Blueprint("signal", __name__, url_prefix="/signal")
@@ -148,7 +148,7 @@ def add_asset():
 
     env = current_environment(user_id)
     if SignalAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first() is not None:
-        return jsonify(ok=False, error=f"{ticker} jest już na liście strategii sygnałowej."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już na liście strategii sygnałowej."), 400
 
     asset = SignalAsset(
         user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],
@@ -407,12 +407,12 @@ def adopt_position():
 
     env = current_environment(user_id)
     if SignalTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first() is not None:
-        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez Sygnał."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już zarządzany przez Sygnał."), 400
 
     from ..services.market_hours import held_by_other_engine
     other = held_by_other_engine(user_id, ticker, "signal")
     if other is not None:
-        return jsonify(ok=False, error=f"{ticker} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
 
     creds = get_decrypted_credentials(user_id, current_master_key(), current_environment(user_id))
     if creds is None:
@@ -427,7 +427,7 @@ def adopt_position():
     except T212APIError as exc:
         return jsonify(ok=False, error=str(exc)), 502
     if position is None:
-        return jsonify(ok=False, error=f"Nie posiadasz {ticker} w portfelu T212 (demo)."), 400
+        return jsonify(ok=False, error=f"Nie posiadasz {ticker_display_name(ticker)} w portfelu T212 (demo)."), 400
 
     try:
         quantity = Decimal(str(position["quantity"]))
@@ -435,7 +435,7 @@ def adopt_position():
     except (KeyError, InvalidOperation, TypeError):
         return jsonify(ok=False, error="Nieprawidłowe dane pozycji zwrócone przez T212."), 502
     if quantity <= 0:
-        return jsonify(ok=False, error=f"{ticker}: ilość w portfelu wynosi 0."), 400
+        return jsonify(ok=False, error=f"{ticker_display_name(ticker)}: ilość w portfelu wynosi 0."), 400
 
     market_keys = get_decrypted_market_data_keys(user_id, current_master_key())
     api_key = market_keys.get("finnhub_api_key")
@@ -447,7 +447,7 @@ def adopt_position():
     )
     atr = signal_engine._compute_atr(candles) if candles else None
     if atr is None:
-        return jsonify(ok=False, error=f"Nie udało się policzyć ATR dla {ticker} (brak/za mało świec) - spróbuj ponownie za chwilę."), 502
+        return jsonify(ok=False, error=f"Nie udało się policzyć ATR dla {ticker_display_name(ticker)} (brak/za mało świec) - spróbuj ponownie za chwilę."), 502
 
     stop_loss_price = avg_price - atr * settings.stop_loss_atr_mult
     take_profit_price = avg_price + atr * settings.take_profit_atr_mult
@@ -463,7 +463,7 @@ def adopt_position():
         except (InvalidOperation, ValueError, TypeError):
             return jsonify(
                 ok=False,
-                error=f"{ticker} nie jest jeszcze na liście Sygnału - podaj kwotę wejścia (entry_amount, > 0).",
+                error=f"{ticker_display_name(ticker)} nie jest jeszcze na liście Sygnału - podaj kwotę wejścia (entry_amount, > 0).",
             ), 400
         asset = SignalAsset(
             user_id=user_id, ticker=ticker, display_ticker=ticker.split("_")[0],

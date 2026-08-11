@@ -13,7 +13,7 @@
         <thead>
             <tr>
                 <th>{{ t("Czas") }}</th>
-                <th>Ticker</th>
+                <th>{{ t("Aktywo") }}</th>
                 <th>{{ t("Kierunek") }}</th>
                 <th>{{ t("Ilość") }}</th>
                 <th>{{ t("Cena ręczna") }}</th>
@@ -25,7 +25,7 @@
             {% for e in entries %}
             <tr>
                 <td>{{ e.created_at.strftime("%Y-%m-%d %H:%M:%S") }}</td>
-                <td>{{ e.ticker }}</td>
+                <td>{{ e.company_name }}</td>
                 <td class="history-table__side history-table__side--{{ e.side }}">
                     {{ t("KUP") if e.side == "buy" else t("SPRZEDAJ") }}
                 </td>

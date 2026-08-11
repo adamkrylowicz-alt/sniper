@@ -604,7 +604,7 @@ def adopt_confirmed_signal(user_id: int) -> tuple[bool, str]:
 
     asset = BotAsset.query.filter_by(user_id=user_id, ticker=ticker, environment=env).first()
     if asset is None:
-        return False, f"{ticker} nie jest już na liście bota (usunięty?) - dodaj go ręcznie w appce."
+        return False, f"{ticker_display_name(ticker)} nie jest już na liście bota (usunięty?) - dodaj go ręcznie w appce."
 
     position_group_id = str(uuid.uuid4())
     trade = ActiveTrade(
@@ -732,6 +732,15 @@ def _log(user_id: int, action_type: str, message: str, position_group_id: str | 
     TAKŻE do diagnostics.py::log_diag() - ukryty log, nie zmienia niczego
     z powyższego (Dziennik/plik błędów zostają jak były), tylko dokłada
     kopię do wewnętrznej diagnostyki (instance/bot_diagnostics.log).
+
+    Dodane 2026-08-11 (Adam: "pisz pelne nazwy a nie jakies tickery" -
+    patrz [[feedback_snajper_ticker_names]]): BotAuditLog.message (czyli
+    to co ląduje w widocznym dla Adama Dzienniku na bot.html) też leci przez
+    humanize_ticker_prefix() - dotąd tylko ścieżka Telegram/ERROR to robiła,
+    więc "TICKER: ..." w komunikatach INFO/BUY/WARN (np. po adopcji pozycji)
+    trafiało do Dziennika surowe. Ukryty log diagnostyczny linijkę wyżej
+    ZOSTAJE surowy celowo - to wewnętrzny trace do debugowania, nie coś co
+    Adam czyta bezpośrednio.
     """
     diagnostics.log_diag(user_id, "bot", f"[{action_type}] {message}")
     if action_type == "ERROR":
@@ -742,7 +751,7 @@ def _log(user_id: int, action_type: str, message: str, position_group_id: str | 
         )
         return
     db.session.add(BotAuditLog(
-        user_id=user_id, action_type=action_type, message=message,
+        user_id=user_id, action_type=action_type, message=humanize_ticker_prefix(message),
         position_group_id=position_group_id, environment=current_environment(user_id),
     ))
     db.session.commit()
@@ -2638,7 +2647,7 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
     best_ticker = scored[0][0].ticker
     _log(
         user_id, "INFO",
-        f"Wejścia: {stats.summary()}. Najlepszy kandydat: {best_ticker} "
+        f"Wejścia: {stats.summary()}. Najlepszy kandydat: {ticker_display_name(best_ticker)} "
         f"(score {scored[0][1]:.3f}).",
     )
 
@@ -2771,7 +2780,7 @@ def _enter_position(
         db.session.commit()
         _log(
             user_id, "BUY",
-            f"[PAPER] {asset.ticker}: symulowane wejście {quantity} @ ~{buy_price} - "
+            f"[PAPER] {ticker_display_name(asset.ticker)}: symulowane wejście {quantity} @ ~{buy_price} - "
             "ŻADNE zlecenie nie poszło do T212 (i żaden trailing exit nie jest symulowany).",
             position_group_id,
         )
@@ -2894,10 +2903,10 @@ def daily_report(app) -> None:
                 if t.close_price is not None:
                     pnl = (t.close_price - t.buy_price) * t.quantity
                     realized_total += pnl
-                    closed_lines.append(f"  ZAMKNIĘTA {t.ticker}: {pnl:+.2f} {t.currency} (wejście {t.buy_price}, wyjście {t.close_price})")
+                    closed_lines.append(f"  ZAMKNIĘTA {ticker_display_name(t.ticker)}: {pnl:+.2f} {t.currency} (wejście {t.buy_price}, wyjście {t.close_price})")
                 else:
                     realized_unknown += 1
-                    closed_lines.append(f"  ZAMKNIĘTA {t.ticker}: cena wyjścia nieznana (sprzed 2026-07-21)")
+                    closed_lines.append(f"  ZAMKNIĘTA {ticker_display_name(t.ticker)}: cena wyjścia nieznana (sprzed 2026-07-21)")
 
             open_trades = ActiveTrade.query.filter_by(user_id=settings.user_id, is_paper=False, status="OPEN", environment=env).all()
             unrealized_total = Decimal("0")
@@ -2912,12 +2921,12 @@ def daily_report(app) -> None:
                     _report_market_keys.get("alpaca_api_key"), _report_market_keys.get("alpaca_api_secret"),
                 )
                 if price is None:
-                    open_lines.append(f"  OTWARTA {t.ticker}: brak żywej ceny")
+                    open_lines.append(f"  OTWARTA {ticker_display_name(t.ticker)}: brak żywej ceny")
                     continue
                 pnl = (price - t.average_price) * t.quantity
                 unrealized_total += pnl
                 unrealized_known += 1
-                open_lines.append(f"  OTWARTA {t.ticker}: {pnl:+.2f} niezrealizowane (średnia {t.average_price}, teraz {price})")
+                open_lines.append(f"  OTWARTA {ticker_display_name(t.ticker)}: {pnl:+.2f} niezrealizowane (średnia {t.average_price}, teraz {price})")
 
             if not closed and not open_trades:
                 continue  # user ma RiskSettings, ale nigdy nie miał żadnej pozycji - nic do raportowania
