@@ -701,7 +701,7 @@ class ActiveTrade(db.Model):
     # liczy filled = aktualne_owned - baseline_owned_quantity - odejmuje
     # WCZEŚNIEJSZE posiadanie tego tickera (np. z ręcznego tradingu), więc
     # nigdy nie sprzeda cudzej/starszej pozycji tego samego tickera.
-    baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    baseline_owned_quantity = db.Column(db.Numeric(18, 8), nullable=False, default=0)
 
     # Cena WEJŚCIA POZIOMU 0 (pierwszego zakupu), USTAWIANA RAZ w
     # _enter_position() i NIGDY później nie modyfikowana (w odróżnieniu od
@@ -717,12 +717,23 @@ class ActiveTrade(db.Model):
     # jakikolwiek poziom DCA może się wyzwolić - wymaga sell_order_id
     # ustawionego). Patrz _trigger_dca_buys/_confirm_dca_fills.
     dca_pending_buy_order_id = db.Column(db.String(64), nullable=True)
-    dca_pending_quantity = db.Column(db.Numeric(12, 4), nullable=True)
+    dca_pending_quantity = db.Column(db.Numeric(18, 8), nullable=True)
     dca_pending_price = db.Column(db.Numeric(12, 4), nullable=True)
-    dca_pending_baseline_quantity = db.Column(db.Numeric(12, 4), nullable=True)
+    dca_pending_baseline_quantity = db.Column(db.Numeric(18, 8), nullable=True)
 
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
-    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    # Scale 8 nie 4 (2026-08-11) - T212 zwraca ulamkowe akcje z do 8 miejsc
+    # po przecinku (np. 0.57487891). SQLite i tak nie wymusza (12,4) na
+    # poziomie silnika (typeof() pokazuje "real", pelna wartosc siedzi w
+    # bazie bez okrojenia), ALE SQLAlchemy.Numeric NA WLASNA RĘKĘ zaokragla
+    # do zadeklarowanej scale przy KAŻDYM odczycie przez ORM - trade.quantity
+    # w Pythonie wychodzilo 0.5749, mimo ze w bazie i na T212 bylo
+    # 0.57487891. Efekt na żywo: SUp_EQ co tick (60s) "wykrywal rozjazd",
+    # nadpisywal quantity ta sama wartoscia i commitowal - bez konca, bo
+    # kolejny odczyt znowu obcinal do 4 miejsc. Zero ALTER TABLE potrzebne
+    # (deklarowana precyzja w CREATE TABLE i tak jest ignorowana przez SQLite
+    # przy typowaniu - to czysto Pythonowa/ORM-owa zmiana).
+    quantity = db.Column(db.Numeric(18, 8), nullable=False)
     allocated_value = db.Column(db.Numeric(12, 2), nullable=False)
     average_price = db.Column(db.Numeric(12, 4), nullable=False)
     dca_level = db.Column(db.Integer, nullable=False, default=0)
@@ -911,7 +922,7 @@ class SignalTrade(db.Model):
     # user posiadał TUŻ PRZED złożeniem tego zlecenia, żeby potwierdzenie
     # wypełnienia (current_owned - baseline) nigdy nie policzyło cudzej/
     # wcześniejszej pozycji tego samego tickera jako "swojej".
-    baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    baseline_owned_quantity = db.Column(db.Numeric(18, 8), nullable=False, default=0)
     buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
     # Gonienie ceny LIMIT BUY (dodane 2026-07-30, patrz bot_engine.py::
     # _retry_pending_buys/ActiveTrade.buy_retry_count - ten sam wzorzec, ten
@@ -922,7 +933,7 @@ class SignalTrade(db.Model):
     next_buy_retry_at = db.Column(db.DateTime, nullable=True)
 
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
-    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    quantity = db.Column(db.Numeric(18, 8), nullable=False)
     allocated_value = db.Column(db.Numeric(12, 2), nullable=False)
 
     atr_at_entry = db.Column(db.Numeric(12, 4), nullable=False)
@@ -1085,7 +1096,7 @@ class EODTrade(db.Model):
     currency = db.Column(db.String(10), nullable=False)
 
     buy_order_id = db.Column(db.String(64), nullable=False)
-    baseline_owned_quantity = db.Column(db.Numeric(12, 4), nullable=False, default=0)
+    baseline_owned_quantity = db.Column(db.Numeric(18, 8), nullable=False, default=0)
     buy_confirmed = db.Column(db.Boolean, nullable=False, default=False)
     # Gonienie ceny LIMIT BUY (dodane 2026-07-30) - patrz identyczny komentarz
     # przy SignalTrade.buy_retry_count wyzej, ten sam powod/wzorzec.
@@ -1093,7 +1104,7 @@ class EODTrade(db.Model):
     next_buy_retry_at = db.Column(db.DateTime, nullable=True)
 
     buy_price = db.Column(db.Numeric(12, 4), nullable=False)
-    quantity = db.Column(db.Numeric(12, 4), nullable=False)
+    quantity = db.Column(db.Numeric(18, 8), nullable=False)
     allocated_value = db.Column(db.Numeric(12, 2), nullable=False)
 
     drop_pct_at_entry = db.Column(db.Numeric(6, 4), nullable=False)

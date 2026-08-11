@@ -611,7 +611,7 @@ def adopt_confirmed_signal(user_id: int) -> tuple[bool, str]:
 
     _log(
         user_id, "INFO",
-        f"{ticker}: pozycja adoptowana ręcznie z portfela T212 przez Telegram ({quantity} @ ~{avg_price}) - "
+        f"{ticker_display_name(ticker)}: pozycja adoptowana ręcznie z portfela T212 przez Telegram ({quantity} @ ~{avg_price}) - "
         "od teraz zarządzana przez trailing exit bota.",
         position_group_id,
     )
@@ -623,7 +623,7 @@ def adopt_confirmed_signal(user_id: int) -> tuple[bool, str]:
         except Exception as exc:  # noqa: BLE001 - najlepsza proba, nie krytyczne
             _log(
                 user_id, "ERROR",
-                f"{ticker}: natychmiastowy trailing check po adopcji (Telegram) nie powiódł się ({exc}).",
+                f"{ticker_display_name(ticker)}: natychmiastowy trailing check po adopcji (Telegram) nie powiódł się ({exc}).",
                 position_group_id,
             )
 
@@ -653,7 +653,7 @@ def close_active_trade_manual(user_id: int, client: T212Client, trade: ActiveTra
         except T212APIError as exc:
             _log(
                 user_id, "INFO",
-                f"{trade.ticker}: anulowanie stop-lossa przed ręczną sprzedażą nie powiodło się "
+                f"{ticker_display_name(trade.ticker)}: anulowanie stop-lossa przed ręczną sprzedażą nie powiodło się "
                 f"(mógł się już wykonać) - {exc}",
                 trade.position_group_id,
             )
@@ -666,7 +666,7 @@ def close_active_trade_manual(user_id: int, client: T212Client, trade: ActiveTra
     )
     _log(
         user_id, "INFO",
-        f"{trade.ticker}: zamknięte ręcznie przez Telegram ({trade.quantity} @ ~{price_decimal}).",
+        f"{ticker_display_name(trade.ticker)}: zamknięte ręcznie przez Telegram ({trade.quantity} @ ~{price_decimal}).",
         trade.position_group_id,
     )
     trade.close_price = price_decimal
@@ -858,7 +858,7 @@ def _bump_retry(user_id: int, trade: ActiveTrade, reason: str) -> None:
     db.session.commit()
     _log(
         user_id, "INFO",
-        f"{trade.ticker}: retry LIMIT SELL #{trade.sell_retry_count} odłożony - {reason}",
+        f"{ticker_display_name(trade.ticker)}: retry LIMIT SELL #{trade.sell_retry_count} odłożony - {reason}",
         trade.position_group_id,
     )
 
@@ -869,7 +869,7 @@ def _bump_buy_retry(user_id: int, trade: ActiveTrade, reason: str) -> None:
     db.session.commit()
     _log(
         user_id, "INFO",
-        f"{trade.ticker}: sprawdzenie LIMIT BUY #{trade.buy_retry_count} - {reason}",
+        f"{ticker_display_name(trade.ticker)}: sprawdzenie LIMIT BUY #{trade.buy_retry_count} - {reason}",
         trade.position_group_id,
     )
 
@@ -955,14 +955,14 @@ def _confirm_buy_fill(
     if filled_qty < requested_qty:
         _log(
             user_id, "WARN",
-            f"{trade.ticker}: kupno potwierdzone CZĘŚCIOWO ({filled_qty} z {requested_qty}) - "
+            f"{ticker_display_name(trade.ticker)}: kupno potwierdzone CZĘŚCIOWO ({filled_qty} z {requested_qty}) - "
             "bot zacznie zarządzać wyjściem (trailing take-profit) na najbliższym ticku.",
             trade.position_group_id,
         )
     elif filled_qty > requested_qty:
         _log(
             user_id, "WARN",
-            f"{trade.ticker}: kupno potwierdzone Z NADWYŻKĄ ({filled_qty} zamiast {requested_qty}) - "
+            f"{ticker_display_name(trade.ticker)}: kupno potwierdzone Z NADWYŻKĄ ({filled_qty} zamiast {requested_qty}) - "
             "prawdopodobne PODWÓJNE wykonanie zlecenia (cancel/replace race w _retry_pending_buys), "
             "sprawdź ręcznie w T212. Bot i tak zarządzi wyjściem dla CAŁEJ faktycznej ilości.",
             trade.position_group_id,
@@ -970,7 +970,7 @@ def _confirm_buy_fill(
     else:
         _log(
             user_id, "INFO",
-            f"{trade.ticker}: kupno potwierdzone ({filled_qty}) - bot zacznie zarządzać "
+            f"{ticker_display_name(trade.ticker)}: kupno potwierdzone ({filled_qty}) - bot zacznie zarządzać "
             "wyjściem (trailing take-profit) na najbliższym ticku.",
             trade.position_group_id,
         )
@@ -1157,7 +1157,7 @@ def _retry_pending_buys(
         db.session.commit()
         _log(
             user_id, "INFO",
-            f"{trade.ticker}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
+            f"{ticker_display_name(trade.ticker)}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
             f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}.",
             trade.position_group_id,
         )
@@ -1219,7 +1219,7 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
             # tym razem przez auto-adopcję zamiast zwykłego wejścia.
             diagnostics.log_diag(
                 user_id, "bot",
-                f"{ticker}: pominięte auto-adopcją - już zarządzane przez {other}.",
+                f"{ticker_display_name(ticker)}: pominięte auto-adopcją - już zarządzane przez {other}.",
             )
             continue
         try:
@@ -1261,7 +1261,7 @@ def _auto_adopt_foreign_positions(user_id: int, client: T212Client, settings: Ri
 
         _log(
             user_id, "INFO",
-            f"{ticker}: pozycja automatycznie przejęta przez tryb \"zarządzaj wszystkim\" "
+            f"{ticker_display_name(ticker)}: pozycja automatycznie przejęta przez tryb \"zarządzaj wszystkim\" "
             f"({quantity} @ ~{avg_price}) - od teraz pilnowana trailing exitem, bez DCA.",
             position_group_id,
         )
@@ -1451,7 +1451,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
                 fill_price = Decimal(str(fill_price_raw)) if fill_price_raw is not None else None
                 _log(
                     user_id, "WARN",
-                    f"{trade.ticker}: 0 szt. w portfelu T212, zlecenie {order_id} potwierdzone jako "
+                    f"{ticker_display_name(trade.ticker)}: 0 szt. w portfelu T212, zlecenie {order_id} potwierdzone jako "
                     f"WYKONANE w historii T212 (cena {fill_price if fill_price is not None else trade.stop_target_price}) "
                     "- zamykam z realną ceną, NIE jako 'sprzedane ręcznie'.",
                     trade.position_group_id,
@@ -1469,7 +1469,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             db.session.commit()
             _log(
                 user_id, "INFO",
-                f"{trade.ticker}: 0 szt. w portfelu T212 (prawdopodobnie sprzedane ręcznie poza appką) - "
+                f"{ticker_display_name(trade.ticker)}: 0 szt. w portfelu T212 (prawdopodobnie sprzedane ręcznie poza appką) - "
                 "pozycja zamknięta lokalnie (cena zamknięcia nieznana), bot przestaje nią zarządzać.",
                 trade.position_group_id,
             )
@@ -1533,7 +1533,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             db.session.commit()
             _log(
                 user_id, "INFO",
-                f"{trade.ticker}: ilość zsynchronizowana z T212 ({old_quantity} -> {actual_owned}){price_note} - "
+                f"{ticker_display_name(trade.ticker)}: ilość zsynchronizowana z T212 ({old_quantity} -> {actual_owned}){price_note} - "
                 "wykryto ręczną zmianę pozycji poza botem (albo rozjazd po cancel/replace), trailing "
                 "STOP dalej liczony/wystawiany na aktualnej, prawdziwej ilości.",
                 trade.position_group_id,
@@ -1554,7 +1554,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             db.session.commit()
             _log(
                 user_id, "INFO",
-                f"{trade.ticker}: stary LIMIT SELL ({old_sell_order_id}) z dawnego dwunożnego OCO "
+                f"{ticker_display_name(trade.ticker)}: stary LIMIT SELL ({old_sell_order_id}) z dawnego dwunożnego OCO "
                 "anulowany - przechodzę na pojedynczy, przesuwany STOP.",
                 trade.position_group_id,
             )
@@ -1572,7 +1572,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             if price_watchdog.note_price_result("bot", trade.ticker, False):
                 _log(
                     user_id, "ERROR",
-                    f"{trade.ticker}: brak ceny przez {price_watchdog.ALERT_THRESHOLD} ticków z rzędu - "
+                    f"{ticker_display_name(trade.ticker)}: brak ceny przez {price_watchdog.ALERT_THRESHOLD} ticków z rzędu - "
                     "trailing stop NIE działa dla tej pozycji! Sprawdź TICKER_MAP/mapowanie Yahoo "
                     "(finnhub_client.py) albo pokrycie instrumentu.",
                 )
@@ -1707,7 +1707,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             db.session.commit()
             _log(
                 user_id, "WARN",
-                f"{trade.ticker}: wykryto na T212 zlecenie SELL ({foreign_order.get('id')}) spoza bota "
+                f"{ticker_display_name(trade.ticker)}: wykryto na T212 zlecenie SELL ({foreign_order.get('id')}) spoza bota "
                 f"(initiatedFrom={foreign_order.get('initiatedFrom')}) - pozycja zwolniona spod zarządzania "
                 "automatycznie, żeby bot nie dobijał się o nią co tick. Udziały zostają na koncie.",
                 trade.position_group_id,
@@ -1775,7 +1775,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         if partial_sellable is not None:
             _log(
                 user_id, "WARN",
-                f"{trade.ticker}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} na "
+                f"{ticker_display_name(trade.ticker)}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} na "
                 f"{candidate_stop} - CZĘŚCIOWO, tylko {partial_sellable} z {order_quantity} szt. (reszta "
                 "prawdopodobnie jeszcze się rozlicza na T212, nie sprzedana ani zgubiona) - przy kolejnym "
                 "ruchu ceny bot spróbuje ochronić całość ponownie.",
@@ -1784,7 +1784,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         else:
             _log(
                 user_id, "INFO",
-                f"{trade.ticker}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} "
+                f"{ticker_display_name(trade.ticker)}: trailing STOP {'uzbrojony' if not was_armed else 'przesunięty'} "
                 f"na {candidate_stop} (próg {milestone_steps}, cena teraz {current_price}).",
                 trade.position_group_id,
             )
@@ -1887,7 +1887,7 @@ def _trigger_dca_buys(
             if microgrid_strategy.is_shock(max_drop, atr_pct):
                 _log(
                     user_id, "WARN",
-                    f"{trade.ticker}: DCA poziom {next_level} POMINIĘTY - wykryty gwałtowny "
+                    f"{ticker_display_name(trade.ticker)}: DCA poziom {next_level} POMINIĘTY - wykryty gwałtowny "
                     f"niedawny ruch (spadek {max_drop:.2%} vs ATR {atr_pct:.2%}), czeka na "
                     "trailing-stop/exhausted-DCA-floor zamiast dalszego dokupowania.",
                     trade.position_group_id,
@@ -1917,7 +1917,7 @@ def _trigger_dca_buys(
         except T212APIError as exc:
             _log(
                 user_id, "ERROR",
-                f"{trade.ticker}: DCA poziom {next_level} nieudany (cena {current_price} <= trigger "
+                f"{ticker_display_name(trade.ticker)}: DCA poziom {next_level} nieudany (cena {current_price} <= trigger "
                 f"{trigger_price:.4f}) - {exc}",
                 trade.position_group_id,
             )
@@ -1930,7 +1930,7 @@ def _trigger_dca_buys(
         db.session.commit()
         _log(
             user_id, "BUY",
-            f"{trade.ticker}: DCA poziom {next_level} wyzwolony (cena {current_price} <= trigger "
+            f"{ticker_display_name(trade.ticker)}: DCA poziom {next_level} wyzwolony (cena {current_price} <= trigger "
             f"{trigger_price:.4f}) - dokupuję {dca_quantity} @ ~{current_price}.",
             trade.position_group_id,
         )
@@ -2017,7 +2017,7 @@ def _confirm_dca_fills(
                 # rzeczywisty stan.
                 _log(
                     user_id, "INFO",
-                    f"{trade.ticker}: anulowanie starego {leg_name} ({old_order_id}) po DCA "
+                    f"{ticker_display_name(trade.ticker)}: anulowanie starego {leg_name} ({old_order_id}) po DCA "
                     f"nie powiodło się (prawdopodobnie już wykonany) - {exc}",
                     trade.position_group_id,
                 )
@@ -2036,7 +2036,7 @@ def _confirm_dca_fills(
         if overfilled:
             _log(
                 user_id, "WARN",
-                f"{trade.ticker}: DCA poziom {trade.dca_level} wypełniony Z NADWYŻKĄ ({leg_qty} @ ~{leg_price}, "
+                f"{ticker_display_name(trade.ticker)}: DCA poziom {trade.dca_level} wypełniony Z NADWYŻKĄ ({leg_qty} @ ~{leg_price}, "
                 "prawdopodobne PODWÓJNE wykonanie tej nogi - cancel/replace race, sprawdź ręcznie w T212) - "
                 f"nowa średnia {trade.average_price}, łącznie {trade.quantity}. Trailing exit zresetowany, "
                 "uzbroi się od nowa od nowej średniej (Cancel-Replace).",
@@ -2045,7 +2045,7 @@ def _confirm_dca_fills(
         else:
             _log(
                 user_id, "BUY",
-                f"{trade.ticker}: DCA poziom {trade.dca_level} wypełniony ({leg_qty} @ ~{leg_price}) - "
+                f"{ticker_display_name(trade.ticker)}: DCA poziom {trade.dca_level} wypełniony ({leg_qty} @ ~{leg_price}) - "
                 f"nowa średnia {trade.average_price}, łącznie {trade.quantity}. Trailing exit zresetowany, "
                 "uzbroi się od nowa od nowej średniej (Cancel-Replace).",
                 trade.position_group_id,
@@ -2098,7 +2098,7 @@ def _finalize_closed_trade(
         except T212APIError as exc:
             _log(
                 user_id, "INFO",
-                f"{trade.ticker}: anulowanie drugiej nogi ({sibling_id}) po zamknięciu przez "
+                f"{ticker_display_name(trade.ticker)}: anulowanie drugiej nogi ({sibling_id}) po zamknięciu przez "
                 f"{filled_via} nie powiodło się (mogła się wykonać w tym samym momencie) - {exc}",
                 trade.position_group_id,
             )
@@ -2129,7 +2129,7 @@ def _resolve_vanished_leg(
     if item is None:
         _log(
             user_id, "INFO",
-            f"{trade.ticker} (grupa {trade.position_group_id}): zlecenie {order_id} zniknęło z pending, "
+            f"{ticker_display_name(trade.ticker)} (grupa {trade.position_group_id}): zlecenie {order_id} zniknęło z pending, "
             "ale nie udało się jeszcze zweryfikować jego statusu w historii T212 - sprawdzę ponownie "
             "na kolejnym ticku.",
             trade.position_group_id,
@@ -2140,7 +2140,7 @@ def _resolve_vanished_leg(
     if status != _FILLED_ORDER_STATUS:
         _log(
             user_id, "WARN",
-            f"{trade.ticker} (grupa {trade.position_group_id}): zlecenie {order_id} zniknęło z pending, "
+            f"{ticker_display_name(trade.ticker)} (grupa {trade.position_group_id}): zlecenie {order_id} zniknęło z pending, "
             f"ale status w historii T212 to {status}, NIE {_FILLED_ORDER_STATUS} - nie zostało "
             "wykonane (anulowane/odrzucone). Pozycja zostaje OPEN, noga zostanie wystawiona od nowa "
             "na kolejnym ticku.",
@@ -2165,7 +2165,7 @@ def _resolve_vanished_leg(
     if filled_via == "take-profit":
         _log(
             user_id, "INFO",
-            f"{trade.ticker} (grupa {trade.position_group_id}): LIMIT SELL (take-profit) wykonany "
+            f"{ticker_display_name(trade.ticker)} (grupa {trade.position_group_id}): LIMIT SELL (take-profit) wykonany "
             "- pozycja zamknięta.",
             position_group_id=trade.position_group_id,
         )
@@ -2186,7 +2186,7 @@ def _resolve_vanished_leg(
         )
         _log(
             user_id, "WARN",
-            f"{trade.ticker} (grupa {trade.position_group_id}): STOP wykonany na "
+            f"{ticker_display_name(trade.ticker)} (grupa {trade.position_group_id}): STOP wykonany na "
             f"{fill_price if fill_price is not None else trade.stop_target_price} "
             f"(wejście {trade.average_price}) - pozycja zamknięta {result_word}.",
             position_group_id=trade.position_group_id,
@@ -2562,7 +2562,7 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
             # diagnostics.log_diag, nie dubluje.
             _log_block_reason_throttled(
                 user_id, f"held_by_other:{asset.ticker}",
-                f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
+                f"{ticker_display_name(asset.ticker)}: pominięte wejście - już otwarte w {other}.",
             )
             continue
         sector_collision = sector_diversity.held_sector_ticker(user_id, env, asset.ticker)
@@ -2573,14 +2573,14 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
             # może pochodzić z DOWOLNEGO z nich, nie tylko Micro-Gridu.
             _log_block_reason_throttled(
                 user_id, f"sector:{asset.ticker}",
-                f"{asset.ticker}: pominięte wejście - już otwarta pozycja w tym samym sektorze ({sector_collision}).",
+                f"{ticker_display_name(asset.ticker)}: pominięte wejście - już otwarta pozycja w tym samym sektorze ({ticker_display_name(sector_collision)}).",
             )
             continue
         backoff = _entry_fail_backoff.get((user_id, asset.ticker))
         if backoff is not None and now < backoff[1]:
             _log_block_reason_throttled(
                 user_id, f"backoff:{asset.ticker}",
-                f"{asset.ticker}: pominięte wejście - w backoffie po nieudanych próbach do {backoff[1].strftime('%H:%M')} UTC.",
+                f"{ticker_display_name(asset.ticker)}: pominięte wejście - w backoffie po nieudanych próbach do {backoff[1].strftime('%H:%M')} UTC.",
             )
             continue  # asset "w pauzie" po serii nieudanych prób
         rejected_until = _entry_signal_rejected_until.get((user_id, asset.ticker))
@@ -2714,7 +2714,7 @@ def _enter_position(
 
     creds = get_decrypted_credentials(user_id, master_key, current_environment(user_id))
     if creds is None:
-        _log(user_id, "ERROR", f"{asset.ticker}: brak zapisanego klucza API demo.")
+        _log(user_id, "ERROR", f"{ticker_display_name(asset.ticker)}: brak zapisanego klucza API demo.")
         return False
 
     market_keys = get_decrypted_market_data_keys(user_id, master_key)
@@ -2723,7 +2723,7 @@ def _enter_position(
         market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
     )
     if price is None or price <= 0:
-        _log(user_id, "ERROR", f"{asset.ticker}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
+        _log(user_id, "ERROR", f"{ticker_display_name(asset.ticker)}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
         return False
 
     effective_entry_amount = asset.entry_amount
@@ -2735,7 +2735,7 @@ def _enter_position(
     try:
         entry_decision = microgrid_strategy.compute_entry_quantity(effective_entry_amount, price)
     except microgrid_strategy.EntryValidationError as exc:
-        _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
+        _log(user_id, "ERROR", f"{ticker_display_name(asset.ticker)}: {exc}")
         return False
     quantity = entry_decision.quantity
 
@@ -2801,7 +2801,7 @@ def _enter_position(
         _entry_fail_backoff[key] = (consecutive, dt.datetime.utcnow() + delay)
         _log(
             user_id, "ERROR",
-            f"{asset.ticker}: zakup nieudany ({consecutive}. próba z rzędu) - {exc} - "
+            f"{ticker_display_name(asset.ticker)}: zakup nieudany ({consecutive}. próba z rzędu) - {exc} - "
             f"kolejna próba za {int(delay.total_seconds() // 60)} min, w międzyczasie pomijany.",
         )
         return True  # dotarliśmy do T212 (zlecenie odrzucone, ale slot na ten tick zużyty)
@@ -2837,7 +2837,7 @@ def _enter_position(
     )
     _log(
         user_id, "BUY",
-        f"{asset.ticker}: wejście {quantity} @ ~{buy_price} - bot zacznie zarządzać wyjściem "
+        f"{ticker_display_name(asset.ticker)}: wejście {quantity} @ ~{buy_price} - bot zacznie zarządzać wyjściem "
         "(trailing take-profit + stop-loss) po potwierdzeniu kupna.",
         position_group_id,
     )

@@ -266,7 +266,7 @@ def _finalize_closed_trade(user_id: int, trade: SignalTrade, via: str, fill_pric
     pnl = (fill_price - trade.buy_price) * trade.quantity
     _log(
         user_id, "INFO",
-        f"{trade.ticker}: pozycja zamknięta ({via}) @ ~{fill_price}, "
+        f"{ticker_display_name(trade.ticker)}: pozycja zamknięta ({via}) @ ~{fill_price}, "
         f"P/L ~{pnl:.2f} {trade.currency}.",
     )
 
@@ -386,7 +386,7 @@ def _enter_position(
             fx_reference_price=fx_reference_price,
         )
     except signal_strategy.EntryValidationError as exc:
-        _log(user_id, "ERROR", f"{asset.ticker}: {exc}")
+        _log(user_id, "ERROR", f"{ticker_display_name(asset.ticker)}: {exc}")
         return False
     quantity = decision.quantity
     stop_loss_price = decision.stop_loss_price
@@ -420,7 +420,7 @@ def _enter_position(
     try:
         buy_result, quantity = _place_buy_with_precision_fallback(client, asset.ticker, quantity, price)
     except T212APIError as exc:
-        _log(user_id, "ERROR", f"{asset.ticker}: błąd składania zlecenia kupna - {exc}")
+        _log(user_id, "ERROR", f"{ticker_display_name(asset.ticker)}: błąd składania zlecenia kupna - {exc}")
         return False
 
     trade = SignalTrade(
@@ -440,7 +440,7 @@ def _enter_position(
     )
     _log(
         user_id, "BUY",
-        f"{asset.ticker}: sygnał wejścia (RSI<{settings.rsi_threshold}, cena>MA{MA_PERIOD}), "
+        f"{ticker_display_name(asset.ticker)}: sygnał wejścia (RSI<{settings.rsi_threshold}, cena>MA{MA_PERIOD}), "
         f"{quantity} @ ~{price} - SL {stop_loss_price:.4f} (trailing) / TP orientacyjny {take_profit_price:.4f} (ATR={atr:.4f}). "
         "Czeka na potwierdzenie kupna, dopiero potem uzbroi stop-loss.",
     )
@@ -521,7 +521,7 @@ def _process_entries(
             # 28-29.07 (10 wejść/stop-lossów w 15 minut na tym samym tickerze).
             diagnostics.log_diag(
                 user_id, "signal",
-                f"{asset.ticker}: pominięte wejście - cooldown po stop-lossie do {cooldown_until.strftime('%Y-%m-%d %H:%M')} UTC.",
+                f"{ticker_display_name(asset.ticker)}: pominięte wejście - cooldown po stop-lossie do {cooldown_until.strftime('%Y-%m-%d %H:%M')} UTC.",
             )
             continue
         other = market_hours.held_by_other_engine(user_id, asset.ticker, "signal")
@@ -531,7 +531,7 @@ def _process_entries(
             # held_by_other_engine).
             diagnostics.log_diag(
                 user_id, "signal",
-                f"{asset.ticker}: pominięte wejście - już otwarte w {other}.",
+                f"{ticker_display_name(asset.ticker)}: pominięte wejście - już otwarte w {other}.",
             )
             continue
         sector_collision = sector_diversity.held_sector_ticker(user_id, env, asset.ticker)
@@ -541,7 +541,7 @@ def _process_entries(
             # tym samym sektorze). Skanuje wszystkie 3 silniki.
             diagnostics.log_diag(
                 user_id, "signal",
-                f"{asset.ticker}: pominięte wejście - już otwarta pozycja w tym samym sektorze ({sector_collision}).",
+                f"{ticker_display_name(asset.ticker)}: pominięte wejście - już otwarta pozycja w tym samym sektorze ({ticker_display_name(sector_collision)}).",
             )
             continue
         if not market_hours.is_market_open(asset.currency):
@@ -619,7 +619,7 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalS
             _confirm_fail_backoff[backoff_key] = (consecutive, now + delay)
             _log(
                 user_id, "ERROR",
-                f"{trade.ticker}: błąd sprawdzenia portfela po zakupie #{consecutive} z rzędu - {exc} - "
+                f"{ticker_display_name(trade.ticker)}: błąd sprawdzenia portfela po zakupie #{consecutive} z rzędu - {exc} - "
                 f"kolejna próba za {int(delay.total_seconds() // 60)} min.",
             )
             continue
@@ -632,7 +632,7 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalS
             trade.closed_via = "never-filled"
             trade.closed_at = dt.datetime.utcnow()
             db.session.commit()
-            _log(user_id, "ERROR", f"{trade.ticker}: zlecenie kupna zniknęło z kolejki bez wypełnienia (anulowane/odrzucone).")
+            _log(user_id, "ERROR", f"{ticker_display_name(trade.ticker)}: zlecenie kupna zniknęło z kolejki bez wypełnienia (anulowane/odrzucone).")
             continue
 
         trade.quantity = filled
@@ -657,11 +657,11 @@ def _confirm_pending_entries(user_id: int, client: T212Client, settings: SignalS
             # _finalize_closed_trade tylko zmienia lokalny status, nie wola T212) -
             # stad realne konto skonczylo z ~19 naskladanymi akcjami zamiast 1.
             pending_order_ids.add(stop_result.order_id)
-            _log(user_id, "INFO", f"{trade.ticker}: kupno potwierdzone ({filled} szt.), stop-loss uzbrojony na {trade.stop_loss_price:.4f}.")
+            _log(user_id, "INFO", f"{ticker_display_name(trade.ticker)}: kupno potwierdzone ({filled} szt.), stop-loss uzbrojony na {trade.stop_loss_price:.4f}.")
         except T212APIError as exc:
             _log(
                 user_id, "ERROR",
-                f"{trade.ticker}: kupno potwierdzone, ale NIE udało się uzbroić stop-loss - {exc}. "
+                f"{ticker_display_name(trade.ticker)}: kupno potwierdzone, ale NIE udało się uzbroić stop-loss - {exc}. "
                 "Pozycja NIECHRONIONA żadnym resting orderem, sprawdź ręcznie.",
             )
 
@@ -670,7 +670,7 @@ def _bump_buy_retry(user_id: int, trade: SignalTrade, reason: str) -> None:
     trade.buy_retry_count += 1
     trade.next_buy_retry_at = dt.datetime.utcnow() + _next_retry_delay(trade.buy_retry_count)
     db.session.commit()
-    _log(user_id, "INFO", f"{trade.ticker}: sprawdzenie LIMIT BUY #{trade.buy_retry_count} - {reason}")
+    _log(user_id, "INFO", f"{ticker_display_name(trade.ticker)}: sprawdzenie LIMIT BUY #{trade.buy_retry_count} - {reason}")
 
 
 def _retry_pending_buys(
@@ -786,7 +786,7 @@ def _retry_pending_buys(
         db.session.commit()
         _log(
             user_id, "INFO",
-            f"{trade.ticker}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
+            f"{ticker_display_name(trade.ticker)}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
             f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}.",
         )
 
@@ -842,7 +842,7 @@ def _trail_stop_loss(
         db.session.commit()
         _log(
             user_id, "WARN",
-            f"{trade.ticker}: wykryto na T212 zlecenie SELL ({foreign_order.get('id')}) spoza bota "
+            f"{ticker_display_name(trade.ticker)}: wykryto na T212 zlecenie SELL ({foreign_order.get('id')}) spoza bota "
             f"(initiatedFrom={foreign_order.get('initiatedFrom')}) - pozycja zwolniona spod zarządzania "
             "automatycznie, żeby bot nie dobijał się o nią co tick. Udziały zostają na koncie.",
         )
@@ -856,7 +856,7 @@ def _trail_stop_loss(
             # tick wykryje to jako zamkniecie (zniknie z pending). Nie
             # probujemy wystawic nowego stopu na pozycje ktora juz mogla
             # przestac istniec.
-            _log(user_id, "INFO", f"{trade.ticker}: przesunięcie trailing stop-loss - anulowanie starego ({trade.stop_order_id}) nie powiodło się (mógł się już wykonać) - {exc}")
+            _log(user_id, "INFO", f"{ticker_display_name(trade.ticker)}: przesunięcie trailing stop-loss - anulowanie starego ({trade.stop_order_id}) nie powiodło się (mógł się już wykonać) - {exc}")
             return
 
     try:
@@ -864,14 +864,14 @@ def _trail_stop_loss(
     except T212APIError as exc:
         trade.stop_order_id = None
         db.session.commit()
-        _log(user_id, "ERROR", f"{trade.ticker}: uzbrojenie przesuniętego stop-loss (target {candidate_stop}) nie powiodło się - {exc}. Pozycja NIECHRONIONA do następnego ticku.")
+        _log(user_id, "ERROR", f"{ticker_display_name(trade.ticker)}: uzbrojenie przesuniętego stop-loss (target {candidate_stop}) nie powiodło się - {exc}. Pozycja NIECHRONIONA do następnego ticku.")
         return
 
     old_stop = trade.stop_loss_price
     trade.stop_loss_price = candidate_stop
     trade.stop_order_id = stop_result.order_id
     db.session.commit()
-    _log(user_id, "INFO", f"{trade.ticker}: trailing stop-loss przesunięty z {old_stop:.4f} na {candidate_stop:.4f} (cena teraz {price:.4f}).")
+    _log(user_id, "INFO", f"{ticker_display_name(trade.ticker)}: trailing stop-loss przesunięty z {old_stop:.4f} na {candidate_stop:.4f} (cena teraz {price:.4f}).")
 
 
 def _manage_exits(
@@ -922,7 +922,7 @@ def _manage_exits(
                 # noga zostanie wystawiona od nowa niżej (stop_order_id=None).
                 _log(
                     user_id, "WARN",
-                    f"{trade.ticker}: zlecenie stop-loss {trade.stop_order_id} zniknęło z pending, ale "
+                    f"{ticker_display_name(trade.ticker)}: zlecenie stop-loss {trade.stop_order_id} zniknęło z pending, ale "
                     f"historia T212 pokazuje status {status} (NIE {_FILLED_ORDER_STATUS}) - NIE zamykam "
                     "pozycji, zlecenie zostanie wystawione ponownie.",
                 )
@@ -936,7 +936,7 @@ def _manage_exits(
             if price_watchdog.note_price_result("signal", trade.ticker, False):
                 _log(
                     user_id, "ERROR",
-                    f"{trade.ticker}: brak ceny przez {price_watchdog.ALERT_THRESHOLD} ticków z rzędu - "
+                    f"{ticker_display_name(trade.ticker)}: brak ceny przez {price_watchdog.ALERT_THRESHOLD} ticków z rzędu - "
                     "trailing stop NIE działa dla tej pozycji! Sprawdź TICKER_MAP/mapowanie Yahoo "
                     "(finnhub_client.py) albo pokrycie instrumentu.",
                 )

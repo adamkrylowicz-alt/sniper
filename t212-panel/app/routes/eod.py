@@ -461,7 +461,7 @@ def adopt_position():
 
     eod_engine._log(
         user_id, "INFO",
-        f"{ticker}: pozycja adoptowana ręcznie z portfela T212 ({quantity} @ ~{avg_price}) - "
+        f"{ticker_display_name(ticker)}: pozycja adoptowana ręcznie z portfela T212 ({quantity} @ ~{avg_price}) - "
         f"stop-loss uzbrojony od razu na {stop_loss_price:.4f}.",
     )
     return jsonify(ok=True, trade_id=trade.id)
@@ -492,7 +492,7 @@ def release_position(trade_id):
     trade.status = "RELEASED"
     trade.closed_at = None
     db.session.commit()
-    eod_engine._log(user_id, "INFO", f"{trade.ticker}: pozycja zwolniona spod zarządzania EOD (udziały zostają na koncie).")
+    eod_engine._log(user_id, "INFO", f"{ticker_display_name(trade.ticker)}: pozycja zwolniona spod zarządzania EOD (udziały zostają na koncie).")
     return jsonify(ok=True)
 
 

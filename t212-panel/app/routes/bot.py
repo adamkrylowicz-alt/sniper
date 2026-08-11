@@ -299,7 +299,7 @@ def adopt_position():
 
     bot_engine._log(
         user_id, "INFO",
-        f"{ticker}: pozycja adoptowana ręcznie z portfela T212 ({quantity} @ ~{avg_price}) - "
+        f"{ticker_display_name(ticker)}: pozycja adoptowana ręcznie z portfela T212 ({quantity} @ ~{avg_price}) - "
         "od teraz zarządzana przez trailing exit bota.",
         position_group_id,
     )
@@ -315,7 +315,7 @@ def adopt_position():
     except Exception as exc:  # noqa: BLE001 - najlepsza proba, nie krytyczne
         bot_engine._log(
             user_id, "ERROR",
-            f"{ticker}: natychmiastowy trailing check po adopcji nie powiódł się ({exc}) - "
+            f"{ticker_display_name(ticker)}: natychmiastowy trailing check po adopcji nie powiódł się ({exc}) - "
             "spróbuje ponownie na najbliższym tick.",
             position_group_id,
         )
@@ -535,7 +535,7 @@ def _release_auto_adopted_positions(user_id: int) -> int:
                     except T212APIError as exc:
                         bot_engine._log(
                             user_id, "INFO",
-                            f"{trade.ticker}: anulowanie zlecenia bota ({order_id}) przy zwalnianiu "
+                            f"{ticker_display_name(trade.ticker)}: anulowanie zlecenia bota ({order_id}) przy zwalnianiu "
                             f"(wyłączenie \"zarządzaj wszystkim\") nie powiodło się - {exc}",
                             trade.position_group_id,
                         )
@@ -724,7 +724,7 @@ def release_position(trade_id):
             except T212APIError as exc:
                 bot_engine._log(
                     user_id, "INFO",
-                    f"{trade.ticker}: anulowanie zlecenia bota ({order_id}) przy zwalnianiu pozycji "
+                    f"{ticker_display_name(trade.ticker)}: anulowanie zlecenia bota ({order_id}) przy zwalnianiu pozycji "
                     f"nie powiodło się (mogło się już wykonać/zniknąć) - {exc}",
                     trade.position_group_id,
                 )
@@ -740,7 +740,7 @@ def release_position(trade_id):
 
     bot_engine._log(
         user_id, "INFO",
-        f"{trade.ticker}: pozycja zwolniona spod zarządzania bota na żądanie użytkownika "
+        f"{ticker_display_name(trade.ticker)}: pozycja zwolniona spod zarządzania bota na żądanie użytkownika "
         "(udziały zostają na koncie, bot już ich nie pilnuje).",
         trade.position_group_id,
     )
