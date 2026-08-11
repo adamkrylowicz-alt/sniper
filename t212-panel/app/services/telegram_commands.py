@@ -133,7 +133,7 @@ def _status_message(user_id: int, days: int = 1) -> str:
             return
         is_active = getattr(settings, is_active_attr)
         status_icon = "✅ aktywny" if is_active else "⛔ wyłączony"
-        data = daily_summary._engine_pnl_24h(user_id, trade_model, days=days)
+        data = daily_summary._engine_pnl_24h(user_id, trade_model, settings, days=days)
         lines.append(
             f"{icon} {name}: {status_icon} — zrealizowane {window_label if days != 1 else '24h'} {data['realized']:+.2f}€ "
             f"({data['realized_n']} zamkniętych), niezrealizowane {data['unrealized']:+.2f}€ "

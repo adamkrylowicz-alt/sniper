@@ -32,7 +32,7 @@ from flask import current_app
 from ..extensions import db
 from ..models import ActiveTrade, EODSettings, EODTrade, RiskSettings, SignalSettings, SignalTrade, User, UserSettings
 from ..routes.api_keys import get_decrypted_credentials
-from ..utils import current_environment, telegram_env_tag
+from ..utils import current_environment, fx_adjusted_cost_basis, telegram_env_tag
 from . import bot_credentials, price_feed, telegram_notify
 from .market_data_keys import get_decrypted_market_data_keys
 from .t212_client import T212APIError, T212Client
@@ -57,7 +57,7 @@ def _archive_report(text: str) -> None:
         f.write(f"{'=' * 60}\n{timestamp}\n{'=' * 60}\n{text}\n\n")
 
 
-def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper", days: int = 1) -> dict:
+def _engine_pnl_24h(user_id: int, trade_model, settings=None, is_paper_field: str = "is_paper", days: int = 1) -> dict:
     """
     Wspólna logika dla 3 silników - `trade_model` to ActiveTrade/SignalTrade/
     EODTrade, wszystkie mają identyczny kształt pól (buy_price/close_price/
@@ -68,9 +68,20 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper",
     okno dla zrealizowanego P&L (`closed_at >= cutoff`); niezrealizowane
     zawsze dotyczy WSZYSTKICH aktualnie otwartych pozycji, niezależnie od
     okna (to "teraz", nie coś co się mieści w oknie).
+
+    `settings` (Adam, 2026-08-11: "jak otwiera i zamyka po API niech dolicza
+    FX, bo inaczej będę robił za darmo" - potwierdzone T212 order history,
+    zlecenia STOP silników przez API rozliczają się w EUR z osobną opłatą
+    CURRENCY_CONVERSION_FEE, a to P&L liczyło surową różnicę cen w walucie
+    instrumentu i podpisywało ją "€" bez odjęcia tego kosztu). Ten sam
+    mechanizm/ustawienie co już od dawna używane przy progu trailing stopu
+    (patrz bot_engine.py::_manage_micro_grid_exits - RiskSettings/
+    SignalSettings/EODSettings.fx_cost_adjustment_enabled/fx_fee_pct,
+    round-trip x2) - tu reużyty do raportowania, nie tylko do decyzji.
     """
     cutoff = dt.datetime.utcnow() - dt.timedelta(days=days)
     env = current_environment(user_id)
+
     closed = (
         trade_model.query
         .filter_by(user_id=user_id, status="CLOSED", environment=env, **{is_paper_field: False})
@@ -86,7 +97,7 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper",
         # Micro-Grid liczy od average_price (koszt bazowy po DCA), Sygnał/EOD
         # od buy_price (jedno wejście, bez DCA) - oba modele mają buy_price,
         # tylko ActiveTrade ma DODATKOWO average_price jako właściwy koszt.
-        cost_basis = getattr(t, "average_price", None) or t.buy_price
+        cost_basis = fx_adjusted_cost_basis(getattr(t, "average_price", None) or t.buy_price, t.currency, settings, t.ticker)
         realized += (t.close_price - cost_basis) * t.quantity
 
     open_trades = trade_model.query.filter_by(user_id=user_id, status="OPEN", environment=env, **{is_paper_field: False}).all()
@@ -103,7 +114,7 @@ def _engine_pnl_24h(user_id: int, trade_model, is_paper_field: str = "is_paper",
             unrealized_unpriced += 1
             open_positions.append((t.ticker, None, t.currency))
             continue
-        cost_basis = getattr(t, "average_price", None) or t.buy_price
+        cost_basis = fx_adjusted_cost_basis(getattr(t, "average_price", None) or t.buy_price, t.currency, settings, t.ticker)
         pnl = (price - cost_basis) * t.quantity
         unrealized += pnl
         open_positions.append((t.ticker, pnl, t.currency))
@@ -151,11 +162,11 @@ def send_daily_summary(app, label: str, days: int = 1) -> None:
             if user is None:
                 continue
 
-            micro = _engine_pnl_24h(user.id, ActiveTrade, days=days)
+            micro = _engine_pnl_24h(user.id, ActiveTrade, settings, days=days)
             signal_settings = SignalSettings.query.filter_by(user_id=user.id).first()
             eod_settings = EODSettings.query.filter_by(user_id=user.id).first()
-            signal = _engine_pnl_24h(user.id, SignalTrade, days=days) if signal_settings else None
-            eod = _engine_pnl_24h(user.id, EODTrade, days=days) if eod_settings else None
+            signal = _engine_pnl_24h(user.id, SignalTrade, signal_settings, days=days) if signal_settings else None
+            eod = _engine_pnl_24h(user.id, EODTrade, eod_settings, days=days) if eod_settings else None
 
             account_total = _account_total(user.id)
             user_settings = UserSettings.query.filter_by(user_id=user.id).first()

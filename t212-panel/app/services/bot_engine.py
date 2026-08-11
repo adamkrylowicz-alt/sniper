@@ -169,7 +169,7 @@ from ..extensions import db
 from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
+from ..utils import current_environment, fx_adjusted_cost_basis, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
 from . import bot_credentials, bot_entry_filters, diagnostics, mailer, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
 from .market_data_keys import get_decrypted_market_data_keys
 from .strategy import microgrid_strategy
@@ -272,20 +272,9 @@ from .market_hours import (  # noqa: E402
 FX_FEE_PCT = Decimal("0.0015")
 FX_ROUND_TRIP_PCT = FX_FEE_PCT * 2
 
-# Francuski podatek od transakcji finansowych (FTT/TTF) - dodane 2026-08-07
-# (Adam: "trzeba to doliczać do kosztów żeby nie tracić"). W ODRÓŻNIENIU od
-# FX_ROUND_TRIP_PCT wyżej - nalicza się TYLKO przy KUPNIE (nie x2, sprzedaż
-# jest wolna od podatku), więc bez FX_ROUND_TRIP_PCT-owego podwojenia. Stawka
-# 0.4% (podniesiona z 0.3% w kwietniu 2025, potwierdzone wyszukiwaniem
-# 2026-08-07 - Keytrade Bank/shares.io) dotyczy zakupu akcji francuskich
-# spółek o kapitalizacji >1mld EUR przez T212. CELOWO twarda lista tickerów
-# (nie heurystyka po samym sufiksie giełdy Paryż "p_EQ") - nie każda spółka
-# na Euronext Paris ma kapitalizację >1mld€, więc zgadywanie po sufiksie
-# dawałoby fałszywe pozytywy. Rozszerzać ręcznie w miarę dodawania kolejnych
-# francuskich spółek do list botów (FPp_EQ=TotalEnergies, SUp_EQ=Schneider
-# Electric - oba potwierdzone jako CAC 40, kwalifikują się).
-FR_FTT_PCT = Decimal("0.004")
-FR_FTT_TICKERS = frozenset({"FPp_EQ", "SUp_EQ"})
+# Francuski FTT (FR_FTT_PCT/FR_FTT_TICKERS) - PRZENIESIONE 2026-08-11 do
+# utils.py (patrz fx_adjusted_cost_basis) - scentralizowane razem z FX, ten
+# plik woła teraz stamtąd zamiast trzymać własną kopię stałych.
 
 # Ciagly trailing (przeprojektowane 2026-07-22, patrz _manage_trailing_exit) -
 # minimalna poprawa wzgledem AKTUALNEGO stop_target_price zeby w ogole
@@ -1600,16 +1589,9 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         # gdzie tego wcześniej brakowało) - domyślnie WŁĄCZONE, więc
         # zachowanie Micro-Gridu bez zmian. Dla EUR (konto Adama jest w EUR,
         # zero konwersji) ref_price == average_price, zero zmiany zachowania.
-        ref_price = trade.average_price
-        if trade.currency == "USD" and settings.fx_cost_adjustment_enabled:
-            ref_price = trade.average_price * (1 + settings.fx_fee_pct * 2)
-        # Francuski FTT (2026-08-07, patrz FR_FTT_PCT/FR_FTT_TICKERS wyżej) -
-        # jednorazowo (kupno, nie x2 jak FX round-trip), NIEZALEŻNIE od
-        # powyższego bloku FX (obie stawki mogą się nałożyć, jeśli kiedyś
-        # trafi się francuski ticker rozliczany nie w EUR - dziś nie ma
-        # takiego przypadku, ale nie ma powodu tego wykluczać na sztywno).
-        if trade.ticker in FR_FTT_TICKERS:
-            ref_price = ref_price * (1 + FR_FTT_PCT)
+        # Francuski FTT nalicza się NIEZALEŻNIE od powyższego (patrz
+        # utils.py::fx_adjusted_cost_basis - ten sam helper co reszta P&L).
+        ref_price = fx_adjusted_cost_basis(trade.average_price, trade.currency, settings, trade.ticker)
 
         milestone_steps = microgrid_strategy.compute_milestone_steps(ref_price, current_price, step)
         if milestone_steps < 2:
@@ -2901,7 +2883,12 @@ def daily_report(app) -> None:
             closed_lines = []
             for t in closed:
                 if t.close_price is not None:
-                    pnl = (t.close_price - t.buy_price) * t.quantity
+                    # FX (2026-08-11, Adam: "otwiera i zamyka po API niech
+                    # dolicza FX, bo inaczej będę robił za darmo") - patrz
+                    # utils.py::fx_adjusted_cost_basis, ten sam mechanizm co
+                    # ref_price przy trailing stopie, tu reużyty do raportu.
+                    cost_basis = fx_adjusted_cost_basis(t.buy_price, t.currency, settings, t.ticker)
+                    pnl = (t.close_price - cost_basis) * t.quantity
                     realized_total += pnl
                     closed_lines.append(f"  ZAMKNIĘTA {ticker_display_name(t.ticker)}: {pnl:+.2f} {t.currency} (wejście {t.buy_price}, wyjście {t.close_price})")
                 else:
@@ -2923,7 +2910,8 @@ def daily_report(app) -> None:
                 if price is None:
                     open_lines.append(f"  OTWARTA {ticker_display_name(t.ticker)}: brak żywej ceny")
                     continue
-                pnl = (price - t.average_price) * t.quantity
+                cost_basis = fx_adjusted_cost_basis(t.average_price, t.currency, settings, t.ticker)
+                pnl = (price - cost_basis) * t.quantity
                 unrealized_total += pnl
                 unrealized_known += 1
                 open_lines.append(f"  OTWARTA {ticker_display_name(t.ticker)}: {pnl:+.2f} niezrealizowane (średnia {t.average_price}, teraz {price})")

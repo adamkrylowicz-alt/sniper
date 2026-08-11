@@ -50,7 +50,7 @@ from flask import current_app
 
 from ..extensions import db
 from ..models import ActiveTrade, RiskSettings
-from ..utils import current_environment
+from ..utils import current_environment, fx_adjusted_cost_basis
 
 # --- Filtr 1: pozycja ceny w dzisiejszym zakresie ------------------------
 # (cena - low_dnia) / (high_dnia - low_dnia): 0.0 = dokladnie przy dnie dnia,
@@ -520,7 +520,7 @@ def _start_of_day_utc() -> dt.datetime:
     return dt.datetime(now.year, now.month, now.day)
 
 
-def compute_today_pnl(user_id: int, live_price_getter) -> dict:
+def compute_today_pnl(user_id: int, live_price_getter, settings: RiskSettings | None = None) -> dict:
     """
     Zwraca {"realized", "unrealized", "total", "unpriced"} za DZISIAJ (UTC).
 
@@ -533,6 +533,13 @@ def compute_today_pnl(user_id: int, live_price_getter) -> dict:
     live_price_getter: callable(ticker) -> Decimal|None. Wstrzykiwane przez
     bot_engine (ma juz komplet kluczy API do price_feed) zeby ten modul nie
     musial znac konfiguracji.
+
+    `settings` (Adam, 2026-08-11: "otwiera i zamyka po API niech dolicza FX,
+    bo inaczej będę robił za darmo") - bez tego check_daily_loss_limit()
+    ponizej liczyl dzisiejszy P&L z surowej ceny instrumentu, ignorujac
+    ~0.15%/noge koszt przewalutowania na STOP-ach silnika przez API (patrz
+    RiskSettings.fx_cost_adjustment_enabled/fx_fee_pct) - realna dzienna
+    strata mogla przekroczyc max_daily_loss zanim licznik to zauwazyl.
     """
     cutoff = _start_of_day_utc()
     env = current_environment(user_id)
@@ -549,7 +556,8 @@ def compute_today_pnl(user_id: int, live_price_getter) -> dict:
         if trade.close_price is None:
             unpriced += 1
             continue
-        realized += (trade.close_price - trade.buy_price) * trade.quantity
+        cost_basis = fx_adjusted_cost_basis(trade.buy_price, trade.currency, settings, trade.ticker)
+        realized += (trade.close_price - cost_basis) * trade.quantity
 
     unrealized = Decimal("0")
     open_trades = ActiveTrade.query.filter_by(user_id=user_id, is_paper=False, status="OPEN", environment=env).all()
@@ -558,7 +566,8 @@ def compute_today_pnl(user_id: int, live_price_getter) -> dict:
         if price is None or price <= 0:
             unpriced += 1
             continue
-        unrealized += (price - trade.average_price) * trade.quantity
+        cost_basis = fx_adjusted_cost_basis(trade.average_price, trade.currency, settings, trade.ticker)
+        unrealized += (price - cost_basis) * trade.quantity
 
     return {
         "realized": realized,
@@ -583,7 +592,7 @@ def check_daily_loss_limit(user_id: int, settings: RiskSettings, live_price_gett
     if limit <= 0:
         return None  # brak skonfigurowanego limitu - nic nie egzekwujemy
 
-    pnl = compute_today_pnl(user_id, live_price_getter)
+    pnl = compute_today_pnl(user_id, live_price_getter, settings)
     if pnl["total"] > -limit:
         return None
 

@@ -17,6 +17,7 @@ Użycie w dowolnym blueprint:
 from __future__ import annotations
 
 import re
+from decimal import Decimal
 from functools import wraps
 
 from flask import g, jsonify, redirect, request, url_for
@@ -173,3 +174,51 @@ def avatar_hue(ticker: str) -> int:
     żeby kolory się zgadzały w obu miejscach.
     """
     return sum(ord(c) for c in ticker) % 360
+
+
+# Francuski podatek transakcyjny (French FTT) - 0,4%, TYLKO przy kupnie
+# (T212 nigdy nie nalicza go przy sprzedazy). Przeniesione tu 2026-08-11 z
+# bot_engine.py (tam zdefiniowane 2026-08-07 jako modulowe stale, uzywane
+# TYLKO do progu trailing stopu - patrz ref_price nizej w tym pliku) -
+# scentralizowane, zeby ten sam podatek liczyl sie tak samo w progu STOPu i
+# w kazdym miejscu raportujacym P&L. Adam, 2026-08-11: "sprawdz ile pobiera
+# kosztow gielda francuska" - potwierdzone WPROST w eksporcie CSV T212
+# (/history/exports, kolumna "French transaction tax"): TTE (TotalEnergies)
+# kupno 76,53 -> podatek 0,21 (=0,4% dokladnie), kupno 30,76 -> 0,12,
+# wczesniej 75,18->0,30 i 74,70->0,30 - zawsze TYLKO na BUY. Zgadza sie z
+# oficjalna tabela oplat T212 (Adam wkleil z ich strony): "French FTT 0.4%,
+# applied on the purchase of shares of companies located in France with
+# market cap over 1 billion". Whitelist tickerow zamiast ISIN+market-cap
+# lookup - jedyne FR-domiciled tickery jakie bot w ogole rozwaza.
+FR_FTT_PCT = Decimal("0.004")
+FR_FTT_TICKERS = frozenset({"FPp_EQ", "SUp_EQ"})
+
+
+def fx_adjusted_cost_basis(cost_basis, currency: str, settings, ticker: str = "") -> object:
+    """
+    Podbija koszt bazowy (buy_price/average_price) o:
+    - round-trip koszt przewalutowania (2x fx_fee_pct) dla tickerów USD,
+      TYLKO gdy settings.fx_cost_adjustment_enabled (opt-in, per-user)
+    - francuski FTT (FR_FTT_PCT, jednorazowo - podatek jest tylko przy
+      kupnie, nie przy sprzedaży) dla tickerów z FR_FTT_TICKERS,
+      NIEZALEŻNIE od powyższego ustawienia (realny, zawsze naliczany koszt,
+      nie coś opcjonalnego jak próg FX)
+    - żeby raportowany/liczony P&L odzwierciedlał realny pieniądz, nie
+      surową różnicę cen instrumentu.
+
+    Ten sam mechanizm co od dawna używany do progu trailing stopu (patrz
+    bot_engine.py::ref_price) - tu wydzielony jako wspólny helper, bo od
+    2026-08-11 (Adam: "otwiera i zamyka po API niech dolicza FX, bo inaczej
+    będę robił za darmo") ta sama korekta jest potrzebna też w P&L
+    reportowanym na Telegram/mailem/w max_daily_loss (daily_summary.py,
+    bot_engine.py::daily_report, bot_entry_filters.py::compute_today_pnl) -
+    identyczna logika w kilku miejscach zamiast kopiowanej.
+
+    `settings` może być None (wywołujący bez skonfigurowanych ustawień) -
+    wtedy brak korekty FX (FTT nadal się liczy, patrz wyżej).
+    """
+    if settings is not None and currency == "USD" and settings.fx_cost_adjustment_enabled:
+        cost_basis = cost_basis * (1 + settings.fx_fee_pct * 2)
+    if ticker in FR_FTT_TICKERS:
+        cost_basis = cost_basis * (1 + FR_FTT_PCT)
+    return cost_basis
