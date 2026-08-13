@@ -42,6 +42,12 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
     --sell-red-tint-strong: rgba(255, 92, 92, 0.25);
     --buy-green-tint: rgba(47, 217, 138, 0.12);
     --buy-green-tint-strong: rgba(47, 217, 138, 0.25);
+    /* Tint amberu do teł/glow hoverów - dawniej 7 miejsc miało wpisane na
+       sztywno rgba(168, 85, 255, ...) (dokładna wartość DARK --accent-amber),
+       więc w light mode zostawały zahardkodowane w kolorze DARK zamiast
+       podążać za aktywnym motywem. Ten sam wzorzec co buy/sell-tint. */
+    --accent-amber-tint: rgba(168, 85, 255, 0.12);
+    --accent-amber-tint-strong: rgba(168, 85, 255, 0.24);
 
     /* Tekst na nasyconym tle (plakietki, przyciski buy/sell, awatary) -
        zawsze biały niezależnie od motywu; nazwane żeby intencja była jawna. */
@@ -87,30 +93,57 @@ o stałej szerokości, żeby cyfry się nie "tańczyły" przy zmianie wartości.
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px -12px rgba(0, 0, 0, 0.5);
 }
 html[data-theme="light"] {
-    --shadow-card: 0 1px 2px rgba(20, 24, 27, 0.06), 0 8px 20px -14px rgba(20, 24, 27, 0.12);
+    --shadow-card: 0 1px 2px rgba(36, 31, 26, 0.06), 0 8px 20px -14px rgba(36, 31, 26, 0.14);
 }
 
-/* Motyw jasny - nadpisuje te same zmienne na <html data-theme="light">.
-   Amber i zielony są przyciemnione względem wersji dark - oryginalne
-   wartości mają za mały kontrast na białym tle (test WCAG by nie przeszedł). */
+/* Motyw jasny "Daylight" (2026-08-12, Adam: "podoba mi się, zaimplementuj to
+   jako light mode") - ciepła, papierowa paleta zamiast dawnej zimno-szarej/
+   przygaszonego fioletu, ten sam pomysl co zaakceptowana wizualizacja
+   koncepcyjna (Artifact "Snajper Daylight"). Struktura komponentow (HUD-owe
+   narozniki kafelkow, IBM Plex Mono, odstepy) CELOWO zostaje bez zmian -
+   to podmiana tokenow koloru, nie przebudowa - dopracowanie typografii
+   (np. szeryfowe cyfry na cenach z makiety) odlozone na kolejna sesje, jak
+   ustalone z Adamem. Amber/zielony/czerwony dobrane pod WCAG AA na bialym
+   tle (patrz komentarz ktory tu byl wczesniej - ta sama dyscyplina).
+   POPRAWKA tego samego dnia: pierwsza wersja buy/sell (stonowana
+   ziel/cegła #2F6B4F/#A13A2E z makiety) Adam odrzucił na żywo ("chujowe te
+   zielone i czerwone... jakis swinski roz i pizdzi zielone") - te tony
+   blendowane jako tło-tint na cieplym kremowym bg realnie wychodzily
+   przybrudzone/rozowawe zamiast czystego sygnalu gieldowego. Zamiast
+   kolejnego autorskiego doboru - realne, rozpoznawalne kolory gieldowe
+   (ten sam Tailwind green-700/red-600 co byl w apce PRZED tym redesignem,
+   nikt nigdy sie na nie nie skarzyl - najbezpieczniejszy punkt odniesienia). */
 html[data-theme="light"] {
-    --bg: #F4F5F6;
+    --bg: #F6F1E7;
     --panel: #FFFFFF;
-    --hairline: #DDE1E4;
-    --text-bright: #14181B;
-    --text-muted: #6B7280;
-    --accent-amber: #6D28D9;
-    --accent-glow: rgba(109, 40, 217, 0.2);
+    --hairline: #E4DCC8;
+    --text-bright: #241F1A;
+    --text-muted: #6B6255;
+    --accent-amber: #8F6226;
+    --accent-glow: rgba(143, 98, 38, 0.2);
     --buy-green: #15803D;
     --sell-red: #DC2626;
-    --accent-blue: #2563EB;
+    --accent-blue: #1D6FD1;
     --currency-eur: #C2560B;
     --currency-usd: #1D6FD1;
 
-    --sell-red-tint: rgba(220, 38, 38, 0.1);
-    --sell-red-tint-strong: rgba(220, 38, 38, 0.2);
-    --buy-green-tint: rgba(21, 128, 61, 0.1);
-    --buy-green-tint-strong: rgba(21, 128, 61, 0.2);
+    /* Alpha podbita 0.1/0.2 -> 0.28/0.45 (byla 1:1 przepisana z dark mode,
+       gdzie ten sam procent nad prawie-czarnym tlem daje nastrojowa
+       poswiate; nad bielą/kremem fizycznie zawsze daje pastel - im nizszy
+       alpha tym bledziej "dziecinny rozowy/mietowy", nie "gieldowy
+       czerwony/zielony", dokladnie to Adam zglosil zrzutami ekranu 12.08).
+       Spikselowana referencja z jego wykresu swiecowego to #FC4949/#57D54C,
+       ale to za malo kontrastu jako kolor TEKSTU na bialym (odpowiednio
+       ~3.4:1 i ~1.9:1, WCAG AA dla tekstu wymaga 4.5:1) - stad --sell-red/
+       --buy-green zostaja przy bezpiecznych kontrastowo #DC2626/#15803D,
+       a tint pod plakietki/przyciski podbity mocno zamiast tego, zeby
+       czytal sie jako nasycony "chip", nie wyplowiala akwarela. */
+    --sell-red-tint: rgba(220, 38, 38, 0.28);
+    --sell-red-tint-strong: rgba(220, 38, 38, 0.45);
+    --buy-green-tint: rgba(21, 128, 61, 0.28);
+    --buy-green-tint-strong: rgba(21, 128, 61, 0.45);
+    --accent-amber-tint: rgba(143, 98, 38, 0.1);
+    --accent-amber-tint-strong: rgba(143, 98, 38, 0.2);
 
     /* Awatary bez logo (patrz .avatar--hued niżej) - jaśniejsze na jasnym
        tle, żeby nie wyglądały ubłocone obok bieli --panel. */
@@ -159,6 +192,19 @@ html, body {
     font-family: 'IBM Plex Mono', monospace;
     min-height: 100vh;
 }
+
+/* Przegladarkowe elementy ktorych apka dotad nie dotykala (zaznaczenie
+   tekstu, kursor pisania, scrollbar w kontenerach z wlasnym overflow jak
+   .table-scroll/.watchlist-results/.more-sheet) - dostawaly czysto systemowy
+   wyglad obok w pelni custom UI. Jeden wspolny motyw zamiast dopisywania
+   per-kontener. */
+::selection { background: var(--accent-amber); color: var(--on-accent); }
+* { caret-color: var(--accent-amber); }
+* { scrollbar-width: thin; scrollbar-color: var(--hairline) var(--panel); }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: var(--panel); }
+*::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: var(--radius-pill); border: 2px solid var(--panel); }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
 /* Perspektywiczny tor siatki w tle - "podloga" control roomu uciekajaca w
    glab, przypieta do viewportu (position: fixed), z maska zanikajaca ku
@@ -454,6 +500,35 @@ tekst błędu, obok osobno siatka.
     padding: var(--space-2) 0;
 }
 
+/* Wspolny "nic tu nie ma" blok (2026-08-12) - dotad kazda strona wymyslala
+   to na nowo (auth-box__hint / sidebar-widget__empty / recznie sklejony
+   inline blok w warp.html) - jeden wzorzec z realna waga wizualna zamiast
+   pojedynczej linijki tekstu, do uzycia gdziekolwiek liczba pozycji
+   naprawde wynosi zero (NIE do stanu "laduje sie"). */
+.empty-state {
+    background: var(--panel);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-md);
+    padding: var(--space-6) var(--space-5);
+    text-align: center;
+}
+.empty-state--grid-span { grid-column: 1 / -1; }
+.empty-state__title {
+    color: var(--text-bright);
+    font-weight: 600;
+    margin: 0 0 var(--space-2);
+}
+.empty-state__hint {
+    color: var(--text-muted);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    margin: 0;
+}
+.empty-state__hint a { color: var(--accent-amber); text-decoration: none; }
+.empty-state__hint a:hover { text-decoration: underline; }
+.empty-state--error { border-color: var(--sell-red); }
+.empty-state--error .empty-state__title { color: var(--sell-red); }
+
 .sidebar-widget__actions {
     display: flex;
     flex-direction: column;
@@ -496,7 +571,7 @@ tekst błędu, obok osobno siatka.
 
 .sidebar-favorites__item--active {
     border-color: var(--accent-amber);
-    background: rgba(168, 85, 255, 0.08);
+    background: var(--accent-amber-tint);
     box-shadow: 0 0 8px var(--accent-glow);
 }
 
@@ -891,7 +966,7 @@ img.tile__logo {
 .tile__preset--active {
     border-color: var(--accent-amber);
     color: var(--accent-amber);
-    background: rgba(168, 85, 255, 0.1);
+    background: var(--accent-amber-tint);
     box-shadow: 0 0 8px var(--accent-glow);
 }
 
@@ -1253,6 +1328,14 @@ img.tile__logo {
 .account-bar__btn:hover { border-color: var(--accent-amber); color: var(--text-bright); }
 .account-bar__btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+/* Przycisk chowania kwot (👁️/🙈 zamienione 2026-08-12 na SVG - ten sam
+   wzorzec pokaż/schowaj-jedną-ikonę co .topbar__theme-toggle wyżej) - JS
+   (common.js::applyMoneyHiding) przełącza tylko klasę modyfikatora. */
+.js-money-toggle-btn .icon { width: 14px; height: 14px; }
+.js-money-toggle-btn .icon--eye-off { display: none; }
+.js-money-toggle-btn--hidden .icon--eye { display: none; }
+.js-money-toggle-btn--hidden .icon--eye-off { display: block; }
+
 .account-bar__btn--buy:hover { border-color: var(--buy-green); color: var(--buy-green); }
 .account-bar__btn--sell:hover { border-color: var(--sell-red); color: var(--sell-red); }
 
@@ -1294,7 +1377,7 @@ img.tile__logo {
 
 .auth-box {
     width: 100%;
-    max-width: 340px;
+    max-width: 400px;
     margin: var(--space-6) auto;
     background: var(--panel);
     border: 1px solid var(--hairline);
@@ -1344,6 +1427,7 @@ img.tile__logo {
     white-space: nowrap;
 }
 .section-heading__action:hover { color: var(--accent-amber); border-color: var(--accent-amber); }
+.section-heading__action:focus-visible { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
 
 /* <details> zwijane sekcje (np. Ustawienia ryzyka w bot.html) - domyślnie
    zwinięte, summary wygląda jak .section-heading + strzałka obrotowa. */
@@ -1423,11 +1507,22 @@ img.tile__logo {
     color: var(--text-muted);
     margin-top: 18px;
 }
-.auth-box__footer a, .auth-box__hint a {
+.auth-box__footer a, .auth-box__hint a, .auth-box__footer__btn {
     color: var(--accent-amber);
     text-decoration: none;
 }
-.auth-box__footer a:hover { text-decoration: underline; }
+.auth-box__footer a:hover, .auth-box__footer__btn:hover { text-decoration: underline; }
+/* Wariant <button> (potrzebny gdy akcja to JS, nie zwykly href - np.
+   "Wrόć" w instrument_detail.html z history.back()) tego samego wzorca co
+   .auth-box__footer a powyzej - byl dawniej odtwarzany od zera przez
+   inline style zamiast dzielic te regule. */
+.auth-box__footer__btn {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+}
 
 .auth-form { display: flex; flex-direction: column; gap: var(--space-1); }
 
@@ -1452,8 +1547,74 @@ img.tile__logo {
 .auth-form__input:focus {
     outline: none;
     border-color: var(--accent-amber);
-    box-shadow: 0 0 0 3px rgba(168, 85, 255, 0.15);
+    box-shadow: 0 0 0 3px var(--accent-amber-tint);
 }
+
+/* select.auth-form__input dostawal poprawne tlo/obwodke/padding z klasy
+   powyzej, ale sama strzalka rozwijania zostawala systemowym, jasnym
+   widzetem obok w pelni ciemnego UI - wlasna strzalka SVG w kolorze
+   --text-muted zamiast tego. */
+select.auth-form__input {
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237A7F87' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--space-3) center;
+    background-size: 14px;
+    padding-right: var(--space-6);
+    cursor: pointer;
+}
+/* data: URI nie moze czytac var(--text-muted) (rozne wartosci per motyw) -
+   druga wersja strzalki w kolorze light-mode --text-muted (#6B7280). */
+html[data-theme="light"] select.auth-form__input {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236B6255' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+}
+
+/* Suwak glosnosci powiadomien (Ustawienia) - jedyny <input type=range> w
+   apce, renderowal sie jako calkowicie domyslny jasny suwak OS na ciemnym
+   panelu. Track+thumb stylowane osobno dla webkit/firefox (rozne
+   pseudo-elementy, brak wspolnego standardu). */
+#sound-volume-slider {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    cursor: pointer;
+}
+#sound-volume-slider::-webkit-slider-runnable-track {
+    height: 4px;
+    background: var(--hairline);
+    border-radius: var(--radius-pill);
+}
+#sound-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    margin-top: -6px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--accent-amber);
+    box-shadow: 0 0 6px var(--accent-glow);
+}
+#sound-volume-slider::-moz-range-track {
+    height: 4px;
+    background: var(--hairline);
+    border-radius: var(--radius-pill);
+}
+#sound-volume-slider::-moz-range-progress {
+    height: 4px;
+    background: var(--accent-amber);
+    border-radius: var(--radius-pill);
+}
+#sound-volume-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent-amber);
+    box-shadow: 0 0 6px var(--accent-glow);
+}
+#sound-volume-slider:focus { outline: none; }
+#sound-volume-slider:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
+#sound-volume-slider:focus-visible::-moz-range-thumb { outline: 2px solid var(--accent-amber); outline-offset: 2px; }
 
 .auth-form__submit {
     margin-top: var(--space-5);
@@ -1472,7 +1633,7 @@ img.tile__logo {
     display: block;
     transition: background 0.15s, box-shadow 0.15s;
 }
-.auth-form__submit:hover { background: rgba(168, 85, 255, 0.14); box-shadow: 0 0 10px var(--accent-glow); }
+.auth-form__submit:hover { background: var(--accent-amber-tint); box-shadow: 0 0 10px var(--accent-glow); }
 
 /* Wariant "kasowanie" (Usuń klucz API itp.) - czerwony zamiast bursztynowego
    akcentu, inline zamiast block (obok tekstu statusu, nie osobna sekcja). */
@@ -1585,11 +1746,11 @@ img.tile__logo {
 .modal-box__btn--cancel:hover { border-color: var(--text-bright); color: var(--text-bright); }
 
 .modal-box__btn--confirm {
-    background: rgba(168, 85, 255, 0.14);
+    background: var(--accent-amber-tint);
     border: 1px solid var(--accent-amber);
     color: var(--accent-amber);
 }
-.modal-box__btn--confirm:hover { background: rgba(168, 85, 255, 0.24); box-shadow: 0 0 10px var(--accent-glow); }
+.modal-box__btn--confirm:hover { background: var(--accent-amber-tint-strong); box-shadow: 0 0 10px var(--accent-glow); }
 
 .modal-box--wide { max-width: 420px; }
 
@@ -1645,8 +1806,14 @@ img.tile__logo {
 /* Naglowki z sortowaniem (Aktywa/portfolio.html) - patrz portfolio.js::sortPositions. */
 .history-table__th--sortable { cursor: pointer; user-select: none; }
 .history-table__th--sortable:hover { color: var(--text-bright); }
-.history-table__th--sortable .sort-arrow { margin-left: 4px; opacity: 0.35; font-size: 9px; }
+.history-table__th--sortable:focus-visible { outline: 2px solid var(--accent-amber); outline-offset: -2px; }
+/* sort-arrow zamienione 2026-08-12 z glifów unicode (⇅/▲/▼) na jedną SVG
+   ikonę - JS (common.js::initSortableTable, portfolio.js) tylko przełącza
+   klasy na <th> (--active/--desc), nigdy nie dotyka zawartości <span>. */
+.sort-arrow { display: inline-flex; margin-left: 4px; opacity: 0.35; vertical-align: middle; }
+.sort-arrow .icon { width: 9px; height: 9px; }
 .history-table__th--sortable--active .sort-arrow { opacity: 1; color: var(--accent-amber); }
+.history-table__th--sortable--desc .sort-arrow .icon { transform: rotate(180deg); }
 
 .history-table__side--buy { color: var(--buy-green); }
 .history-table__side--sell { color: var(--sell-red); }
@@ -1656,16 +1823,20 @@ img.tile__logo {
    kolejnosc user ustawia strzalkami gora/dol, patrz common.js::initReorderablePanels. */
 .reorderable-panel__toolbar { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 4px; }
 .reorderable-panel__move {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
     border: 1px solid var(--hairline);
     color: var(--text-muted);
     cursor: pointer;
-    font-size: 11px;
     line-height: 1;
     padding: 3px 7px;
     border-radius: var(--radius-sm);
 }
+.reorderable-panel__move .icon { width: 11px; height: 11px; }
 .reorderable-panel__move:hover { color: var(--text-bright); border-color: var(--accent-amber); }
+.reorderable-panel__move:disabled { opacity: 0.35; cursor: not-allowed; }
 
 .history-table__status--sent { color: var(--text-bright); }
 .history-table__status--filled { color: var(--buy-green); }
@@ -1706,7 +1877,7 @@ img.tile__logo {
     margin: 12px auto 0;
 }
 .flash-bar__msg {
-    background: rgba(168, 85, 255, 0.1);
+    background: var(--accent-amber-tint);
     border: 1px solid var(--accent-amber);
     color: var(--accent-amber);
     font-size: 12px;
@@ -1883,7 +2054,7 @@ img.tile__logo {
     padding: 3px 10px;
     border-radius: var(--radius-xs);
 }
-.watchlist-results__add:hover { background: rgba(168, 85, 255, 0.12); }
+.watchlist-results__add:hover { background: var(--accent-amber-tint); }
 
 /* --- Layout strony Watchlist: przeglądanie (lewo) | ulubione (prawo) --- */
 .watchlist-layout {
@@ -2046,7 +2217,7 @@ img.tile__logo {
 .settings-subheading:first-of-type { margin-top: var(--space-3); }
 
 .pie-fx-banner {
-    background: rgba(168, 85, 255, 0.1);
+    background: var(--accent-amber-tint);
     border: 1px solid var(--accent-amber);
     color: var(--accent-amber);
     font-size: 12px;
@@ -2169,7 +2340,11 @@ img.tile__logo {
     border-radius: var(--radius-xs);
     width: 100px;
 }
-.pie-asset-row__fields input:focus { outline: none; border-color: var(--accent-amber); }
+.pie-asset-row__fields input:focus {
+    outline: none;
+    border-color: var(--accent-amber);
+    box-shadow: 0 0 0 3px var(--accent-amber-tint);
+}
 
 .pie-asset-row__actions {
     display: flex;
@@ -2304,6 +2479,7 @@ img.tile__logo {
     flex-shrink: 0;
 }
 .focus-nav__btn:hover { border-color: var(--accent-amber); color: var(--accent-amber); }
+.focus-nav__btn:disabled { opacity: 0.35; cursor: not-allowed; }
 .focus-nav__btn .icon { width: 24px; height: 24px; }
 
 .focus-tiles-track {
@@ -2483,9 +2659,9 @@ img.focus-tile__logo {
     background: transparent;
 }
 .focus-tile__btn--buy { color: var(--buy-green); border-color: var(--buy-green); }
-.focus-tile__btn--buy:hover { background: rgba(51,193,123,0.1); }
+.focus-tile__btn--buy:hover { background: var(--buy-green-tint); }
 .focus-tile__btn--sell { color: var(--sell-red); border-color: var(--sell-red); }
-.focus-tile__btn--sell:hover { background: rgba(229,72,77,0.1); }
+.focus-tile__btn--sell:hover { background: var(--sell-red-tint); }
 .focus-tile__btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .focus-tile__status {
@@ -2606,8 +2782,13 @@ ilosc) i .focus-candle-up/--down (swiece) zamiast duplikowac je tu.
 .instrument-detail__chart-empty { margin: 0; }
 
 .instrument-detail__position {
-    background: var(--panel);
+    /* var(--bg) zamiast var(--panel) - zagniezdzone bezposrednio w
+       .history-box (to samo tlo/obwodka co ten kontener), bez tego zero
+       kontrastu glebi miedzy dwoma poziomami zagniezdzenia. Ten sam trik co
+       .tile__price wewnatrz .tile. */
+    background: var(--bg);
     border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
     padding: 14px 16px;
     margin-bottom: 16px;
 }
@@ -2773,13 +2954,13 @@ odblokowane.
     margin: var(--space-4) 0 var(--space-2);
 }
 .help-content p {
-    color: var(--text-muted);
+    color: var(--text-bright);
     font-size: var(--text-base);
     line-height: 1.6;
     margin: 0 0 var(--space-3);
 }
 .help-content ul, .help-content ol {
-    color: var(--text-muted);
+    color: var(--text-bright);
     font-size: var(--text-base);
     line-height: 1.6;
     margin: 0 0 var(--space-4);

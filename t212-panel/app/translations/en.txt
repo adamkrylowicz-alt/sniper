@@ -111,8 +111,8 @@ Zatwierdź|||Approve
 Odrzuć|||Reject
 ← Wróć do Warp Mode|||← Back to Warp Mode
 KLUCZE API T212|||T212 API KEYS
-✅ zapisany|||✅ saved
-— brak|||— none
+zapisany|||saved
+brak|||none
 Usuń|||Delete
 Środowisko|||Environment
 Wygeneruj w aplikacji T212: Ustawienia → API (Beta). Wartości są szyfrowane Twoim kluczem prywatnym zanim trafią do bazy — admin tej appki nie ma do nich dostępu.|||Generate it in the T212 app: Settings → API (Beta). Values are encrypted with your private key before they reach the database — this app's admin has no access to them.
@@ -523,6 +523,7 @@ Odblokować tę pozycję? Bot spróbuje ponownie wystawić/przesunąć trailing 
 Zwolnić tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie T212 - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).|||Release this position from bot management? Shares STAY in the T212 account - the bot just stops watching them (trailing STOP will be cancelled).
 Nie udało się zwolnić pozycji.|||Failed to release the position.
 Brak wyników.|||No results.
+Błąd wyszukiwania. Spróbuj ponownie.|||Search failed. Try again.
 waluta nieznana|||unknown currency
 Dodaj|||Add
 Podaj najpierw kwotę wejścia (pole nad wyszukiwarką).|||Enter an entry amount first (field above the search box).

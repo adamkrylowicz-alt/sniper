@@ -75,7 +75,7 @@ from ..extensions import db
 from ..models import SignalAsset, SignalAuditLog, SignalSettings, SignalTrade
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
+from ..utils import current_environment, humanize_ticker_prefix, should_notify_environment, telegram_env_tag, ticker_display_name
 from . import bot_credentials, diagnostics, market_hours, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
 from .market_data_keys import get_decrypted_market_data_keys
 from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
@@ -192,10 +192,11 @@ def _log(user_id: int, action_type: str, message: str) -> None:
     diagnostics.log_diag(user_id, "signal", f"[{action_type}] {message}")
     if action_type == "ERROR":
         current_app.logger.error("[signal user=%s] %s", user_id, message)
-        telegram_notify.send_telegram_message(
-            current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
-            f"🔴 [{telegram_env_tag(user_id)}] Sygnał ERROR (user {user_id}): {humanize_ticker_prefix(message)}",
-        )
+        if should_notify_environment(user_id):
+            telegram_notify.send_telegram_message(
+                current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
+                f"🔴 [{telegram_env_tag(user_id)}] Sygnał ERROR (user {user_id}): {humanize_ticker_prefix(message)}",
+            )
     entry = SignalAuditLog(
         user_id=user_id, action_type=action_type, message=humanize_ticker_prefix(message),
         environment=current_environment(user_id),

@@ -348,7 +348,7 @@ function applyMoneyHiding() {
         el.textContent = moneyHidden ? MONEY_HIDDEN_PLACEHOLDER : el.dataset.real;
     });
     document.querySelectorAll(".js-money-toggle-btn").forEach((btn) => {
-        btn.textContent = moneyHidden ? "🙈" : "👁️";
+        btn.classList.toggle("js-money-toggle-btn--hidden", moneyHidden);
         btn.title = moneyHidden ? t("Pokaż wartości") : t("Ukryj wartości (np. przed screen-share)");
     });
 }
@@ -506,10 +506,9 @@ function initSortableTable(table, storageKey) {
 
     function updateArrows() {
         headers.forEach((th) => {
-            const arrow = th.querySelector(".sort-arrow");
             const active = th.dataset.sortKey === sortState.key;
             th.classList.toggle("history-table__th--sortable--active", active);
-            if (arrow) arrow.textContent = active ? (sortState.dir === 1 ? "▲" : "▼") : "⇅";
+            th.classList.toggle("history-table__th--sortable--desc", active && sortState.dir === -1);
         });
     }
 
@@ -534,21 +533,33 @@ function initSortableTable(table, storageKey) {
         rows.forEach((row) => tbody.appendChild(row));
     }
 
+    function handleSort(th) {
+        const key = th.dataset.sortKey;
+        if (sortState.key === key) {
+            sortState.dir *= -1;
+        } else {
+            sortState.key = key;
+            sortState.dir = 1;
+        }
+        try {
+            localStorage.setItem(storageKey, JSON.stringify({ key: sortState.key, dir: sortState.dir }));
+        } catch (err) {
+            // localStorage niedostępny (np. tryb prywatny) - sort działa, po prostu nie przetrwa F5
+        }
+        applySort();
+    }
+
+    // tabindex/keydown dopisane 2026-08-12 - <th> nie jest domyslnie
+    // fokusowalny, wiec :focus-visible w style.css bez tego nigdy by sie nie
+    // uruchomil (klikalny naglowek byl wczesniej WYLACZNIE mysza/dotykiem).
     headers.forEach((th) => {
-        th.addEventListener("click", () => {
-            const key = th.dataset.sortKey;
-            if (sortState.key === key) {
-                sortState.dir *= -1;
-            } else {
-                sortState.key = key;
-                sortState.dir = 1;
+        th.tabIndex = 0;
+        th.addEventListener("click", () => handleSort(th));
+        th.addEventListener("keydown", (ev) => {
+            if (ev.key === "Enter" || ev.key === " ") {
+                ev.preventDefault();
+                handleSort(th);
             }
-            try {
-                localStorage.setItem(storageKey, JSON.stringify({ key: sortState.key, dir: sortState.dir }));
-            } catch (err) {
-                // localStorage niedostępny (np. tryb prywatny) - sort działa, po prostu nie przetrwa F5
-            }
-            applySort();
         });
     });
 
@@ -610,12 +621,26 @@ function initReorderablePanels(container, storageKey) {
         }
     }
 
+    // Przyciski gora/dol na skrajnych panelach dotad wygladaly na klikalne,
+    // ale klik na nich byl cichym no-opem (brak prev/next sibling) - teraz
+    // dostaja realny atrybut disabled (:disabled w style.css juz na to czekal).
+    function updateDisabledStates() {
+        const ordered = Array.from(container.children).filter((el) => el.classList.contains("reorderable-panel"));
+        ordered.forEach((panel, i) => {
+            const upBtn = panel.querySelector('[data-move="up"]');
+            const downBtn = panel.querySelector('[data-move="down"]');
+            if (upBtn) upBtn.disabled = i === 0;
+            if (downBtn) downBtn.disabled = i === ordered.length - 1;
+        });
+    }
+
     try {
         const saved = JSON.parse(localStorage.getItem(storageKey));
         if (Array.isArray(saved)) applyOrder(saved);
     } catch (err) {
         // brak/uszkodzony zapis - zostaje domyslna kolejnosc z szablonu
     }
+    updateDisabledStates();
 
     container.addEventListener("click", (ev) => {
         const btn = ev.target.closest("[data-move]");
@@ -630,6 +655,7 @@ function initReorderablePanels(container, storageKey) {
             if (next && next.classList.contains("reorderable-panel")) container.insertBefore(next, panel);
         }
         saveOrder();
+        updateDisabledStates();
     });
 }
 
@@ -637,6 +663,25 @@ document.addEventListener("DOMContentLoaded", () => {
     initReorderablePanels(document.getElementById("bot-panel"), "snajper-bot-panel-order");
     initReorderablePanels(document.getElementById("signal-panel"), "snajper-signal-panel-order");
     initReorderablePanels(document.getElementById("eod-panel"), "snajper-eod-panel-order");
+});
+
+/*
+Nawigacja sekcji strony (bot/signal/eod.html, ".tabs.section-nav") - to
+zwykle linki kotwiczne (href="#section-x"), skok do sekcji dziala natywnie
+bez JS. Brakowalo tylko podswietlenia klikniętej zakladki jako aktywnej -
+ten sam, najprostszy wzorzec co gdzie indziej w apce (np. instrument.js
+range-tabs): klik zdejmuje .tab--active z rodzenstwa, dodaje klikniętemu.
+Bez scroll-spy - sekcje mozna dowolnie przestawiac strzalkami (patrz
+initReorderablePanels wyzej), wiec "aktualnie widoczna sekcja" i tak nie
+miala jednego stalego porzadku do sledzenia.
+*/
+document.querySelectorAll(".section-nav").forEach((nav) => {
+    nav.addEventListener("click", (ev) => {
+        const tab = ev.target.closest(".tab");
+        if (!tab || !nav.contains(tab)) return;
+        nav.querySelectorAll(".tab").forEach((t) => t.classList.remove("tab--active"));
+        tab.classList.add("tab--active");
+    });
 });
 
 async function fetchCategoryCounts() {

@@ -29,8 +29,8 @@
 
     <div class="reorderable-panel" data-panel-id="assets">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
     </div>
     <h2 class="section-heading" id="section-assets">{{ t("AKTYWA STRATEGII") }}</h2>
     <p class="auth-box__hint">
@@ -99,8 +99,8 @@
 
     <div class="reorderable-panel" data-panel-id="positions">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
     </div>
     <h2 class="section-heading" id="section-positions">{{ t("OTWARTE POZYCJE") }}</h2>
     <p class="auth-box__hint">
@@ -113,13 +113,13 @@
     <table class="history-table" id="signal-positions-table">
         <thead>
             <tr>
-                <th class="history-table__th--sortable" data-sort-key="name">{{ t("Aktywo") }} <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="currency">{{ t("Waluta") }} <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="quantity">{{ t("Ilość") }} <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="buy_price">{{ t("Cena wejścia") }} <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="stop_loss">{{ t("Stop-loss") }} <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="take_profit">{{ t("Take-profit") }} <span class="sort-arrow">⇅</span></th>
-                <th class="history-table__th--sortable" data-sort-key="created_at">{{ t("Otwarta od (Amsterdam)") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" tabindex="0" data-sort-key="name">{{ t("Aktywo") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
+                <th class="history-table__th--sortable" tabindex="0" data-sort-key="currency">{{ t("Waluta") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
+                <th class="history-table__th--sortable" tabindex="0" data-sort-key="quantity">{{ t("Ilość") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
+                <th class="history-table__th--sortable" tabindex="0" data-sort-key="buy_price">{{ t("Cena wejścia") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
+                <th class="history-table__th--sortable" tabindex="0" data-sort-key="stop_loss">{{ t("Stop-loss") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
+                <th class="history-table__th--sortable" tabindex="0" data-sort-key="take_profit">{{ t("Take-profit") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
+                <th class="history-table__th--sortable" tabindex="0" data-sort-key="created_at">{{ t("Otwarta od (Amsterdam)") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
                 <th>{{ t("Status") }}</th>
             </tr>
         </thead>
@@ -162,8 +162,8 @@
 
     <div class="reorderable-panel" data-panel-id="activation">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
     </div>
     <div class="pie-detail__add-asset" id="section-activation">
         <label class="auth-form__label" for="signal-password">{{ t("Hasło (do aktywacji)") }}</label>
@@ -178,8 +178,8 @@
 
     <div class="reorderable-panel" data-panel-id="risk">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
     </div>
     <details class="collapsible" id="section-risk">
     <summary class="section-heading">{{ t("USTAWIENIA RYZYKA") }}</summary>
@@ -250,8 +250,8 @@
 
     <div class="reorderable-panel" data-panel-id="log">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
     </div>
     <div class="section-heading section-heading--with-action" id="section-log">
         <span>{{ t("DZIENNIK (ostatnie 50)") }}</span>

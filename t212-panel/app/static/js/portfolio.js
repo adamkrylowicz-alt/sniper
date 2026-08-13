@@ -24,6 +24,10 @@ const REFRESH_DELAY_MS = 1500;
 // domyslnej kolejnosci z backendu (wartosc malejaco), mimo ze user wybral
 // inny sort przed chwila (zgloszone przez Adama, 27.07.2026).
 const SORT_STORAGE_KEY = "snajper-portfolio-sort";
+// SVG chevron zamiast dawnych glifow unicode (⇅/▲/▼) - kierunek/aktywnosc
+// steruje sie WYLACZNIE klasami na <th> (patrz sortHeaderCell nizej i
+// .sort-arrow w style.css), ta ikona jest zawsze ta sama.
+const SORT_ARROW_ICON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg>';
 let currentPositions = null;
 let currentTotals = { value: 0, ppl: 0, pplPct: 0 };
 const sortState = { key: null, dir: 1 };
@@ -113,8 +117,10 @@ function engineLabel(engine) {
 
 function sortHeaderCell(label, key) {
     const active = sortState.key === key;
-    const arrow = active ? (sortState.dir === 1 ? "▲" : "▼") : "⇅";
-    return `<th class="history-table__th--sortable${active ? " history-table__th--sortable--active" : ""}" data-sort-key="${key}">${label} <span class="sort-arrow">${arrow}</span></th>`;
+    const stateClasses = active
+        ? ` history-table__th--sortable--active${sortState.dir === -1 ? " history-table__th--sortable--desc" : ""}`
+        : "";
+    return `<th class="history-table__th--sortable${stateClasses}" tabindex="0" data-sort-key="${key}">${label} <span class="sort-arrow">${SORT_ARROW_ICON}</span></th>`;
 }
 
 function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
@@ -122,7 +128,7 @@ function renderPortfolio(positions, totalValue, totalPpl, totalPplPct) {
     if (!container) return;
 
     if (!positions.length) {
-        container.innerHTML = `<p class="auth-box__hint">${t("Brak otwartych pozycji.")}</p>`;
+        container.innerHTML = `<div class="empty-state"><p class="empty-state__title">${t("Brak otwartych pozycji.")}</p></div>`;
         return;
     }
 
@@ -330,6 +336,17 @@ document.getElementById("portfolio-content")?.addEventListener("click", (ev) => 
     if (sortTh) {
         sortPositions(sortTh.dataset.sortKey);
     }
+});
+
+// Klawiatura (Enter/Spacja) dla naglowkow sortujacych - byly wczesniej
+// klikalne WYLACZNIE mysza/dotykiem (patrz tabindex="0" w sortHeaderCell()
+// i w portfolio.html), tabindex bez tego byloby fokusowalne-ale-gluche.
+document.getElementById("portfolio-content")?.addEventListener("keydown", (ev) => {
+    if (ev.key !== "Enter" && ev.key !== " ") return;
+    const sortTh = ev.target.closest("[data-sort-key]");
+    if (!sortTh) return;
+    ev.preventDefault();
+    sortPositions(sortTh.dataset.sortKey);
 });
 
 /*

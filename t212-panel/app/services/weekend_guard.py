@@ -35,7 +35,7 @@ import pytz
 from ..extensions import db
 from ..models import ActiveTrade, BotAuditLog, EODAuditLog, EODTrade, RiskSettings, SignalAuditLog, SignalTrade
 from ..routes.api_keys import get_decrypted_credentials
-from ..utils import current_environment, telegram_env_tag, ticker_display_name
+from ..utils import current_environment, should_notify_environment, telegram_env_tag, ticker_display_name
 from . import bot_credentials, telegram_notify
 from .t212_client import T212APIError, T212Client
 
@@ -121,7 +121,7 @@ def suspend_all(app) -> None:
                     ))
             db.session.commit()
 
-            if suspended and token and chat_id:
+            if suspended and token and chat_id and should_notify_environment(user_id):
                 lines = "\n".join(f"  {icon} {ticker_display_name(t)} ({n})" for n, t, icon in
                                    ((n, t, "🔷" if n == "Micro-Grid" else "⚡" if n == "Sygnał" else "🌙") for n, t in suspended))
                 telegram_notify.send_telegram_message(
@@ -204,7 +204,7 @@ def restore_all(app) -> None:
                     ))
             db.session.commit()
 
-            if (restored or failed) and token and chat_id:
+            if (restored or failed) and token and chat_id and should_notify_environment(user_id):
                 lines = [f"✅ {ticker_display_name(t)} ({n})" for n, t in restored]
                 lines += [f"⚠️ {ticker_display_name(t)} ({n}) - {err}" for n, t, err in failed]
                 telegram_notify.send_telegram_message(

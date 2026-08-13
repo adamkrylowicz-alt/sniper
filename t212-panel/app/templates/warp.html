@@ -14,7 +14,10 @@
                 {{ t("SALDO") }}
             </div>
             <div class="sidebar-widget__balance" id="account-balance">{{ t("saldo: —") }}</div>
-            <button type="button" class="account-bar__btn js-money-toggle-btn" title="{{ t('Ukryj wartości (np. przed screen-share)') }}" style="margin-bottom: 8px;">👁️</button>
+            <button type="button" class="account-bar__btn js-money-toggle-btn" title="{{ t('Ukryj wartości (np. przed screen-share)') }}" style="margin-bottom: 8px;">
+                <svg class="icon icon--eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+                <svg class="icon icon--eye-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l18 18"/><path d="M10.6 10.6a3 3 0 0 0 4.2 4.2"/><path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 7 10 7a17.3 17.3 0 0 1-3.2 4.2M6.1 6.1A17.6 17.6 0 0 0 2 11s3.5 7 10 7a10.4 10.4 0 0 0 3.9-.8"/></svg>
+            </button>
             <button id="btn-refresh" class="account-bar__btn">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>
@@ -111,14 +114,12 @@
     <div class="warp-center">
         <div class="warp-grid" id="warp-grid">
             {% if not tickers %}
-            <div style="grid-column: 1 / -1; background: var(--panel); border: 1px solid var(--hairline); display: flex; align-items: center; justify-content: center; text-align: center; padding: 32px 24px;">
-                <div>
-                    <p style="color: var(--text-bright); font-weight: 600; margin: 0 0 8px;">{{ t("Siatka jest pusta") }}</p>
-                    <p class="sidebar-widget__empty" style="margin: 0;">
-                        {{ t("Wybierz aktywa w widgecie ULUBIONE po lewej (albo dodaj nowe w") }}
-                        <a href="{{ url_for('settings.watchlist_view') }}">{{ t("Ustawienia") }} → Watchlist</a>{{ t("), żeby pojawiły się tutaj jako kafelki.") }}
-                    </p>
-                </div>
+            <div class="empty-state empty-state--grid-span">
+                <p class="empty-state__title">{{ t("Siatka jest pusta") }}</p>
+                <p class="empty-state__hint">
+                    {{ t("Wybierz aktywa w widgecie ULUBIONE po lewej (albo dodaj nowe w") }}
+                    <a href="{{ url_for('settings.watchlist_view') }}">{{ t("Ustawienia") }} → Watchlist</a>{{ t("), żeby pojawiły się tutaj jako kafelki.") }}
+                </p>
             </div>
             {% else %}
             {% for tile in tickers %}

@@ -169,7 +169,7 @@ from ..extensions import db
 from ..models import ActiveTrade, BotAsset, BotAuditLog, Instrument, RiskSettings, User
 from ..routes.api_keys import get_decrypted_credentials
 from ..routes.scalping import _log_order
-from ..utils import current_environment, fx_adjusted_cost_basis, humanize_ticker_prefix, telegram_env_tag, ticker_display_name
+from ..utils import current_environment, fx_adjusted_cost_basis, humanize_ticker_prefix, should_notify_environment, telegram_env_tag, ticker_display_name
 from . import bot_credentials, bot_entry_filters, diagnostics, mailer, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
 from .market_data_keys import get_decrypted_market_data_keys
 from .strategy import microgrid_strategy
@@ -734,10 +734,11 @@ def _log(user_id: int, action_type: str, message: str, position_group_id: str | 
     diagnostics.log_diag(user_id, "bot", f"[{action_type}] {message}")
     if action_type == "ERROR":
         _log_error_to_file(user_id, message)
-        telegram_notify.send_telegram_message(
-            current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
-            f"🔴 [{telegram_env_tag(user_id)}] Micro-Grid ERROR (user {user_id}): {humanize_ticker_prefix(message)}",
-        )
+        if should_notify_environment(user_id):
+            telegram_notify.send_telegram_message(
+                current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
+                f"🔴 [{telegram_env_tag(user_id)}] Micro-Grid ERROR (user {user_id}): {humanize_ticker_prefix(message)}",
+            )
         return
     db.session.add(BotAuditLog(
         user_id=user_id, action_type=action_type, message=humanize_ticker_prefix(message),
@@ -2651,15 +2652,16 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
         if last_sent is None or (now - last_sent) >= dt.timedelta(minutes=ENTRY_SIGNAL_COOLDOWN_MINUTES):
             _entry_signal_sent_at[key] = now
             _last_signal_ticker[user_id] = best_ticker
-            name = ticker_display_name(best_ticker)
-            telegram_notify.send_telegram_message(
-                current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
-                f"🟢 [{telegram_env_tag(user_id)}] Micro-Grid SYGNAŁ (user {user_id}): {name} ({best_ticker}) - "
-                f"score {scored[0][1]:.3f}, sugerowana kwota wejścia {best_asset.entry_amount}"
-                f" {best_asset.currency}. Kup ręcznie, potem \"Przekaż botowi\" na stronie "
-                f"instrumentu, żeby przejął trailing stop. Odpisz \"nie\", żeby nie "
-                f"podpowiadał tego przez {ENTRY_SIGNAL_REJECT_MINUTES} min.",
-            )
+            if should_notify_environment(user_id):
+                name = ticker_display_name(best_ticker)
+                telegram_notify.send_telegram_message(
+                    current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
+                    f"🟢 [{telegram_env_tag(user_id)}] Micro-Grid SYGNAŁ (user {user_id}): {name} ({best_ticker}) - "
+                    f"score {scored[0][1]:.3f}, sugerowana kwota wejścia {best_asset.entry_amount}"
+                    f" {best_asset.currency}. Kup ręcznie, potem \"Przekaż botowi\" na stronie "
+                    f"instrumentu, żeby przejął trailing stop. Odpisz \"nie\", żeby nie "
+                    f"podpowiadał tego przez {ENTRY_SIGNAL_REJECT_MINUTES} min.",
+                )
         return
 
     # Krok 3: próbujemy od najlepszego. NAJWYŻEJ JEDNO wejście na tick, ale

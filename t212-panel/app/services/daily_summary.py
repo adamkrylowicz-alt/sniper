@@ -32,7 +32,7 @@ from flask import current_app
 from ..extensions import db
 from ..models import ActiveTrade, EODSettings, EODTrade, RiskSettings, SignalSettings, SignalTrade, User, UserSettings
 from ..routes.api_keys import get_decrypted_credentials
-from ..utils import current_environment, fx_adjusted_cost_basis, telegram_env_tag
+from ..utils import current_environment, fx_adjusted_cost_basis, should_notify_environment, telegram_env_tag
 from . import bot_credentials, price_feed, telegram_notify
 from .market_data_keys import get_decrypted_market_data_keys
 from .t212_client import T212APIError, T212Client
@@ -159,7 +159,7 @@ def send_daily_summary(app, label: str, days: int = 1) -> None:
 
         for settings in RiskSettings.query.all():
             user = User.query.get(settings.user_id)
-            if user is None:
+            if user is None or not should_notify_environment(user.id):
                 continue
 
             micro = _engine_pnl_24h(user.id, ActiveTrade, settings, days=days)

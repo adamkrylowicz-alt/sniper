@@ -19,7 +19,7 @@ from decimal import Decimal
 
 from flask import current_app
 
-from ..utils import telegram_env_tag, ticker_display_name
+from ..utils import should_notify_environment, telegram_env_tag, ticker_display_name
 from . import telegram_notify
 
 MOVE_ALERT_THRESHOLD = Decimal("0.05")  # ±5%
@@ -42,6 +42,8 @@ def check_move_alert(user_id: int, engine: str, ticker: str, buy_price, current_
         return  # już zaalarmowane, cisza dopóki nie wróci pod próg (patrz wyżej)
     _alerted.add(key)
 
+    if not should_notify_environment(user_id):
+        return
     direction = "🟢 w górę" if move_pct > 0 else "🔴 w dół"
     name = ticker_display_name(ticker)
     telegram_notify.send_telegram_message(

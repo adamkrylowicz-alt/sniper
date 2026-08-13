@@ -11,7 +11,9 @@
 
     <div class="auth-box__hint key-status-row">
         <span class="key-status-row__item">
-            {{ t("Status") }}: DEMO {{ t("✅ zapisany") if has_demo else t("— brak") }}
+            {{ t("Status") }}: DEMO
+            <span class="topbar__conn-dot {{ 'topbar__conn-dot--ok' if has_demo else 'topbar__conn-dot--unknown' }}"></span>
+            {{ t("zapisany") if has_demo else t("brak") }}
             {% if has_demo %}
             <form method="post" action="{{ url_for('api_keys.delete') }}" style="display:inline">
                 <input type="hidden" name="environment" value="demo">
@@ -20,7 +22,9 @@
             {% endif %}
         </span>
         <span class="key-status-row__item">
-            LIVE {{ t("✅ zapisany") if has_live else t("— brak") }}
+            LIVE
+            <span class="topbar__conn-dot {{ 'topbar__conn-dot--ok' if has_live else 'topbar__conn-dot--unknown' }}"></span>
+            {{ t("zapisany") if has_live else t("brak") }}
             {% if has_live %}
             <form method="post" action="{{ url_for('api_keys.delete') }}" style="display:inline">
                 <input type="hidden" name="environment" value="live">
@@ -57,7 +61,9 @@
 
     <div class="auth-box__hint key-status-row">
         <span class="key-status-row__item">
-            Finnhub: {{ t("✅ zapisany") if has_finnhub else t("— brak") }}
+            Finnhub:
+            <span class="topbar__conn-dot {{ 'topbar__conn-dot--ok' if has_finnhub else 'topbar__conn-dot--unknown' }}"></span>
+            {{ t("zapisany") if has_finnhub else t("brak") }}
             {% if has_finnhub %}
             <form method="post" action="{{ url_for('api_keys.delete_market_data') }}" style="display:inline">
                 <input type="hidden" name="field" value="finnhub">
@@ -66,7 +72,9 @@
             {% endif %}
         </span>
         <span class="key-status-row__item">
-            Alpaca: {{ t("✅ zapisany") if has_alpaca else t("— brak") }}
+            Alpaca:
+            <span class="topbar__conn-dot {{ 'topbar__conn-dot--ok' if has_alpaca else 'topbar__conn-dot--unknown' }}"></span>
+            {{ t("zapisany") if has_alpaca else t("brak") }}
             {% if has_alpaca %}
             <form method="post" action="{{ url_for('api_keys.delete_market_data') }}" style="display:inline">
                 <input type="hidden" name="field" value="alpaca">
@@ -75,7 +83,9 @@
             {% endif %}
         </span>
         <span class="key-status-row__item">
-            IBKR: {{ t("✅ zapisany") if ibkr_host else t("— brak") }}
+            IBKR:
+            <span class="topbar__conn-dot {{ 'topbar__conn-dot--ok' if ibkr_host else 'topbar__conn-dot--unknown' }}"></span>
+            {{ t("zapisany") if ibkr_host else t("brak") }}
             {% if ibkr_host %}
             <form method="post" action="{{ url_for('api_keys.delete_market_data') }}" style="display:inline">
                 <input type="hidden" name="field" value="ibkr">

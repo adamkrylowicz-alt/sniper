@@ -22,7 +22,7 @@ function renderResults(results) {
     container.innerHTML = "";
 
     if (results.length === 0) {
-        container.innerHTML = `<p class="auth-box__hint">${t("Brak wyników.")}</p>`;
+        container.innerHTML = `<div class="empty-state"><p class="empty-state__title">${t("Brak wyników.")}</p></div>`;
         return;
     }
 
@@ -89,6 +89,11 @@ function renderResults(results) {
 
 async function loadResults() {
     const query = document.getElementById("watchlist-search").value.trim();
+    const container = document.getElementById("watchlist-results");
+    // Ladowanie/blad dotad byly niewidoczne dla usera - pusty panel przez
+    // chwile na starcie, a nieudany fetch konczyl sie WYLACZNIE
+    // console.error (user nie widzial nic, wygladalo jak brak wynikow).
+    container.innerHTML = `<p class="auth-box__hint">${t("Ładowanie…")}</p>`;
 
     try {
         const resp = await fetch(
@@ -98,6 +103,7 @@ async function loadResults() {
         renderResults(data.results || []);
     } catch (err) {
         console.error("Błąd wyszukiwania:", err);
+        container.innerHTML = `<div class="empty-state empty-state--error"><p class="empty-state__title">${t("Błąd wyszukiwania. Spróbuj ponownie.")}</p></div>`;
     }
 }
 

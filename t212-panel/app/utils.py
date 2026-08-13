@@ -166,6 +166,21 @@ def telegram_env_tag(user_id: int) -> str:
     return "💰 LIVE" if current_environment(user_id) == "live" else "🧪 DEMO"
 
 
+def should_notify_environment(user_id: int) -> bool:
+    """
+    Bramka dla proaktywnych powiadomień Telegram (Adam, 2026-08-11: prod ma
+    user1=live + user2(claudetest)=demo na jednym bocie - alerty demo
+    zagłuszały realne. Config TELEGRAM_NOTIFY_ENV="live"/"demo" ogranicza
+    bota do jednego środowiska; brak wartości = bez filtra (stare
+    zachowanie). Nie dotyczy odpowiedzi na komendy Telegram - tam user sam
+    pyta, więc dostaje odpowiedź niezależnie od środowiska.
+    """
+    from flask import current_app
+
+    target = current_app.config.get("TELEGRAM_NOTIFY_ENV")
+    return not target or current_environment(user_id) == target
+
+
 def avatar_hue(ticker: str) -> int:
     """
     Deterministyczny odcień (0-359) na podstawie tickera - ten sam ticker

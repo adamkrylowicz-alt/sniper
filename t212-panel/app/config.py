@@ -83,6 +83,14 @@ class Config:
     TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
     TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+    # Filtr środowiska dla proaktywnych powiadomień (Adam, 2026-08-11: prod ma
+    # user1=live + user2(claudetest)=demo na tym samym bocie - demo-szum
+    # zagłuszał realne alerty). "live"/"demo" = wysyłaj tylko dla tego
+    # środowiska, brak wartości = bez filtra (stare zachowanie). Odpowiedzi na
+    # komendy Telegram (telegram_commands.py) NIE są filtrowane - to reakcja
+    # na wprost zadane pytanie, nie samoistny raport.
+    TELEGRAM_NOTIFY_ENV = os.environ.get("TELEGRAM_NOTIFY_ENV")
+
     # Link "DEV" w topbarze (2026-08-06, Adam: "wyobraź sobie że cały dev to
     # jedna nowa zakładka") - ustawiane TYLKO w .env prod, wskazuje na
     # instancję dev (na razie LAN, docelowo subdomena publiczna przez NPM).
