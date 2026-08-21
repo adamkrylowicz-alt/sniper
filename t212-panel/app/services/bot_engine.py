@@ -1750,6 +1750,30 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             # najpierw pełnej ilości - naturalnie złapie resztę, gdy tylko się
             # rozliczy, bez żadnego specjalnego mechanizmu "dogonienia".
             partial_sellable = _extract_owned_quantity_from_error(exc)
+            if partial_sellable == 0:
+                # owned:0 (nie 0<X<quantity jak w komentarzu wyżej) - to NIE jest
+                # rozliczająca się część, T212 mówi wprost że nie ma nic do
+                # sprzedania. Ten sam przypadek jak "cudze zlecenie SELL w pending"
+                # wyżej (Adam po TotalEnergies, 2026-08-10), tylko bez wiszącego
+                # zlecenia bo ręczna sprzedaż już dawno się wykonała (Heineken,
+                # 2026-08-21) - bez tego bota dobijałby się o zerowy stan w
+                # nieskończoność, _bump_retry i tak nigdy by się nie poddał.
+                trade.stop_order_id = None
+                trade.sell_order_id = None
+                trade.dca_pending_buy_order_id = None
+                trade.dca_pending_quantity = None
+                trade.dca_pending_price = None
+                trade.dca_pending_baseline_quantity = None
+                trade.status = "RELEASED"
+                db.session.commit()
+                _log(
+                    user_id, "WARN",
+                    f"{ticker_display_name(trade.ticker)}: T212 zgłasza owned:0 przy próbie uzbrojenia STOP-a - "
+                    "pozycja sprzedana poza botem, zwolniona spod zarządzania automatycznie, żeby bot nie "
+                    "dobijał się o nią co tick.",
+                    trade.position_group_id,
+                )
+                continue
             if partial_sellable is None or not (0 < partial_sellable < order_quantity):
                 _bump_retry(
                     user_id, trade,

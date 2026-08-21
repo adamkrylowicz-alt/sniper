@@ -82,7 +82,7 @@ from ..routes.scalping import _log_order
 from ..utils import current_environment, humanize_ticker_prefix, should_notify_environment, telegram_env_tag, ticker_display_name
 from . import bot_credentials, diagnostics, market_hours, position_alerts, price_feed, price_watchdog, sector_diversity, telegram_notify
 from .market_data_keys import get_decrypted_market_data_keys
-from .bot_engine import _FILLED_ORDER_STATUS, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
+from .bot_engine import _FILLED_ORDER_STATUS, _extract_owned_quantity_from_error, _lookup_recent_order, _next_retry_delay, _place_buy_with_precision_fallback
 from .strategy import eod_strategy
 from .strategy.microgrid_strategy import compute_equity_scaled_amount
 from .t212_client import T212APIError, T212Client
@@ -823,6 +823,20 @@ def _trail_stop_loss(
         stop_result = client.place_stop_order(trade.ticker, -trade.quantity, candidate_stop)
     except T212APIError as exc:
         trade.stop_order_id = None
+        # owned:0 - pozycja sprzedana poza botem, ale bez wiszącego zlecenia w
+        # pending (ręczna sprzedaż już się dawno wykonała) - sam check "cudze
+        # SELL w pending" wyżej tego nie łapie (patrz identyczny fix i incydent
+        # Heineken/HEIAa_EQ w bot_engine.py::_manage_trailing_exit, 2026-08-21).
+        if _extract_owned_quantity_from_error(exc) == 0:
+            trade.status = "RELEASED"
+            db.session.commit()
+            _log(
+                user_id, "WARN",
+                f"{ticker_display_name(trade.ticker)}: T212 zgłasza owned:0 przy próbie uzbrojenia STOP-a - "
+                "pozycja sprzedana poza botem, zwolniona spod zarządzania automatycznie, żeby bot nie "
+                "dobijał się o nią co tick.",
+            )
+            return
         db.session.commit()
         _log(user_id, "ERROR", f"{ticker_display_name(trade.ticker)}: uzbrojenie przesuniętego stop-loss EOD (target {candidate_stop}) nie powiodło się - {exc}. Pozycja NIECHRONIONA do następnego ticku.")
         return
