@@ -73,10 +73,10 @@ function renderAccountSummary(data) {
 
     if (data.account_pnl != null) {
         pnlEl.dataset.real = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)`;
-        pnlEl.className = `instrument-detail__position-value ${pplClass(data.account_pnl)}`;
+        pnlEl.className = `instrument-detail__position-value js-money ${pplClass(data.account_pnl)}`;
     } else {
         pnlEl.dataset.real = "…";
-        pnlEl.className = "instrument-detail__position-value";
+        pnlEl.className = "instrument-detail__position-value js-money";
     }
     applyMoneyHiding();  // patrz common.js - globalny mechanizm hide/show wartości pieniężnych
 }
