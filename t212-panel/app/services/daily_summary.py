@@ -100,7 +100,11 @@ def _engine_pnl_24h(user_id: int, trade_model, settings=None, is_paper_field: st
         cost_basis = fx_adjusted_cost_basis(getattr(t, "average_price", None) or t.buy_price, t.currency, settings, t.ticker, t.buy_order_id)
         realized += (t.close_price - cost_basis) * t.quantity
 
-    open_trades = trade_model.query.filter_by(user_id=user_id, status="OPEN", environment=env, **{is_paper_field: False}).all()
+    # buy_confirmed=True - bez tego niewypełnione LIMIT BUY (buy_price=limit,
+    # nigdy nie kupione) wchodziły do niezrealizowanego P&L jako pozycja-widmo
+    # (znalezione 2026-08-26: OMV_AT_EQ/MRKd_EQ w EOD, 309/31 retry bez
+    # wypełnienia, liczone jako realna strata w raporcie dziennym).
+    open_trades = trade_model.query.filter_by(user_id=user_id, status="OPEN", environment=env, buy_confirmed=True, **{is_paper_field: False}).all()
     unrealized = Decimal("0")
     unrealized_unpriced = 0
     open_positions = []  # [(ticker, pnl, currency)] - patrz telegram_commands.py::_status_message
