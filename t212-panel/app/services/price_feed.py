@@ -200,6 +200,7 @@ def _fetch_yahoo_candles_ohlc(ticker: str, days: int) -> list[dict] | None:
 
 def get_eod_intraday_1m(
     ticker: str, alpaca_api_key: str | None = None, alpaca_api_secret: str | None = None,
+    ibkr_host: str | None = None, ibkr_port: int | None = None,
 ) -> list[dict] | None:
     """
     Świece 1-minutowe DZISIEJSZEJ sesji - do modułu EOD (services/eod_engine.py,
@@ -209,12 +210,12 @@ def get_eod_intraday_1m(
     2026-07-27, na życzenie Adama - "masz api alpaki dlaczego go nie
     używasz?"; wcześniej tylko get_live_price go używał, ten moduł jechał
     wyłącznie na Yahoo mimo że Alpaca daje realne, dokumentowane 1-min bary
-    dla US), Yahoo jako fallback. Dla reszty (EUR itd.) bez zmian - Yahoo
-    Chart API (`range=1d&interval=1m`), NIEOFICJALNE, bez SLA - świadoma
-    decyzja Adama (2026-07-24, patrz docs/IDEAS_v2.md pkt 3): sprawdzone 5
-    płatnych alternatyw (Twelve Data, Alpha Vantage, Polygon, EOD Historical
-    Data, IEX Cloud) i żadna nie dawała taniego, prawdziwego 1-min dla
-    Europy - docelowo IBKR API gdy dostępne.
+    dla US), Yahoo jako fallback. Dla EU (IBKR_TICKER_MAP): IBKR jako GŁÓWNE
+    źródło (dodane 2026-08-27 - incydent Merck 26.08, limit BUY wisiał
+    godzinami bo ten moduł jechał na ~15-20-minutowo opóźniony Yahoo mimo że
+    IBKR_TICKER_MAP+gateway już od 2026-07-28 istniały, tylko podpięte
+    wyłącznie pod get_intraday_chart/wykresy, nigdy pod tę ścieżkę decyzyjną),
+    Yahoo jako fallback gdy gateway nie odpowie/tickera brak w mapie.
 
     ZERO cache'u (w odróżnieniu od get_mini_chart_ohlc) - to dane do decyzji
     tradingowej sprzed sekund, nie do mini-wykresu, ten sam powód co
@@ -226,6 +227,14 @@ def get_eod_intraday_1m(
         candles = _fetch_alpaca_bars_1m(alpaca_api_key, alpaca_api_secret, ticker)
         if candles:
             return candles
+
+    if not ticker.endswith(_US_SUFFIX):
+        ibkr_contract = IBKR_TICKER_MAP.get(ticker)
+        if ibkr_contract is not None:
+            symbol, exchange, currency = ibkr_contract
+            candles = _fetch_ibkr_intraday(symbol, exchange, currency, "1 min", 1, ibkr_host, ibkr_port)
+            if candles:
+                return candles
 
     yahoo_symbol = t212_to_finnhub(ticker)
     if yahoo_symbol is None:
@@ -779,22 +788,44 @@ def _fetch_alpaca_bars_1m(api_key: str, api_secret: str, ticker: str) -> list[di
     return _fetch_alpaca_bars(api_key, api_secret, ticker, "1Min", start)
 
 
+def _fetch_ibkr_quote(ibkr_host: str | None, ibkr_port: int | None, ticker: str) -> Decimal | None:
+    """
+    Cena "na żywo" z IBKR dla tickerów EU (IBKR_TICKER_MAP) - close ostatniej
+    świecy 1-min sesji bieżącej, ten sam mechanizm/gateway co
+    get_intraday_chart (_fetch_ibkr_intraday), tylko wołany z decyzyjnej
+    ścieżki bota zamiast z widoku wykresu. Dodane 2026-08-27, patrz
+    get_eod_intraday_1m wyżej po incydencie Merck 26.08.
+    """
+    contract = IBKR_TICKER_MAP.get(ticker)
+    if contract is None:
+        return None
+    symbol, exchange, currency = contract
+    candles = _fetch_ibkr_intraday(symbol, exchange, currency, "1 min", 1, ibkr_host, ibkr_port)
+    if not candles:
+        return None
+    return Decimal(str(candles[-1]["c"]))
+
+
 def get_live_price(
     api_key: str | None,
     ticker: str,
     alpaca_api_key: str | None = None,
     alpaca_api_secret: str | None = None,
+    ibkr_host: str | None = None,
+    ibkr_port: int | None = None,
 ) -> Decimal | None:
     """
     Cena "na żywo" do decyzji bota. Dla tickerów `*_US_EQ`: Alpaca Market Data
     API jako GŁÓWNE źródło (dodane 2026-07-22, na życzenie Adama - nowy
     dostawca danych dla rynków USA), Finnhub -> Yahoo jako fallback gdyby
-    Alpaca zawiodło. Dla wszystkich innych tickerów (EUR itd.): Finnhub
-    POMIJANY całkowicie -> od razu Yahoo (ten sam powód co
-    get_mini_chart_ohlc - darmowy plan Finnhub odmawia dla każdego tickera
-    spoza US, więc zapytanie tylko zjadało limit 60/min i zaśmiecało log
-    429-kami, patrz 2026-07-29). Zwraca None jeśli WSZYSTKIE źródła zawiodą -
-    wywołujący (bot_engine.py) ma wtedy pominąć wejście, nie zgadywać ceny.
+    Alpaca zawiodło. Dla EU (IBKR_TICKER_MAP): IBKR jako GŁÓWNE źródło (dodane
+    2026-08-27 - Finnhub darmowy plan i tak zawsze 403 dla non-US, a Yahoo ma
+    ~15-20min opóźnienie; incydent Merck 26.08, limit BUY wisiał godzinami bo
+    ta funkcja dla EUR-tickerów leciała od razu na opóźniony Yahoo mimo że
+    IBKR_TICKER_MAP+gateway już istniały, tylko podpięte pod wykresy),
+    Yahoo jako fallback gdy gateway nie odpowie/tickera brak w mapie. Zwraca
+    None jeśli WSZYSTKIE źródła zawiodą - wywołujący (bot_engine.py) ma
+    wtedy pominąć wejście, nie zgadywać ceny.
     """
     if ticker.endswith(_US_SUFFIX) and alpaca_api_key and alpaca_api_secret:
         price = _fetch_alpaca_quote(alpaca_api_key, alpaca_api_secret, ticker)
@@ -803,6 +834,11 @@ def get_live_price(
 
     if api_key and ticker.endswith(_US_SUFFIX):
         price = _fetch_finnhub_quote(api_key, ticker)
+        if price is not None:
+            return price
+
+    if not ticker.endswith(_US_SUFFIX):
+        price = _fetch_ibkr_quote(ibkr_host, ibkr_port, ticker)
         if price is not None:
             return price
 

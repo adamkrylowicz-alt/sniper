@@ -1722,6 +1722,17 @@ html[data-theme="light"] select.auth-form__input {
     margin: 0 0 20px;
 }
 
+.modal-box__input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg);
+    border: 1px solid var(--hairline);
+    color: var(--text-bright);
+    padding: 8px 10px;
+    font-size: 13px;
+    margin: 0 0 16px;
+}
+
 .modal-box__actions {
     display: flex;
     gap: 8px;

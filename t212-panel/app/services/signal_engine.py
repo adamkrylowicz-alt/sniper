@@ -287,6 +287,7 @@ def close_trade_manual(user_id: int, trade: SignalTrade) -> tuple[bool, str]:
     price = price_feed.get_live_price(
         market_keys.get("finnhub_api_key"), trade.ticker,
         market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+        market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
     )
     name = ticker_display_name(trade.ticker)
 
@@ -488,6 +489,8 @@ def _process_entries(
     api_key = market_keys.get("finnhub_api_key")
     alpaca_key = market_keys.get("alpaca_api_key")
     alpaca_secret = market_keys.get("alpaca_api_secret")
+    ibkr_host = market_keys.get("ibkr_host")
+    ibkr_port = market_keys.get("ibkr_port")
 
     # ZMIANA 2026-08-05 (Adam: "czy spr tez inne i wybiera najlepsze czy wali
     # po kolei i spr czy sie lapia?" -> "napraw to") - do tej pory ta pętla
@@ -562,7 +565,7 @@ def _process_entries(
         if rsi is None or sma is None or atr is None:
             continue
 
-        price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret)
+        price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret, ibkr_host, ibkr_port)
         if price is None or price <= 0:
             continue
 
@@ -730,6 +733,7 @@ def _retry_pending_buys(
         current_price = price_feed.get_live_price(
             market_keys.get("finnhub_api_key"), trade.ticker,
             market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+            market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
         )
         if current_price is None or current_price <= 0:
             _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
@@ -819,12 +823,21 @@ def _trail_stop_loss(
     candidate_stop = signal_strategy.compute_trailing_stop(
         trade.stop_loss_price, price, trade.atr_at_entry, settings.stop_loss_atr_mult,
     )
+    unprotected = trade.stop_order_id is None
     if candidate_stop is None:
-        return  # brak ATR z wejscia, albo nic do poprawy (stop juz na tym poziomie albo wyzej)
+        if not unprotected:
+            return  # brak ATR z wejscia, albo nic do poprawy (stop juz na tym poziomie albo wyzej)
+        # BRAK aktywnego stopu na koncie (np. po CANCELLED/nie-FILLED wykrytym w
+        # _manage_exits) a cena nie daje zadnej poprawy - "brak poprawy" != "jest
+        # ochrona". Bez tego pozycja zostaje bez stopu w nieskonczonosc, dopoki
+        # cena akurat sama nie da powodu do requote'u (Merlin Properties/
+        # MRLe_EQ, 18-21.08.2026: 3 dni bez SL). Wystawiamy OSTATNI znany poziom.
+        candidate_stop = trade.stop_loss_price
 
-    min_requote_threshold = trade.stop_loss_price + (trade.atr_at_entry * MIN_TRAIL_REQUOTE_ATR_FRACTION)
-    if candidate_stop < min_requote_threshold:
-        return  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
+    if not unprotected:
+        min_requote_threshold = trade.stop_loss_price + (trade.atr_at_entry * MIN_TRAIL_REQUOTE_ATR_FRACTION)
+        if candidate_stop < min_requote_threshold:
+            return  # poprawa za mala zeby placic Cancel-Replace'em z ciasnego rate limitu
 
     # Cudzy (nie-botowy) SELL na tickerze - patrz identyczny komentarz i
     # incydent w bot_engine.py::_manage_trailing_exit (2026-08-10, Adam po
@@ -911,6 +924,8 @@ def _manage_exits(
     api_key = market_keys.get("finnhub_api_key")
     alpaca_key = market_keys.get("alpaca_api_key")
     alpaca_secret = market_keys.get("alpaca_api_secret")
+    ibkr_host = market_keys.get("ibkr_host")
+    ibkr_port = market_keys.get("ibkr_port")
 
     for trade in open_trades:
         if not market_hours.is_position_management_hours(trade.currency):
@@ -945,7 +960,7 @@ def _manage_exits(
                 db.session.commit()
             continue
 
-        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret, ibkr_host, ibkr_port)
         if price is None or price <= 0:
             # Watchdog - patrz identyczny komentarz w bot_engine.py::_manage_trailing_exit.
             if price_watchdog.note_price_result("signal", trade.ticker, False):
@@ -985,11 +1000,13 @@ def _manage_paper_exits(user_id: int, settings: SignalSettings) -> None:
     api_key = market_keys.get("finnhub_api_key")
     alpaca_key = market_keys.get("alpaca_api_key")
     alpaca_secret = market_keys.get("alpaca_api_secret")
+    ibkr_host = market_keys.get("ibkr_host")
+    ibkr_port = market_keys.get("ibkr_port")
 
     for trade in open_trades:
         if not market_hours.is_position_management_hours(trade.currency):
             continue
-        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret, ibkr_host, ibkr_port)
         if price is None or price <= 0:
             continue
         if price <= trade.stop_loss_price:

@@ -122,7 +122,9 @@ def _eod_reserved_tickers(user_id: int) -> frozenset[str]:
     )
 
 
-def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | None:
+def held_by_other_engine(
+    user_id: int, ticker: str, this_engine: str, *, include_reservation: bool = True,
+) -> str | None:
     """
     Zwraca nazwe INNEGO silnika (Micro-Grid/Sygnal/EOD), ktory ma juz OTWARTA
     pozycje na tym tickerze dla tego usera, albo None gdy ticker jest wolny.
@@ -142,6 +144,18 @@ def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | N
     _auto_adopt_foreign_positions, routes/bot.py::adopt_position) - zapobiega
     kolizji zamiast leczyc ja po fakcie.
 
+    `include_reservation` (dodane 2026-08-27, bug znaleziony na zywo - Adam
+    probowal recznie przekazac VRTX_US_EQ do Sygnalu, dostal "jest juz
+    zarzadzany przez EOD - zwolnij go tam najpierw" mimo ze EOD nie mial
+    tam ZADNEJ otwartej pozycji, bo VRTX byl tylko na LISCIE KANDYDATOW EOD
+    - rezerwacja ponizej (_eod_reserved_tickers) swiadomie ignoruje faktyczny
+    stan pozycji, co ma sens dla AUTOMATYCZNYCH nowych wejsc (_process_entries),
+    ale nie dla swiadomej, recznej decyzji usera "przekaz TA pozycje TEMU
+    silnikowi" - tam liczy sie WYLACZNIE realny otwarty trade, nie sama
+    obecnosc na liscie. Domyslnie True (stare zachowanie, automatyczne wejscia
+    bez zmian) - wywolania z recznej adopcji (routes/bot.py, routes/signal.py,
+    routes/eod.py, bot_engine.py::confirm_signal_manual_buy) przekazuja False.
+
     Import modeli LENIWY (nie na poziomie modulu) - market_hours.py jest
     swiadomie bez zadnych zaleznosci wewnatrz app/ (patrz docstring modulu),
     zeby uniknac cyklicznego importu; ten sam wzorzec co finnhub_client.py::
@@ -155,8 +169,9 @@ def held_by_other_engine(user_id: int, ticker: str, this_engine: str) -> str | N
     # Rezerwacja EOD (patrz _eod_reserved_tickers() wyżej) - blokuje Micro-Grid/
     # Sygnał NIEZALEŻNIE od tego czy EOD faktycznie ma tam już otwartą
     # pozycję (samo zarezerwowanie tickera - bycie na LIŚCIE EOD - ma
-    # znaczenie, nie aktualny stan pozycji EOD).
-    if this_engine != "eod" and ticker in _eod_reserved_tickers(user_id):
+    # znaczenie, nie aktualny stan pozycji EOD). Tylko dla automatycznych
+    # wejść - patrz `include_reservation` w docstringu.
+    if include_reservation and this_engine != "eod" and ticker in _eod_reserved_tickers(user_id):
         return "EOD"
 
     if this_engine != "bot" and ActiveTrade.query.filter_by(

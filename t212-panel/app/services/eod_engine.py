@@ -273,6 +273,7 @@ def close_trade_manual(user_id: int, trade: EODTrade) -> tuple[bool, str]:
     price = price_feed.get_live_price(
         market_keys.get("finnhub_api_key"), trade.ticker,
         market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+        market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
     )
     name = ticker_display_name(trade.ticker)
 
@@ -465,6 +466,8 @@ def _process_entries(
     api_key = market_keys.get("finnhub_api_key")
     alpaca_key = market_keys.get("alpaca_api_key")
     alpaca_secret = market_keys.get("alpaca_api_secret")
+    ibkr_host = market_keys.get("ibkr_host")
+    ibkr_port = market_keys.get("ibkr_port")
 
     # ZMIANA 2026-08-05 (Adam: "napraw to", po ustaleniu że ta pętla wchodziła
     # w pierwszego pasującego zamiast oceniać wszystkich - patrz identyczna
@@ -508,7 +511,7 @@ def _process_entries(
         if not market_hours.is_market_open(asset.currency):
             continue
 
-        candles = price_feed.get_eod_intraday_1m(asset.ticker, alpaca_key, alpaca_secret)
+        candles = price_feed.get_eod_intraday_1m(asset.ticker, alpaca_key, alpaca_secret, ibkr_host, ibkr_port)
         drop_result = _worst_recent_drop(candles)
         if drop_result is None:
             continue
@@ -517,7 +520,7 @@ def _process_entries(
         if multiplier is None:
             continue
 
-        price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret)
+        price = price_feed.get_live_price(api_key, asset.ticker, alpaca_key, alpaca_secret, ibkr_host, ibkr_port)
         if price is None or price <= 0:
             continue
 
@@ -677,6 +680,7 @@ def _retry_pending_buys(
         current_price = price_feed.get_live_price(
             market_keys.get("finnhub_api_key"), trade.ticker,
             market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+            market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
         )
         if current_price is None or current_price <= 0:
             _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
@@ -723,17 +727,35 @@ def _retry_pending_buys(
 
         old_price = trade.buy_price
         old_quantity = trade.quantity
+        old_stop_loss = trade.stop_loss_price
+        old_take_profit = trade.take_profit_price
         trade.buy_order_id = new_result.order_id
         trade.buy_price = current_price
         trade.quantity = new_quantity
         trade.allocated_value = (new_quantity * current_price).quantize(Decimal("0.01"))
         trade.buy_retry_count = 0
         trade.next_buy_retry_at = None
+        # SL/TP liczone przy PIERWSZYM wejściu (eod_strategy.compute_entry) dla
+        # dawno nieaktualnej ceny - bez przeliczenia tutaj TP potrafił zostać
+        # PONIŻEJ nowej (odjechanej w górę) buy_price, więc pozycja zamykała
+        # się "take-profit" niemal natychmiast po zakupie za ~0 P&L (znalezione
+        # 2026-08-25, Merck/QIAGEN w historii - TP 113.66 vs buy_price 141.16).
+        # reference_price z pierwszego wejścia nie jest tu już dostępny (nie
+        # zapisany w modelu), więc fallback jak w compute_entry: sztywny %
+        # od NOWEJ ceny - zachowaj stary TP TYLKO jeśli wciąż jest ponad nową
+        # ceną (nadal ważny cel odbicia). SL nigdy w dół (ten sam invariant co
+        # _trail_stop_loss/_trail_stop_loss_paper).
+        fx_ref = current_price * (1 + settings.fx_fee_pct * 2) if trade.currency == "USD" and settings.fx_cost_adjustment_enabled else current_price
+        new_stop_loss = fx_ref * (1 - settings.stop_loss_pct)
+        trade.stop_loss_price = max(old_stop_loss, new_stop_loss)
+        if old_take_profit <= current_price:
+            trade.take_profit_price = current_price * (1 + settings.take_profit_pct)
         db.session.commit()
         _log(
             user_id, "INFO",
             f"{ticker_display_name(trade.ticker)}: cena odjechała ({old_price} -> {current_price}) - LIMIT BUY ponowiony po nowej "
-            f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}.",
+            f"cenie, ilość przeliczona ({old_quantity} -> {new_quantity}) żeby zachować alokację ~{target_amount}. "
+            f"SL/TP przeliczone ({old_stop_loss:.4f}/{old_take_profit:.4f} -> {trade.stop_loss_price:.4f}/{trade.take_profit_price:.4f}).",
         )
 
 
@@ -750,6 +772,7 @@ def _force_close_real(user_id: int, client: T212Client, trade: EODTrade) -> None
     price = price_feed.get_live_price(
         market_keys.get("finnhub_api_key"), trade.ticker,
         market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+        market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
     )
 
     try:
@@ -787,7 +810,13 @@ def _trail_stop_loss(
         trade.stop_loss_price, price, trade.buy_price, settings.stop_loss_pct, MIN_TRAIL_REQUOTE_EOD_FRACTION,
     )
     if candidate_stop is None:
-        return  # nic do poprawy - juz na tym poziomie/wyzej, albo poprawa za mala na Cancel-Replace
+        if trade.stop_order_id is not None:
+            return  # nic do poprawy - juz na tym poziomie/wyzej, albo poprawa za mala na Cancel-Replace
+        # BRAK aktywnego stopu na koncie a cena nie daje zadnej poprawy - patrz
+        # identyczny fix i incydent (Merlin Properties/MRLe_EQ) w
+        # signal_engine.py::_trail_stop_loss. Wystawiamy OSTATNI znany poziom
+        # zamiast czekac w nieskonczonosc az cena sama da powod do requote'u.
+        candidate_stop = trade.stop_loss_price
 
     # Cudzy (nie-botowy) SELL na tickerze - patrz identyczny komentarz i
     # incydent w bot_engine.py::_manage_trailing_exit (2026-08-10, Adam po
@@ -881,6 +910,8 @@ def _manage_exits(
     api_key = market_keys.get("finnhub_api_key")
     alpaca_key = market_keys.get("alpaca_api_key")
     alpaca_secret = market_keys.get("alpaca_api_secret")
+    ibkr_host = market_keys.get("ibkr_host")
+    ibkr_port = market_keys.get("ibkr_port")
 
     for trade in open_trades:
         # Stop-loss zniknal z pending - MOZE oznaczac wykonanie, ale samo
@@ -912,7 +943,7 @@ def _manage_exits(
             _force_close_real(user_id, client, trade)
             continue
 
-        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret, ibkr_host, ibkr_port)
         if price is None or price <= 0:
             # Watchdog - patrz identyczny komentarz w bot_engine.py::_manage_trailing_exit.
             if price_watchdog.note_price_result("eod", trade.ticker, False):
@@ -961,9 +992,11 @@ def _manage_paper_exits(user_id: int, settings: EODSettings) -> None:
     api_key = market_keys.get("finnhub_api_key")
     alpaca_key = market_keys.get("alpaca_api_key")
     alpaca_secret = market_keys.get("alpaca_api_secret")
+    ibkr_host = market_keys.get("ibkr_host")
+    ibkr_port = market_keys.get("ibkr_port")
 
     for trade in open_trades:
-        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret)
+        price = price_feed.get_live_price(api_key, trade.ticker, alpaca_key, alpaca_secret, ibkr_host, ibkr_port)
         if price is None or price <= 0:
             if force_close:
                 _finalize_closed_trade(user_id, trade, "eod-forced", fill_price=trade.buy_price)

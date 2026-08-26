@@ -559,7 +559,7 @@ def adopt_confirmed_signal(user_id: int) -> tuple[bool, str]:
     if ActiveTrade.query.filter_by(user_id=user_id, ticker=ticker, status="OPEN", environment=env).first() is not None:
         return False, f"{ticker_display_name(ticker)} jest już zarządzany przez bota."
 
-    other = held_by_other_engine(user_id, ticker, "bot")
+    other = held_by_other_engine(user_id, ticker, "bot", include_reservation=False)
     if other is not None:
         return False, f"{ticker_display_name(ticker)} jest już zarządzany przez {other} - zwolnij go tam najpierw."
 
@@ -1090,6 +1090,7 @@ def _retry_pending_buys(
         current_price = price_feed.get_live_price(
             market_keys.get("finnhub_api_key"), trade.ticker,
             market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+            market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
         )
         if current_price is None or current_price <= 0:
             _bump_buy_retry(user_id, trade, "brak aktualnej ceny do porównania z limitem, spróbuję ponownie.")
@@ -1564,6 +1565,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         current_price = price_feed.get_live_price(
             market_keys.get("finnhub_api_key"), trade.ticker,
             market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+            market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
         )
         if current_price is None or current_price <= 0:
             # Watchdog (dodany 2026-08-05 po buggu RHMd_EQ - zły symbol Yahoo
@@ -1890,6 +1892,7 @@ def _trigger_dca_buys(
         current_price = price_feed.get_live_price(
             market_keys.get("finnhub_api_key"), trade.ticker,
             market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+            market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
         )
         if current_price is None or current_price <= 0 or current_price > trigger_price:
             continue  # cena jeszcze nie spadła dość nisko (albo brak danych) - nic do zrobienia
@@ -2409,6 +2412,8 @@ def tick(app) -> None:
                         _daily_loss_market_keys.get("finnhub_api_key"), ticker,
                         _daily_loss_market_keys.get("alpaca_api_key"),
                         _daily_loss_market_keys.get("alpaca_api_secret"),
+                        _daily_loss_market_keys.get("ibkr_host"),
+                        _daily_loss_market_keys.get("ibkr_port"),
                     ),
                 )
                 if breach is not None:
@@ -2747,6 +2752,7 @@ def _enter_position(
     price = price_feed.get_live_price(
         market_keys.get("finnhub_api_key"), asset.ticker,
         market_keys.get("alpaca_api_key"), market_keys.get("alpaca_api_secret"),
+        market_keys.get("ibkr_host"), market_keys.get("ibkr_port"),
     )
     if price is None or price <= 0:
         _log(user_id, "ERROR", f"{ticker_display_name(asset.ticker)}: brak ceny (Finnhub i Yahoo zawiodły), pomijam ten tick.")
@@ -2932,6 +2938,7 @@ def daily_report(app) -> None:
                 price = price_feed.get_live_price(
                     _report_market_keys.get("finnhub_api_key"), t.ticker,
                     _report_market_keys.get("alpaca_api_key"), _report_market_keys.get("alpaca_api_secret"),
+                    _report_market_keys.get("ibkr_host"), _report_market_keys.get("ibkr_port"),
                 )
                 if price is None:
                     open_lines.append(f"  OTWARTA {ticker_display_name(t.ticker)}: brak żywej ceny")

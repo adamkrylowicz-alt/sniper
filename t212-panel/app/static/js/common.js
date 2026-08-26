@@ -165,6 +165,46 @@ function confirmDialog(message) {
     });
 }
 
+// promptDialog - jak confirmDialog, ale z polem tekstowym (zastępuje
+// window.prompt() natywny dialog przeglądarki, ktory bywa niewidoczny/
+// pomijany - patrz portfolio.js::adoptPosition, znalezione na zywo 2026-08-27
+// przy probie recznej adopcji VRTX/QIAGEN). Zwraca wpisany, przycięty tekst
+// (string) albo null (Anuluj/klik poza modalem/puste pole).
+function promptDialog(message, placeholder) {
+    return new Promise((resolve) => {
+        const overlay = document.getElementById("confirm-modal");
+        const messageEl = document.getElementById("confirm-modal-message");
+        const inputEl = document.getElementById("confirm-modal-input");
+        const yesBtn = document.getElementById("confirm-modal-yes");
+        const noBtn = document.getElementById("confirm-modal-no");
+
+        messageEl.textContent = message;
+        inputEl.value = "";
+        inputEl.placeholder = placeholder || "";
+        inputEl.style.display = "";
+        overlay.classList.remove("modal-overlay--hidden");
+
+        const newYes = yesBtn.cloneNode(true);
+        const newNo = noBtn.cloneNode(true);
+        yesBtn.replaceWith(newYes);
+        noBtn.replaceWith(newNo);
+
+        function close(result) {
+            inputEl.style.display = "none";
+            overlay.classList.add("modal-overlay--hidden");
+            resolve(result);
+        }
+
+        newYes.addEventListener("click", () => close(inputEl.value.trim() || null));
+        newNo.addEventListener("click", () => close(null));
+        overlay.addEventListener("click", (e) => {
+            if (e.target === overlay) close(null);
+        }, { once: true });
+
+        setTimeout(() => inputEl.focus(), 0);
+    });
+}
+
 /*
 Komunikaty flash (patrz base.html) znikaja same po kilku sekundach zamiast
 czekac w nieskonczonosc na kolejna akcje/przeladowanie strony.

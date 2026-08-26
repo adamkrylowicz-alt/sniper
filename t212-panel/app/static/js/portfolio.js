@@ -266,11 +266,10 @@ bot.js::unblock (common.js), zamiast window.confirm, dla spojnosci wygladu.
 async function adoptPosition(engine, ticker, onList) {
     let entryAmount = null;
     if (!onList) {
-        const input = window.prompt(
-            `${ticker} ${t("nie jest jeszcze na liście")} ${engineLabel(engine)} - ${t("podaj kwotę wejścia (na przyszłe poziomy DCA):")}`
+        entryAmount = await promptDialog(
+            `${ticker} ${t("nie jest jeszcze na liście")} ${engineLabel(engine)} - ${t("podaj kwotę wejścia (na przyszłe poziomy DCA):")}`,
+            "np. 100",
         );
-        if (input === null) return;
-        entryAmount = input.trim();
         if (!entryAmount) return;
     }
 

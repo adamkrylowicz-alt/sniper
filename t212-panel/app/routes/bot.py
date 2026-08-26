@@ -231,8 +231,10 @@ def adopt_position():
 
     # Dodane 2026-07-30 (patrz market_hours.py::held_by_other_engine, historia
     # buga SUp_EQ) - ta sama kolizja mogłaby powstać przez ręczną adopcję,
-    # nie tylko przez automatyczne wejście/auto-adopt.
-    other = market_hours.held_by_other_engine(user_id, ticker, "bot")
+    # nie tylko przez automatyczne wejście/auto-adopt. include_reservation=
+    # False (2026-08-27) - ręczna decyzja usera pomija rezerwację "na liście
+    # kandydatów EOD", liczy się WYŁĄCZNIE realna otwarta pozycja.
+    other = market_hours.held_by_other_engine(user_id, ticker, "bot", include_reservation=False)
     if other is not None:
         return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
 

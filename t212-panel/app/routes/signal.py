@@ -410,7 +410,7 @@ def adopt_position():
         return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już zarządzany przez Sygnał."), 400
 
     from ..services.market_hours import held_by_other_engine
-    other = held_by_other_engine(user_id, ticker, "signal")
+    other = held_by_other_engine(user_id, ticker, "signal", include_reservation=False)
     if other is not None:
         return jsonify(ok=False, error=f"{ticker_display_name(ticker)} jest już zarządzany przez {other} - zwolnij go tam najpierw."), 400
 
