@@ -417,10 +417,12 @@ def update_settings():
         stop_loss_pct = Decimal(str(payload.get("stop_loss_pct", settings.stop_loss_pct)))
         max_daily_loss = Decimal(str(payload.get("max_daily_loss", settings.max_daily_loss)))
         fx_fee_pct = Decimal(str(payload.get("fx_fee_pct", settings.fx_fee_pct)))
+        entry_strategy_mode = payload.get("entry_strategy_mode", settings.entry_strategy_mode)
 
         if (
             max_dca_levels <= 0 or max_concurrent_positions <= 0 or dca_trigger_pct <= 0 or max_spread_pct <= 0
             or take_profit_step_pct <= 0 or stop_loss_pct <= 0 or max_daily_loss <= 0 or fx_fee_pct < 0
+            or entry_strategy_mode not in ("classic", "rsi_hybrid")
         ):
             raise ValueError("Wartości muszą być dodatnie.")
     except (InvalidOperation, ValueError, TypeError):
@@ -476,6 +478,7 @@ def update_settings():
     settings.fx_cost_adjustment_enabled = bool(payload.get("fx_cost_adjustment_enabled", settings.fx_cost_adjustment_enabled))
     settings.fx_fee_pct = fx_fee_pct
     settings.stop_loss_only_mode = bool(payload.get("stop_loss_only_mode", settings.stop_loss_only_mode))
+    settings.entry_strategy_mode = entry_strategy_mode
     db.session.commit()
 
     released_count = _release_auto_adopted_positions(current_user_id()) if switch_turned_off else 0

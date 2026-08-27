@@ -342,6 +342,17 @@ ATR_PERIOD = 14
 ATR_LOOKBACK_DAYS = ATR_PERIOD + 5  # bufor - swiece dzienne maja dziury (weekendy/swieta)
 ATR_STOP_MULTIPLIER = Decimal("1.8")
 
+# Strategia wejścia "RSI Hybrid" (RiskSettings.entry_strategy_mode, dodane
+# 2026-08-27) - patrz docstring kolumny w models.py. Wartości zweryfikowane
+# walk-forward backtestem (5 lat danych, trening 1000d/test 300d out-of-
+# sample, 35 tickerów EU) - JEDYNA kombinacja progu RSI (35 vs 45 vs 55) i
+# mnożnika ATR (3x vs 5x), która utrzymuje dodatni zwrot i wysoki win rate
+# NA DANYCH KTÓRYCH MODEL NIE WIDZIAŁ. Szerszy próg RSI (45/55) wyglądał
+# lepiej na treningu, ale tracił przewagę na teście - klasyczne przeuczenie.
+HYBRID_RSI_THRESHOLD = Decimal("35")
+HYBRID_ATR_TRAIL_MULTIPLIER = Decimal("5")
+HYBRID_LOOKBACK_DAYS = 250  # tyle co signal_engine.SIGNAL_LOOKBACK_DAYS (bufor na SMA200+RSI14)
+
 # Dedykowany fallback (CELOWO nie RiskSettings.stop_loss_pct) dla pozycji
 # chronionych przez „Tylko stop-loss”/ręczną adopcję - dodane 2026-08-07,
 # Adam znalazł że adoptowana FPp_EQ miała ZERO ochrony dopóki cena nie
@@ -390,8 +401,14 @@ def _compute_atr(candles: list[dict] | None, period: int = ATR_PERIOD) -> Decima
     return sum(true_ranges) / len(true_ranges)
 
 
-def _get_atr_stop_distance(user_id: int, ticker: str) -> Decimal | None:
-    """Dystans W WALUCIE INSTRUMENTU (nie %) = ATR(14) * ATR_STOP_MULTIPLIER, albo None gdy brak danych."""
+def _get_atr_stop_distance(user_id: int, ticker: str, multiplier: Decimal = ATR_STOP_MULTIPLIER) -> Decimal | None:
+    """
+    Dystans W WALUCIE INSTRUMENTU (nie %) = ATR(14) * multiplier, albo None
+    gdy brak danych. `multiplier` opcjonalny (domyślnie ATR_STOP_MULTIPLIER) -
+    dodane 2026-08-27 dla trybu "RSI Hybrid" (HYBRID_ATR_TRAIL_MULTIPLIER),
+    reszta wywołań (klasyczny floor/exhausted-DCA/stop_loss_only_mode) bez
+    zmiany zachowania.
+    """
     market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
     candles = price_feed.get_mini_chart_ohlc(
         market_keys.get("finnhub_api_key"), ticker, days=ATR_LOOKBACK_DAYS,
@@ -401,7 +418,7 @@ def _get_atr_stop_distance(user_id: int, ticker: str) -> Decimal | None:
     atr = _compute_atr(candles)
     if atr is None:
         return None
-    return atr * ATR_STOP_MULTIPLIER
+    return atr * multiplier
 
 
 # Znalezione na żywo 2026-07-21 (MAIN_US_EQ, potem IPOE_US_EQ/SOFI) - T212
@@ -1640,8 +1657,20 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
         # do max(floor, ciasny_target) zamiast samego floora) zostaje w
         # docstringu tej funkcji wyzej - tu tylko wolanie juz zweryfikowanej
         # formuly.
+        # "RSI Hybrid" (2026-08-27, patrz HYBRID_ATR_TRAIL_MULTIPLIER wyżej) -
+        # ten sam mnożnik ATR napędza ZARÓWNO floor pierwszego uzbrojenia,
+        # JAK I ciągły trailing PO uzbrojeniu (atr_trail_distance) - dokładnie
+        # tak jak w backteście (microgrid_runner.py::atr_mult_by_ticker +
+        # atr_trailing_after_arm), zero rozjazdu między testowaną a żywą
+        # logiką. "classic" (domyślnie) - zero zmiany zachowania.
         is_first_arm = trade.stop_order_id is None
-        atr_distance = _get_atr_stop_distance(user_id, trade.ticker) if is_first_arm else None
+        hybrid_mode = settings.entry_strategy_mode == "rsi_hybrid"
+        atr_multiplier = HYBRID_ATR_TRAIL_MULTIPLIER if hybrid_mode else ATR_STOP_MULTIPLIER
+        atr_distance = _get_atr_stop_distance(user_id, trade.ticker, atr_multiplier) if is_first_arm else None
+        atr_trail_distance = (
+            _get_atr_stop_distance(user_id, trade.ticker, atr_multiplier)
+            if (hybrid_mode and not is_first_arm) else None
+        )
         candidate_stop = microgrid_strategy.compute_trailing_stop(
             is_first_arm=is_first_arm,
             ref_price=ref_price,
@@ -1651,6 +1680,7 @@ def _manage_trailing_exit(user_id: int, client: T212Client, settings: RiskSettin
             atr_distance=atr_distance,
             stop_loss_pct=settings.stop_loss_pct,
             min_requote_fraction=MIN_TRAIL_REQUOTE_FRACTION,
+            atr_trail_distance=atr_trail_distance,
         )
         if candidate_stop is None:
             if stop_undersized_after_sync:
@@ -2635,33 +2665,58 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
     # HURST_LOOKBACK_DAYS (ten sam pojedynczy request, większe okno, dalej
     # ZERO dodatkowych zapytań - tylko przy włączonym filtrze dłuższa
     # odpowiedź z tego samego źródła/cache).
-    scoring_days = (
-        bot_entry_filters.HURST_LOOKBACK_DAYS if bot_entry_filters.HURST_FILTER_ENABLED
-        else bot_entry_filters.TREND_LOOKBACK_DAYS
-    )
     _entries_market_keys = get_decrypted_market_data_keys(user_id, bot_credentials.get_master_key(user_id))
-    scored, stats = bot_entry_filters.rank_candidates(
-        eligible,
-        settings,
-        candles_getter=lambda ticker: price_feed.get_mini_chart_ohlc(
-            _entries_market_keys.get("finnhub_api_key"),
-            ticker,
-            days=scoring_days,
-            alpaca_api_key=_entries_market_keys.get("alpaca_api_key"),
-            alpaca_api_secret=_entries_market_keys.get("alpaca_api_secret"),
-        ),
-    )
 
-    if not scored:
-        _log(user_id, "INFO", f"Wejścia: żaden kandydat nie przeszedł filtrów ({stats.summary()}).")
-        return
+    if settings.entry_strategy_mode == "rsi_hybrid":
+        # "RSI Hybrid" (2026-08-27) - zamiast scoringu wielu kandydatów,
+        # wybór jak w Sygnale: RSI(14)<HYBRID_RSI_THRESHOLD + cena>SMA(200),
+        # najniższe RSI wygrywa. Patrz docstring RiskSettings.entry_strategy_mode.
+        best_asset, best_rsi = _hybrid_rsi_candidate(
+            eligible,
+            candles_getter=lambda ticker: price_feed.get_mini_chart_ohlc(
+                _entries_market_keys.get("finnhub_api_key"),
+                ticker,
+                days=HYBRID_LOOKBACK_DAYS,
+                alpaca_api_key=_entries_market_keys.get("alpaca_api_key"),
+                alpaca_api_secret=_entries_market_keys.get("alpaca_api_secret"),
+            ),
+        )
+        if best_asset is None:
+            _log(user_id, "INFO", f"Wejścia (RSI Hybrid): żaden kandydat nie ma RSI<{HYBRID_RSI_THRESHOLD} + trend wzrostowy.")
+            return
+        scored = [(best_asset, best_rsi)]
+        best_ticker = best_asset.ticker
+        _log(
+            user_id, "INFO",
+            f"Wejścia (RSI Hybrid): najlepszy kandydat {ticker_display_name(best_ticker)} (RSI {best_rsi:.1f}).",
+        )
+    else:
+        scoring_days = (
+            bot_entry_filters.HURST_LOOKBACK_DAYS if bot_entry_filters.HURST_FILTER_ENABLED
+            else bot_entry_filters.TREND_LOOKBACK_DAYS
+        )
+        scored, stats = bot_entry_filters.rank_candidates(
+            eligible,
+            settings,
+            candles_getter=lambda ticker: price_feed.get_mini_chart_ohlc(
+                _entries_market_keys.get("finnhub_api_key"),
+                ticker,
+                days=scoring_days,
+                alpaca_api_key=_entries_market_keys.get("alpaca_api_key"),
+                alpaca_api_secret=_entries_market_keys.get("alpaca_api_secret"),
+            ),
+        )
 
-    best_ticker = scored[0][0].ticker
-    _log(
-        user_id, "INFO",
-        f"Wejścia: {stats.summary()}. Najlepszy kandydat: {ticker_display_name(best_ticker)} "
-        f"(score {scored[0][1]:.3f}).",
-    )
+        if not scored:
+            _log(user_id, "INFO", f"Wejścia: żaden kandydat nie przeszedł filtrów ({stats.summary()}).")
+            return
+
+        best_ticker = scored[0][0].ticker
+        _log(
+            user_id, "INFO",
+            f"Wejścia: {stats.summary()}. Najlepszy kandydat: {ticker_display_name(best_ticker)} "
+            f"(score {scored[0][1]:.3f}).",
+        )
 
     # stop_loss_only_mode (2026-08-07, Adam: "niech tylko wysyła sygnały co
     # kupić, ja kupię ręcznie i mu przekażę do zarządzania") - scoring wyżej
@@ -2699,6 +2754,38 @@ def _process_entries(user_id: int, settings: RiskSettings, current_equity: Decim
     for asset, _score in scored:
         if _enter_position(user_id, asset, settings, current_equity):
             return
+
+
+def _hybrid_rsi_candidate(
+    eligible: list[BotAsset], candles_getter,
+) -> tuple[BotAsset | None, Decimal | None]:
+    """
+    Selektor kandydata dla entry_strategy_mode="rsi_hybrid" (2026-08-27) -
+    dokładnie warunek wejścia Sygnału (RSI(14)<HYBRID_RSI_THRESHOLD +
+    cena>SMA(200), patrz signal_engine.py::_process_entries), zamiast
+    scoringu bot_entry_filters.rank_candidates. Wśród spełniających wybiera
+    NAJNIŻSZE RSI (najgłębszy dołek). Import _compute_rsi/_compute_sma z
+    signal_engine LENIWY (nie na poziomie modułu) - signal_engine.py sam
+    importuje z bot_engine.py, więc import na górze pliku dałby cykl (ten
+    sam wzorzec unikania cyklu co market_hours.py::held_by_other_engine).
+    """
+    from .signal_engine import MA_PERIOD, RSI_PERIOD, _compute_rsi, _compute_sma
+
+    best_asset: BotAsset | None = None
+    best_rsi: Decimal | None = None
+    for asset in eligible:
+        candles = candles_getter(asset.ticker)
+        if not candles or len(candles) < MA_PERIOD:
+            continue
+        closes = [Decimal(str(c["c"])) for c in candles]
+        rsi = _compute_rsi(closes, RSI_PERIOD)
+        sma = _compute_sma(closes, MA_PERIOD)
+        if rsi is None or sma is None:
+            continue
+        price = closes[-1]
+        if rsi < HYBRID_RSI_THRESHOLD and price > sma and (best_rsi is None or rsi < best_rsi):
+            best_asset, best_rsi = asset, rsi
+    return best_asset, best_rsi
 
 
 def _entry_trend_ok(ticker: str) -> bool:

@@ -96,6 +96,7 @@ document.addEventListener("DOMContentLoaded", () => {
         settingsStatus.textContent = t("Zapisywanie...");
 
         const payload = {
+            entry_strategy_mode: document.getElementById("bot-entry-strategy-mode").value,
             dca_scenario: document.getElementById("bot-dca-scenario").value,
             max_dca_levels: document.getElementById("bot-max-dca").value,
             max_concurrent_positions: document.getElementById("bot-max-positions").value,

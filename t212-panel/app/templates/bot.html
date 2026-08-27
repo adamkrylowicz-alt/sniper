@@ -31,8 +31,8 @@
 
     <div class="reorderable-panel" data-panel-id="assets">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <h2 class="section-heading" id="section-assets">{{ t("AKTYWA BOTA") }}</h2>
     <p class="auth-box__hint">
@@ -107,8 +107,8 @@
 
     <div class="reorderable-panel" data-panel-id="positions">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <h2 class="section-heading" id="section-positions">{{ t("OTWARTE POZYCJE") }}</h2>
     <p class="auth-box__hint">
@@ -121,12 +121,12 @@
     <table class="history-table" id="bot-positions-table">
         <thead>
             <tr>
-                <th class="history-table__th--sortable" tabindex="0" data-sort-key="name">{{ t("Aktywo") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
-                <th class="history-table__th--sortable" tabindex="0" data-sort-key="currency">{{ t("Waluta") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
-                <th class="history-table__th--sortable" tabindex="0" data-sort-key="quantity">{{ t("Ilość") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
-                <th class="history-table__th--sortable" tabindex="0" data-sort-key="avg_price">{{ t("Śr. cena wejścia") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
-                <th class="history-table__th--sortable" tabindex="0" data-sort-key="stop_price">Trailing STOP <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
-                <th class="history-table__th--sortable" tabindex="0" data-sort-key="created_at">{{ t("Otwarta od (Amsterdam)") }} <span class="sort-arrow"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></span></th>
+                <th class="history-table__th--sortable" data-sort-key="name">{{ t("Aktywo") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="currency">{{ t("Waluta") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="quantity">{{ t("Ilość") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="avg_price">{{ t("Śr. cena wejścia") }} <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="stop_price">Trailing STOP <span class="sort-arrow">⇅</span></th>
+                <th class="history-table__th--sortable" data-sort-key="created_at">{{ t("Otwarta od (Amsterdam)") }} <span class="sort-arrow">⇅</span></th>
                 <th>Status</th>
             </tr>
         </thead>
@@ -175,8 +175,8 @@
 
     <div class="reorderable-panel" data-panel-id="activation">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <div class="pie-detail__add-asset" id="section-activation">
         <label class="auth-form__label" for="bot-password">{{ t("Hasło (do aktywacji bota)") }}</label>
@@ -191,11 +191,24 @@
 
     <div class="reorderable-panel" data-panel-id="risk">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <details class="collapsible" id="section-risk">
     <summary class="section-heading">{{ t("USTAWIENIA RYZYKA") }}</summary>
+
+    <h3 class="settings-subheading">{{ t("Strategia wejścia") }}</h3>
+    <div class="pie-detail__budget-row">
+        <label class="auth-form__label" for="bot-entry-strategy-mode">{{ t("Tryb wyboru kandydata") }}</label>
+        <select id="bot-entry-strategy-mode" class="auth-form__input">
+            <option value="classic" {{ "selected" if settings.entry_strategy_mode == "classic" else "" }}>{{ t("Klasyczny (scoring wielu kandydatów)") }}</option>
+            <option value="rsi_hybrid" {{ "selected" if settings.entry_strategy_mode == "rsi_hybrid" else "" }}>{{ t("RSI Hybrid (eksperymentalne)") }}</option>
+        </select>
+        <p class="auth-box__hint">
+            {{ t("Klasyczny: bot wybiera najlepszego z wielu kandydatów wg wewnętrznego scoringu, trailing stop goni cenę stałym procentem (Krok trailing take-profit niżej).") }}
+            {{ t("RSI Hybrid: wejście jak w Sygnale (RSI(14) poniżej 35 + cena powyżej średniej 200-dniowej, wygrywa najgłębszy dołek), ale zarządzanie pozycją jak w Micro-Gridzie (DCA + trailing stop) - z SZERSZYM dystansem (5x ATR, zamiast stałego procentu) tak, żeby dać pozycji więcej miejsca na oddech i pilnować zysku dopiero z daleka. Zweryfikowane backtestem walk-forward na 5 latach danych - jedyna kombinacja progu RSI/mnożnika ATR, która trzyma się na danych poza próbą treningową.") }}
+        </p>
+    </div>
 
     <h3 class="settings-subheading">{{ t("Siatka DCA") }}</h3>
     <div class="pie-detail__budget-row">
@@ -296,8 +309,8 @@
 
     <div class="reorderable-panel" data-panel-id="log">
     <div class="reorderable-panel__toolbar">
-        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 15l6-6 6 6"/></svg></button>
-        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></button>
+        <button type="button" class="reorderable-panel__move" data-move="up" title="{{ t('Przesuń panel wyżej') }}">▲</button>
+        <button type="button" class="reorderable-panel__move" data-move="down" title="{{ t('Przesuń panel niżej') }}">▼</button>
     </div>
     <div class="section-heading section-heading--with-action" id="section-log">
         <span>{{ t("DZIENNIK BOTA (ostatnie 50)") }}</span>

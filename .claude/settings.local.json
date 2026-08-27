@@ -90,7 +90,8 @@
       "Bash(.venv/Scripts/python.exe \"C:\\\\Users\\\\Adam\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Adam-projekty-sniper\\\\60f8ba7b-3bed-4a3a-8260-b1740f9df64d\\\\scratchpad\\\\verify_market_dots.py\")",
       "Bash(awk 'NR==900||NR==930||NR==935||NR==1075||NR==1079||NR==1140||NR==1145||NR==1500||NR==1510{print NR\": \"$0}' app/services/bot_engine.py)",
       "Bash(.venv/Scripts/python.exe \"C:\\\\Users\\\\Adam\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Adam-projekty-sniper\\\\60f8ba7b-3bed-4a3a-8260-b1740f9df64d\\\\scratchpad\\\\test_continuous_trailing.py\")",
-      "Bash(.venv/Scripts/python.exe \"C:\\\\Users\\\\Adam\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Adam-projekty-sniper\\\\60f8ba7b-3bed-4a3a-8260-b1740f9df64d\\\\scratchpad\\\\test_atr_and_fixed_floor.py\")"
+      "Bash(.venv/Scripts/python.exe \"C:\\\\Users\\\\Adam\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Adam-projekty-sniper\\\\60f8ba7b-3bed-4a3a-8260-b1740f9df64d\\\\scratchpad\\\\test_atr_and_fixed_floor.py\")",
+      "Bash(cd /volume1/docker/t212-panel *)"
     ]
   }
 }

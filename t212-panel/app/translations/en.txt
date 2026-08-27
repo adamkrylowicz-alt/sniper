@@ -111,8 +111,8 @@ Zatwierdź|||Approve
 Odrzuć|||Reject
 ← Wróć do Warp Mode|||← Back to Warp Mode
 KLUCZE API T212|||T212 API KEYS
-zapisany|||saved
-brak|||none
+✅ zapisany|||✅ saved
+— brak|||— none
 Usuń|||Delete
 Środowisko|||Environment
 Wygeneruj w aplikacji T212: Ustawienia → API (Beta). Wartości są szyfrowane Twoim kluczem prywatnym zanim trafią do bazy — admin tej appki nie ma do nich dostępu.|||Generate it in the T212 app: Settings → API (Beta). Values are encrypted with your private key before they reach the database — this app's admin has no access to them.
@@ -365,6 +365,12 @@ Hasło (do aktywacji bota)|||Password (to activate the bot)
 Uruchom bota|||Start bot
 Wyłącz bota|||Stop bot
 USTAWIENIA RYZYKA|||RISK SETTINGS
+Strategia wejścia|||Entry strategy
+Tryb wyboru kandydata|||Candidate selection mode
+Klasyczny (scoring wielu kandydatów)|||Classic (scoring across candidates)
+RSI Hybrid (eksperymentalne)|||RSI Hybrid (experimental)
+Klasyczny: bot wybiera najlepszego z wielu kandydatów wg wewnętrznego scoringu, trailing stop goni cenę stałym procentem (Krok trailing take-profit niżej).|||Classic: the bot picks the best of many candidates using an internal scoring model, the trailing stop chases the price by a fixed percentage (Trailing take-profit step below).
+RSI Hybrid: wejście jak w Sygnale (RSI(14) poniżej 35 + cena powyżej średniej 200-dniowej, wygrywa najgłębszy dołek), ale zarządzanie pozycją jak w Micro-Gridzie (DCA + trailing stop) - z SZERSZYM dystansem (5x ATR, zamiast stałego procentu) tak, żeby dać pozycji więcej miejsca na oddech i pilnować zysku dopiero z daleka. Zweryfikowane backtestem walk-forward na 5 latach danych - jedyna kombinacja progu RSI/mnożnika ATR, która trzyma się na danych poza próbą treningową.|||RSI Hybrid: entry like Signal (RSI(14) below 35 + price above the 200-day average, deepest dip wins), but position management like Micro-Grid (DCA + trailing stop) - with a WIDER distance (5x ATR instead of a fixed percentage) to give the position more room to breathe and guard profit only from further away. Verified with a walk-forward backtest on 5 years of data - the only RSI threshold/ATR multiplier combination that holds up on data outside the training sample.
 Siatka DCA|||DCA grid
 Scenariusz DCA (mnożniki po przecinku)|||DCA scenario (comma-separated multipliers)
 Maksymalna liczba poziomów DCA|||Maximum number of DCA levels
@@ -523,7 +529,6 @@ Odblokować tę pozycję? Bot spróbuje ponownie wystawić/przesunąć trailing 
 Zwolnić tę pozycję spod zarządzania bota? Udziały ZOSTAJĄ na koncie T212 - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).|||Release this position from bot management? Shares STAY in the T212 account - the bot just stops watching them (trailing STOP will be cancelled).
 Nie udało się zwolnić pozycji.|||Failed to release the position.
 Brak wyników.|||No results.
-Błąd wyszukiwania. Spróbuj ponownie.|||Search failed. Try again.
 waluta nieznana|||unknown currency
 Dodaj|||Add
 Podaj najpierw kwotę wejścia (pole nad wyszukiwarką).|||Enter an entry amount first (field above the search box).

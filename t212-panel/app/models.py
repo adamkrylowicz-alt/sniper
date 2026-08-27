@@ -575,6 +575,20 @@ class RiskSettings(db.Model):
     # nie zaznaczy checkboxa w UI.
     stop_loss_only_mode = db.Column(db.Boolean, nullable=False, default=False)
 
+    # Strategia wejścia (2026-08-27, po serii backtestów porównujących
+    # Micro-Grid vs Sygnał - patrz docs/IDEAS_v2.md "Hybryda RSI+DCA"):
+    # "classic" (domyślnie, bez zmiany zachowania) = dotychczasowy scoring
+    # wielu kandydatów (bot_entry_filters.rank_candidates) + ciągły %
+    # trailing (take_profit_step_pct) + ATR*1.8 floor. "rsi_hybrid" = wejście
+    # jak w Sygnale (RSI(14)<35 + cena>SMA(200), wybór najniższego RSI wśród
+    # spełniających) połączone z mechaniką DCA Micro-Gridu, ale trailing
+    # PO uzbrojeniu goni ATR*5 (szerzej niż standardowe ATR*1.8/%-step) -
+    # zweryfikowane walk-forward na 5 latach danych (trening 1000d/test
+    # 300d): jedyna kombinacja progu RSI/mnożnika ATR, która trzyma się na
+    # out-of-sample (dodatni zwrot + 100% win rate), węższe/szersze progi
+    # RSI (45/55) i węższy ATR (3x) traciły przewagę poza próbą treningową.
+    entry_strategy_mode = db.Column(db.String(20), nullable=False, default="classic")
+
     def __repr__(self) -> str:  # pragma: no cover
         return f"<RiskSettings user_id={self.user_id} active={self.is_bot_active}>"
 
