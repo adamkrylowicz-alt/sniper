@@ -1383,18 +1383,34 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime | N
                 if len(currencies) == 2 and (amounts[0] > 0) != (amounts[1] > 0):
                     continue  # konwersja walutowa (różne waluty, przeciwny znak) - pomijamy oba wpisy
             for item in group:
+                # PRZELICZENIE NA EUR (znalezione na żywo 2026-08-27, real
+                # money, Adam: "nie mowilem ci na cfd 100e na crypto 150e
+                # wiec jak ci sie to spina") - dwa z sześciu TRANSFER w
+                # historii były w USD (+279.98 USD, -57.72 USD), sumowane
+                # NOMINALNIE bez przeliczenia kursu - dokładnie ten sam bug
+                # co wcześniej w Portfolio value (patrz get_fx_rate_to_eur),
+                # tylko w innym miejscu kodu. Po przeliczeniu netto TRANSFER
+                # wychodzi ~-249€, zgodne z realnymi 100€+150€ transferu
+                # (wcześniejsze nieprzeliczone -217.74€ było błędne).
+                # DEPOSIT/WITHDRAW przeliczane też dla bezpieczeństwa na
+                # przyszłość, mimo że dziś wszystkie są w EUR.
+                item_currency = item.get("currency") or "EUR"
+                fx_rate = price_feed.get_fx_rate_to_eur(item_currency)
+                if fx_rate is None:
+                    fx_rate = Decimal("1")
+                raw_amount = Decimal(str(item.get("amount", 0))) * fx_rate
                 kind = item["type"]
                 if kind == "TRANSFER":
                     # Znak już jest w danych i JEST znaczący (dodatni =
                     # wpłynęło na Invest, ujemny = wypłynęło np. na CFD/Crypto)
                     # - w odróżnieniu od DEPOSIT/WITHDRAW, gdzie kierunek
                     # wynika z samego typu, tu bierzemy wartość wprost.
-                    total += Decimal(str(item.get("amount", 0)))
+                    total += raw_amount
                     continue
                 # T212 zwraca WITHDRAW z już ujemnym `amount` (potwierdzone
                 # na żywo 2026-08-27) - abs() + jawny znak per-typ, odporne
                 # niezależnie od znaku zwróconego przez API.
-                amount = abs(Decimal(str(item.get("amount", 0))))
+                amount = abs(raw_amount)
                 if kind == "DEPOSIT":
                     total += amount
                 elif kind == "WITHDRAW":
