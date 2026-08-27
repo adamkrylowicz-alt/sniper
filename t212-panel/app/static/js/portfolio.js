@@ -62,9 +62,16 @@ function renderAccountSummary(data) {
     const totalEl = document.getElementById("account-total-value");
     const labelEl = document.getElementById("account-baseline-label");
     const pnlEl = document.getElementById("account-baseline-pnl");
+    const cfdCryptoDisplayEl = document.getElementById("account-cfd-crypto-display");
     if (!totalEl || !labelEl || !pnlEl) return;
 
-    totalEl.dataset.real = data.account_total != null ? `${data.account_total.toFixed(2)} €` : "…";
+    // account_total_all = Invest + CFD/Crypto (ręcznie podane, patrz
+    // saveCfdCryptoValue) - to jest teraz GŁÓWNA liczba na ekranie, appka
+    // sama nie widzi CFD/Crypto (osobne API T212).
+    totalEl.dataset.real = data.account_total_all != null ? `${data.account_total_all.toFixed(2)} €` : "…";
+    if (cfdCryptoDisplayEl && data.cfd_crypto_value != null) {
+        cfdCryptoDisplayEl.textContent = `${data.cfd_crypto_value.toFixed(2)}€`;
+    }
 
     const depositsNote = data.account_net_deposits != null
         ? ` (${t("wpłacono łącznie")}: ${data.account_net_deposits.toFixed(2)}€)`
@@ -106,6 +113,45 @@ async function resetAccountBaseline() {
 document.getElementById("account-baseline-reset-btn")?.addEventListener("click", resetAccountBaseline);
 // Przycisk hide/show (.js-money-toggle-btn) i pierwsze zastosowanie stanu
 // obsłużone globalnie przez common.js::applyMoneyHiding - nic tu do zrobienia.
+
+// CFD/Crypto - ręcznie podana wartość (Adam, 2026-08-27: "cfd i crypto bede
+// podawal recznie a ty bedziesz doliczal") - appka nie ma dostępu do tych
+// kont przez T212 API, user sam aktualizuje ile są dziś warte.
+async function saveCfdCryptoValue() {
+    const input = document.getElementById("cfd-crypto-input");
+    const btn = document.getElementById("cfd-crypto-save-btn");
+    if (!input) return;
+    const value = parseFloat(input.value);
+    if (isNaN(value) || value < 0) {
+        playError();
+        window.alert(t("Podaj poprawną, nieujemną liczbę."));
+        return;
+    }
+    if (btn) btn.disabled = true;
+    try {
+        const resp = await fetch("/warp/portfolio/cfd-crypto-value", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ value }),
+        });
+        const data = await resp.json();
+        if (!data.ok) {
+            playError();
+            window.alert(`${t("Nie udało się zapisać wartości")}: ${t(data.error)}`);
+            return;
+        }
+        renderAccountSummary(data);
+        playSuccess();
+    } catch (err) {
+        playError();
+        console.error("Błąd zapisu wartości CFD/Crypto:", err);
+        window.alert(t("Błąd sieci przy zapisywaniu wartości CFD/Crypto."));
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+document.getElementById("cfd-crypto-save-btn")?.addEventListener("click", saveCfdCryptoValue);
 
 // "bot"/"signal"/"eod" -> etykieta w UI, jeden na wszystkie 3 przyciski
 // adopcji + odznaka "Zarządzane przez X" (patrz routes/scalping.py::

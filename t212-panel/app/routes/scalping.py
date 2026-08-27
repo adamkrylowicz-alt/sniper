@@ -1283,6 +1283,13 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime | N
     wyliczeniem P&L - inaczej wpłaty sprzed baseline liczyłyby się PODWÓJNIE,
     bo są już wliczone w wartość baseline_equity zapisaną w tamtym momencie).
 
+    TRANSFER (2026-08-27, ciąg dalszy) - świadomie NIE liczony tu mimo że
+    krótko był (patrz historia w CLAUDE.md) - Adam ostatecznie wybrał ręczne
+    podawanie AKTUALNEJ wartości kont CFD/Crypto (UserSettings.cfd_crypto_value,
+    dodawane wprost do account_total w _account_summary) zamiast odejmowania
+    transferu od wpłat. Transfer Invest<->CFD/Crypto jest wtedy neutralny dla
+    całości - proste DEPOSIT/WITHDRAW na Invest wystarczą.
+
     KONWERSJE WALUT (Adam, 2026-08-27: "konwersje na euro czy usd itd nie
     powinny byc ujmowane w saldzie bo to nie wplyw tylko zamiana jednej
     waluty na inna") - T212 księguje kupno np. USD za EUR jako DWA wpisy
@@ -1350,15 +1357,15 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime | N
                 if since is not None and item_dt < since:
                     stop = True
                     break
-                # TRANSFER dołączony 2026-08-27 (Adam: "2 wyplaty byly na
-                # konto cfd i crypto tez to musisz uwzglednic... to nie
-                # strata tylko przesuniecie miedzy portfelami") - appka śledzi
-                # WYŁĄCZNIE portfel Invest (get_cash/get_portfolio), więc
-                # przesunięcie kapitału na CFD/Crypto realnie zmniejsza
-                # `account_total` (Invest), ale to NIE JEST strata z handlu -
-                # licząc TRANSFER tak samo jak DEPOSIT/WITHDRAW korygujemy
-                # to poprawnie (patrz obsługa znaku niżej).
-                if item.get("type") in ("DEPOSIT", "WITHDRAW", "TRANSFER"):
+                # TRANSFER świadomie NIE liczony tutaj (2026-08-27, ciąg
+                # dalszy - zamiast odejmować transfer na CFD/Crypto od
+                # net_deposits, Adam woli ręcznie podawać AKTUALNĄ wartość
+                # tych kont - patrz UserSettings.cfd_crypto_value, dodawaną
+                # wprost do account_total w _account_summary). TRANSFER
+                # między Invest a CFD/Crypto jest wtedy NEUTRALNY dla całości
+                # (pieniądze tylko się przesuwają), więc DEPOSIT/WITHDRAW na
+                # Invest wystarczą.
+                if item.get("type") in ("DEPOSIT", "WITHDRAW"):
                     relevant_items.append((raw_dt, item))
             next_page_path = resp.get("nextPagePath")
             if stop or not next_page_path or not items:
@@ -1383,30 +1390,15 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime | N
                 if len(currencies) == 2 and (amounts[0] > 0) != (amounts[1] > 0):
                     continue  # konwersja walutowa (różne waluty, przeciwny znak) - pomijamy oba wpisy
             for item in group:
-                # PRZELICZENIE NA EUR (znalezione na żywo 2026-08-27, real
-                # money, Adam: "nie mowilem ci na cfd 100e na crypto 150e
-                # wiec jak ci sie to spina") - dwa z sześciu TRANSFER w
-                # historii były w USD (+279.98 USD, -57.72 USD), sumowane
-                # NOMINALNIE bez przeliczenia kursu - dokładnie ten sam bug
-                # co wcześniej w Portfolio value (patrz get_fx_rate_to_eur),
-                # tylko w innym miejscu kodu. Po przeliczeniu netto TRANSFER
-                # wychodzi ~-249€, zgodne z realnymi 100€+150€ transferu
-                # (wcześniejsze nieprzeliczone -217.74€ było błędne).
-                # DEPOSIT/WITHDRAW przeliczane też dla bezpieczeństwa na
-                # przyszłość, mimo że dziś wszystkie są w EUR.
+                # Przeliczenie na EUR (zabezpieczenie na przyszłość, mimo że
+                # dziś wszystkie DEPOSIT/WITHDRAW na Invest są w EUR - patrz
+                # get_fx_rate_to_eur, ten sam mechanizm co Portfolio value).
                 item_currency = item.get("currency") or "EUR"
                 fx_rate = price_feed.get_fx_rate_to_eur(item_currency)
                 if fx_rate is None:
                     fx_rate = Decimal("1")
                 raw_amount = Decimal(str(item.get("amount", 0))) * fx_rate
                 kind = item["type"]
-                if kind == "TRANSFER":
-                    # Znak już jest w danych i JEST znaczący (dodatni =
-                    # wpłynęło na Invest, ujemny = wypłynęło np. na CFD/Crypto)
-                    # - w odróżnieniu od DEPOSIT/WITHDRAW, gdzie kierunek
-                    # wynika z samego typu, tu bierzemy wartość wprost.
-                    total += raw_amount
-                    continue
                 # T212 zwraca WITHDRAW z już ujemnym `amount` (potwierdzone
                 # na żywo 2026-08-27) - abs() + jawny znak per-typ, odporne
                 # niezależnie od znaku zwróconego przez API.
@@ -1435,27 +1427,39 @@ def _account_summary(user_id: int, account_total: Decimal | None, net_deposits: 
     /equity/account/summary się nie udał, patrz _fetch_portfolio_live).
 
     net_deposits (patrz _net_deposits_since, wołane BEZ `since` - czyli suma
-    WSZYSTKICH wpłat/wypłat/transferów od POCZĄTKU historii konta, nie tylko
+    WSZYSTKICH wpłat/wypłat od POCZĄTKU historii konta na Invest, nie tylko
     od baseline) - to jest teraz MIANOWNIK porównania zamiast baseline_equity.
     `baseline_equity`/`baseline_at` zostają w bazie i w tym response (do
     ew. innego użycia w przyszłości), ale JUŻ NIE sterują tym wyliczeniem -
     używane wyłącznie jako FALLBACK gdy net_deposits jest None (błąd API/brak
     scope'a `history:transactions`) - lepsze przybliżone info niż nic.
+
+    cfd_crypto_value (2026-08-27, ciąg dalszy - Adam: "cfd i crypto bede
+    podawal recznie a ty bedziesz doliczal") - appka NIE MA dostępu do
+    wartości kont CFD/Crypto (osobne produkty T212, inne API), więc user
+    ręcznie aktualizuje ile są dziś warte - doliczane wprost do
+    `account_total` przed policzeniem P&L. `account_total` w response
+    zostaje SUROWE (tylko Invest, do pokazania osobno w UI), nowe pole
+    `account_total_all` to suma użyta do faktycznego wyliczenia.
     """
     settings = _get_or_create_user_settings(user_id)
     baseline = settings.account_baseline_equity
     baseline_at = settings.account_baseline_at
+    cfd_crypto_value = settings.cfd_crypto_value or Decimal("0")
+    account_total_all = (account_total + cfd_crypto_value) if account_total is not None else None
     account_pnl = None
     account_pnl_pct = None
-    if account_total is not None:
+    if account_total_all is not None:
         if net_deposits is not None and net_deposits > 0:
-            account_pnl = account_total - net_deposits
+            account_pnl = account_total_all - net_deposits
             account_pnl_pct = (account_pnl / net_deposits) * 100
         elif baseline is not None and baseline > 0:
-            account_pnl = account_total - baseline
+            account_pnl = account_total_all - baseline
             account_pnl_pct = (account_pnl / baseline) * 100
     return {
         "account_total": float(account_total) if account_total is not None else None,
+        "account_total_all": float(account_total_all) if account_total_all is not None else None,
+        "cfd_crypto_value": float(cfd_crypto_value),
         "account_baseline_equity": float(baseline) if baseline is not None else None,
         "account_baseline_at": baseline_at.strftime("%Y-%m-%d") if baseline_at else None,
         "account_pnl": float(account_pnl) if account_pnl is not None else None,
@@ -1719,6 +1723,40 @@ def portfolio_reset_baseline():
     db.session.commit()
 
     return jsonify(ok=True, **_account_summary(user_id, account_total))
+
+
+@scalping_bp.route("/portfolio/cfd-crypto-value", methods=["POST"])
+@login_required
+def portfolio_set_cfd_crypto_value():
+    """
+    Ręcznie podana AKTUALNA wartość kont CFD/Crypto (Adam, 2026-08-27: "cfd
+    i crypto bede podawal recznie a ty bedziesz doliczal") - appka nie ma
+    żadnego dostępu do tych danych przez T212 API (osobne produkty, inne
+    API), więc user sam aktualizuje liczbę, doliczaną w _account_summary do
+    "Total account"/"Realny zysk". Świeży odczyt T212 (nie z cache), żeby
+    zwrócić od razu poprawny, aktualny account_pnl z nową wartością.
+    """
+    user_id = current_user_id()
+    payload = request.get_json(silent=True) or {}
+    try:
+        value = Decimal(str(payload.get("value", "")))
+    except InvalidOperation:
+        return jsonify(ok=False, error="Podaj poprawną liczbę."), 400
+    if value < 0:
+        return jsonify(ok=False, error="Wartość nie może być ujemna."), 400
+
+    settings = _get_or_create_user_settings(user_id)
+    settings.cfd_crypto_value = value
+    db.session.commit()
+
+    try:
+        client = _get_client()
+        account_total = Decimal(str(client.get_cash()["total"]))
+    except (RuntimeError, T212APIError, InvalidOperation, TypeError, KeyError):
+        account_total = _portfolio_cache.get(user_id, {}).get("account_total")
+
+    net_deposits = _net_deposits_cache.get(user_id, (0, None))[1]
+    return jsonify(ok=True, **_account_summary(user_id, account_total, net_deposits))
 
 
 @scalping_bp.route("/history", methods=["GET"])

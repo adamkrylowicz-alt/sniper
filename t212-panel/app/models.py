@@ -292,6 +292,17 @@ class UserSettings(db.Model):
     account_baseline_equity = db.Column(db.Numeric(12, 2), nullable=True)
     account_baseline_at = db.Column(db.DateTime, nullable=True)
 
+    # cfd_crypto_value (2026-08-27, Adam: "cfd i crypto bede podawal recznie
+    # a ty bedziesz doliczal") - appka śledzi WYŁĄCZNIE portfel Invest przez
+    # T212 API, nie ma żadnego dostępu do wartości kont CFD/Crypto (osobne
+    # produkty T212, inne API) - user ręcznie aktualizuje ile te konta są
+    # dziś warte, appka dolicza tę wartość do "Total account" i do "Realny
+    # zysk/strata". Domyślnie 0 (brak wartości) - net_deposits (patrz
+    # scalping.py::_net_deposits_since) liczy WYŁĄCZNIE DEPOSIT/WITHDRAW na
+    # Invest (bez TRANSFER, bo transfer na CFD/Crypto już jest odzwierciedlony
+    # w tym polu, nie w odjęciu od wpłat).
+    cfd_crypto_value = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+
     # Przełącznik demo/live (2026-08-06, Adam: "przełącz na live... i dodaj
     # guzik przełącznik live demo") - JEDEN toggle na konto (nie per-silnik),
     # bo wszystkie 3 silniki + Warp Mode dzielą TO SAMO fizyczne konto T212

@@ -7,9 +7,13 @@
 
     <div class="portfolio-summary" id="account-summary">
         <div class="portfolio-summary__cell">
-            <span class="instrument-detail__position-label">{{ t("Całość konta (gotówka + pozycje)") }}</span>
+            <span class="instrument-detail__position-label">{{ t("Total account (Invest + CFD/Crypto)") }}</span>
             <span class="instrument-detail__position-value js-money" id="account-total-value">
-                {{ "%.2f"|format(account.account_total) + " €" if account.account_total is not none else "…" }}
+                {{ "%.2f"|format(account.account_total_all) + " €" if account.account_total_all is not none else "…" }}
+            </span>
+            <span class="instrument-detail__position-label" style="font-size:11px;">
+                {{ t("Invest") }}: {{ "%.2f"|format(account.account_total) + "€" if account.account_total is not none else "…" }}
+                + {{ t("CFD/Crypto") }}: <span id="account-cfd-crypto-display">{{ "%.2f"|format(account.cfd_crypto_value) }}€</span>
             </span>
         </div>
         <div class="portfolio-summary__cell">
@@ -26,6 +30,13 @@
                 …
                 {% endif %}
             </span>
+        </div>
+        <div class="portfolio-summary__cell">
+            <span class="instrument-detail__position-label">{{ t("CFD/Crypto - dziś warte (ręcznie)") }}</span>
+            <div style="display:flex; gap:6px; align-items:center;">
+                <input type="number" step="0.01" min="0" id="cfd-crypto-input" class="modal-box__input" style="margin:0; width:100px;" value="{{ '%.2f'|format(account.cfd_crypto_value) }}">
+                <button type="button" class="account-bar__btn" id="cfd-crypto-save-btn">{{ t("Zapisz") }}</button>
+            </div>
         </div>
         <div class="portfolio-summary__cell portfolio-summary__cell--action">
             <button type="button" class="account-bar__btn js-money-toggle-btn" title="{{ t('Ukryj wartości (np. przed screen-share)') }}">
