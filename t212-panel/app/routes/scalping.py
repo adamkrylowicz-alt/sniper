@@ -23,6 +23,7 @@ UPROSZCZENIA POZOSTAŁE DO POPRAWY:
 from __future__ import annotations
 
 import datetime as dt
+from collections import defaultdict
 from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, current_app, jsonify, render_template, request
@@ -1269,7 +1270,20 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
     GET /equity/history/transactions, sumuje WYŁĄCZNIE type DEPOSIT/WITHDRAW
     (FEE/TRANSFER/INTEREST_ON_FREE_CASH/LENDING_INTEREST to realne
     zdarzenia na koncie, nie zewnętrzny cash-flow, więc mają zostać częścią
-    P&L, nie być z niego odejmowane). Zwraca None przy jakimkolwiek
+    P&L, nie być z niego odejmowane).
+
+    KONWERSJE WALUT (Adam, 2026-08-27: "konwersje na euro czy usd itd nie
+    powinny byc ujmowane w saldzie bo to nie wplyw tylko zamiana jednej
+    waluty na inna") - T212 księguje kupno np. USD za EUR jako DWA wpisy
+    DEPOSIT+WITHDRAW o IDENTYCZNYM `dateTime` (co do milisekundy), w różnych
+    walutach - zweryfikowane na żywo (real money): 3 takie pary w historii
+    konta, licząc je jak zwykłe DEPOSIT/WITHDRAW błędnie doliczyło ~154€
+    "wpłaty" która w rzeczywistości była tylko przewalutowaniem już
+    posiadanych środków. Grupujemy więc wpisy po `dateTime` i pomijamy
+    całą parę (DEPOSIT+WITHDRAW, różne waluty, ten sam znacznik czasu) -
+    reszta liczy się normalnie.
+
+    Zwraca None przy jakimkolwiek
     niepowodzeniu (klucz API bez scope'a `history:transactions` -> 403,
     429 itp.) - fail-safe, `_account_summary` wtedy po prostu nie koryguje
     (stare zachowanie: surowa różnica total-baseline).
@@ -1291,7 +1305,19 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
     # przy PIERWSZYM zapytaniu - więc filtr czasowy robimy sami, lokalnie:
     # strony przychodzą od najnowszych, przerywamy pętlę jak tylko trafimy
     # na wpis starszy niż `since` (reszta stron byłaby jeszcze starsza).
-    total = Decimal("0")
+    #
+    # KONWERSJE WALUT (znalezione na żywo 2026-08-27, real money - Adam:
+    # "konwersje na euro czy usd itd nie powinny byc ujmowane w saldzie bo
+    # to nie wplyw tylko zamiana jednej waluty na inna") - T212 księguje
+    # kupno np. USD za EUR jako DWA wpisy o IDENTYCZNYM `dateTime` (co do
+    # milisekundy): WITHDRAW w walucie źródłowej + DEPOSIT w walucie
+    # docelowej. To NIE jest zewnętrzny cash-flow (nic nie wpłynęło/wypłynęło
+    # z banku), więc licząc je jak zwykłe DEPOSIT/WITHDRAW błędnie
+    # zawyżaliśmy/zaniżaliśmy net_deposits o kwotę każdej konwersji.
+    # Zbieramy więc NAJPIERW wszystkie wpisy od `since`, dopiero potem
+    # grupujemy po dateTime i pomijamy pary (DEPOSIT+WITHDRAW, różne waluty,
+    # ten sam znacznik czasu) - reszta liczy się jak dotychczas.
+    relevant_items = []
     next_page_path = None
     try:
         for _ in range(10):
@@ -1312,21 +1338,37 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
                 if item_dt < since:
                     stop = True
                     break
-                # BUG znaleziony na żywo 2026-08-27 (real money): T212 zwraca
-                # WITHDRAW z JUŻ UJEMNYM `amount` (np. -1000.0, potwierdzone
-                # bezpośrednim zapytaniem) - `total -= amount` dawało wtedy
-                # `total += 1000`, odwracając znak wypłaty na "wpłatę".
-                # abs() + jawny znak per-typ - odporne niezależnie od tego,
-                # czy API akurat zwróci wartość dodatnią czy ujemną.
-                amount = abs(Decimal(str(item.get("amount", 0))))
-                kind = item.get("type")
-                if kind == "DEPOSIT":
-                    total += amount
-                elif kind == "WITHDRAW":
-                    total -= amount
+                if item.get("type") in ("DEPOSIT", "WITHDRAW"):
+                    relevant_items.append((raw_dt, item))
             next_page_path = resp.get("nextPagePath")
             if stop or not next_page_path or not items:
                 break
+
+        # Grupowanie po dateTime (do milisekundy - T212 stempluje obie nogi
+        # konwersji IDENTYCZNIE) - para DEPOSIT+WITHDRAW w RÓŻNYCH walutach
+        # to konwersja, nie prawdziwy cash-flow, więc pomijamy CAŁĄ parę.
+        # Wszystko inne (pojedyncze wpisy, albo przypadkowe zbiegi >2 wpisów
+        # w tej samej milisekundzie) liczymy normalnie.
+        grouped = defaultdict(list)
+        for raw_dt, item in relevant_items:
+            grouped[raw_dt].append(item)
+
+        total = Decimal("0")
+        for group in grouped.values():
+            if len(group) == 2:
+                types = {i["type"] for i in group}
+                currencies = {i.get("currency") for i in group}
+                if types == {"DEPOSIT", "WITHDRAW"} and len(currencies) == 2:
+                    continue  # para konwersji walutowej - pomijamy oba wpisy
+            for item in group:
+                # T212 zwraca WITHDRAW z już ujemnym `amount` (potwierdzone
+                # na żywo 2026-08-27) - abs() + jawny znak per-typ, odporne
+                # niezależnie od znaku zwróconego przez API.
+                amount = abs(Decimal(str(item.get("amount", 0))))
+                if item["type"] == "DEPOSIT":
+                    total += amount
+                elif item["type"] == "WITHDRAW":
+                    total -= amount
     except (T212APIError, InvalidOperation, TypeError, KeyError):
         _net_deposits_cache[user_id] = (now, None)
         return None
