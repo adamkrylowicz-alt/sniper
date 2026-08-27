@@ -1262,7 +1262,7 @@ _NET_DEPOSITS_CACHE_TTL = 300  # 5 min - wpłaty/wypłaty zdarzają się rzadko,
 _net_deposits_cache: dict[int, tuple[float, Decimal | None]] = {}  # user_id -> (timestamp, net_deposits)
 
 
-def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) -> Decimal | None:
+def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime | None = None) -> Decimal | None:
     """
     Suma wpłat MINUS wypłat na koncie T212 od `since` (Adam, 2026-08-27: "nie
     doliczaj do zysku wplat na konto realnych pieniedzy... mozesz je pokazac
@@ -1271,6 +1271,17 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
     (FEE/TRANSFER/INTEREST_ON_FREE_CASH/LENDING_INTEREST to realne
     zdarzenia na koncie, nie zewnętrzny cash-flow, więc mają zostać częścią
     P&L, nie być z niego odejmowane).
+
+    `since=None` (2026-08-27, ciąg dalszy - Adam po zobaczeniu tylko wpłat OD
+    baseline: "wplaty masz pokazywac wszystkie wplaty gotowkowe zebym mogl
+    latwo ocenic ile realnie zarobilem") - liczy WSZYSTKIE wpłaty/wypłaty od
+    POCZĄTKU historii konta, bez dolnego ograniczenia czasowego. To jest
+    teraz jedyny sposób w jaki `_account_summary` woła tę funkcję - patrz
+    tam: `account_pnl = account_total - net_deposits`, całkowicie BEZ
+    baseline w tym równaniu (dawne baseline_equity/baseline_at zostają w
+    modelu i są nadal wyświetlane informacyjnie, ale już nie sterują samym
+    wyliczeniem P&L - inaczej wpłaty sprzed baseline liczyłyby się PODWÓJNIE,
+    bo są już wliczone w wartość baseline_equity zapisaną w tamtym momencie).
 
     KONWERSJE WALUT (Adam, 2026-08-27: "konwersje na euro czy usd itd nie
     powinny byc ujmowane w saldzie bo to nie wplyw tylko zamiana jednej
@@ -1292,8 +1303,9 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
     endpoint ma rate limit 6/min na całym koncie, a strona Aktywa robi 2
     odczyty na wizytę (render + odświeżenie JS z opóźnieniem), więc bez
     cache'a łatwo zahamrować limit przy kilku odświeżeniach z rzędu.
-    Paginacja świadomie ograniczona do 10 stron (500 wpisów) - bezpiecznik,
-    nie oczekujemy tylu wpłat/wypłat między jednym resetem baseline a drugim.
+    Paginacja świadomie ograniczona do 10 stron (500 wpisów) - bezpiecznik na
+    wypadek bardzo długiej historii, żeby jeden odczyt nie ciągnął się w
+    nieskończoność przy rate limicie 6/min (10 stron ≈ 100s w najgorszym razie).
     """
     now = dt.datetime.utcnow().timestamp()
     cached = _net_deposits_cache.get(user_id)
@@ -1335,20 +1347,30 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
                     item_dt = dt.datetime.fromisoformat(raw_dt.replace("Z", "+00:00")).replace(tzinfo=None)
                 except ValueError:
                     continue
-                if item_dt < since:
+                if since is not None and item_dt < since:
                     stop = True
                     break
-                if item.get("type") in ("DEPOSIT", "WITHDRAW"):
+                # TRANSFER dołączony 2026-08-27 (Adam: "2 wyplaty byly na
+                # konto cfd i crypto tez to musisz uwzglednic... to nie
+                # strata tylko przesuniecie miedzy portfelami") - appka śledzi
+                # WYŁĄCZNIE portfel Invest (get_cash/get_portfolio), więc
+                # przesunięcie kapitału na CFD/Crypto realnie zmniejsza
+                # `account_total` (Invest), ale to NIE JEST strata z handlu -
+                # licząc TRANSFER tak samo jak DEPOSIT/WITHDRAW korygujemy
+                # to poprawnie (patrz obsługa znaku niżej).
+                if item.get("type") in ("DEPOSIT", "WITHDRAW", "TRANSFER"):
                     relevant_items.append((raw_dt, item))
             next_page_path = resp.get("nextPagePath")
             if stop or not next_page_path or not items:
                 break
 
         # Grupowanie po dateTime (do milisekundy - T212 stempluje obie nogi
-        # konwersji IDENTYCZNIE) - para DEPOSIT+WITHDRAW w RÓŻNYCH walutach
-        # to konwersja, nie prawdziwy cash-flow, więc pomijamy CAŁĄ parę.
-        # Wszystko inne (pojedyncze wpisy, albo przypadkowe zbiegi >2 wpisów
-        # w tej samej milisekundzie) liczymy normalnie.
+        # konwersji IDENTYCZNIE) - para w RÓŻNYCH walutach z PRZECIWNYM
+        # znakiem (niezależnie od dokładnej kombinacji typów - zaobserwowane
+        # DEPOSIT+WITHDRAW, ale ogólny warunek jest odporniejszy) to konwersja
+        # walutowa, nie prawdziwy cash-flow - pomijamy CAŁĄ parę. Wszystko
+        # inne (pojedyncze wpisy, albo przypadkowe zbiegi >2 wpisów w tej
+        # samej milisekundzie) liczymy normalnie.
         grouped = defaultdict(list)
         for raw_dt, item in relevant_items:
             grouped[raw_dt].append(item)
@@ -1356,18 +1378,26 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
         total = Decimal("0")
         for group in grouped.values():
             if len(group) == 2:
-                types = {i["type"] for i in group}
                 currencies = {i.get("currency") for i in group}
-                if types == {"DEPOSIT", "WITHDRAW"} and len(currencies) == 2:
-                    continue  # para konwersji walutowej - pomijamy oba wpisy
+                amounts = [Decimal(str(i.get("amount", 0))) for i in group]
+                if len(currencies) == 2 and (amounts[0] > 0) != (amounts[1] > 0):
+                    continue  # konwersja walutowa (różne waluty, przeciwny znak) - pomijamy oba wpisy
             for item in group:
+                kind = item["type"]
+                if kind == "TRANSFER":
+                    # Znak już jest w danych i JEST znaczący (dodatni =
+                    # wpłynęło na Invest, ujemny = wypłynęło np. na CFD/Crypto)
+                    # - w odróżnieniu od DEPOSIT/WITHDRAW, gdzie kierunek
+                    # wynika z samego typu, tu bierzemy wartość wprost.
+                    total += Decimal(str(item.get("amount", 0)))
+                    continue
                 # T212 zwraca WITHDRAW z już ujemnym `amount` (potwierdzone
                 # na żywo 2026-08-27) - abs() + jawny znak per-typ, odporne
                 # niezależnie od znaku zwróconego przez API.
                 amount = abs(Decimal(str(item.get("amount", 0))))
-                if item["type"] == "DEPOSIT":
+                if kind == "DEPOSIT":
                     total += amount
-                elif item["type"] == "WITHDRAW":
+                elif kind == "WITHDRAW":
                     total -= amount
     except (T212APIError, InvalidOperation, TypeError, KeyError):
         _net_deposits_cache[user_id] = (now, None)
@@ -1379,30 +1409,35 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
 
 def _account_summary(user_id: int, account_total: Decimal | None, net_deposits: Decimal | None = None) -> dict:
     """
-    "Całość konta" vs punkt odniesienia (Adam, 2026-08-05: "to demo bylo na
-    start 5keuro... ile jest teraz i czy to zysk czy strata i w %") -
+    "Realny zysk/strata" = ile mam teraz na koncie MINUS ile w sumie
+    wpłaciłem netto (2026-08-27, przeprojektowane - Adam: "wplaty masz
+    pokazywac wszystkie wplaty gotowkowe zebym mogl latwo ocenic ile
+    realnie zarobilem", po tym jak liczenie "vs punkt startowy" okazało
+    się mylące - wpłaty PRZED baseline są już wliczone w wartość baseline,
+    więc odejmowanie ich PONOWNIE dawało fałszywie zawyżoną stratę).
     account_total to gotówka+pozycje z T212 W TEJ CHWILI (None gdy odczyt
-    /equity/account/summary się nie udał, patrz _fetch_portfolio_live),
-    baseline to ostatni zapisany punkt odniesienia (domyślnie zseedowany
-    migracją na 5000€, ale Adam może go zresetować jednym klikiem po każdym
-    ręcznym resecie konta demo - patrz account_baseline_equity w models.py).
+    /equity/account/summary się nie udał, patrz _fetch_portfolio_live).
 
-    net_deposits (2026-08-27) - już WYLICZONA (przez _net_deposits_since,
-    w _fetch_portfolio_live gdzie jest żywy klient) suma wpłat-wypłat od
-    baseline_at; None gdy nieznana (brak świeżego query - patrz portfolio_view
-    pierwszy render z samego cache) - wtedy account_pnl to stara, surowa
-    różnica bez korekty, żeby nie pokazywać fałszywego zera zamiast realnej
-    (choć nieskorygowanej) wartości.
+    net_deposits (patrz _net_deposits_since, wołane BEZ `since` - czyli suma
+    WSZYSTKICH wpłat/wypłat/transferów od POCZĄTKU historii konta, nie tylko
+    od baseline) - to jest teraz MIANOWNIK porównania zamiast baseline_equity.
+    `baseline_equity`/`baseline_at` zostają w bazie i w tym response (do
+    ew. innego użycia w przyszłości), ale JUŻ NIE sterują tym wyliczeniem -
+    używane wyłącznie jako FALLBACK gdy net_deposits jest None (błąd API/brak
+    scope'a `history:transactions`) - lepsze przybliżone info niż nic.
     """
     settings = _get_or_create_user_settings(user_id)
     baseline = settings.account_baseline_equity
     baseline_at = settings.account_baseline_at
     account_pnl = None
     account_pnl_pct = None
-    if account_total is not None and baseline is not None and baseline > 0:
-        raw_diff = account_total - baseline
-        account_pnl = raw_diff - net_deposits if net_deposits is not None else raw_diff
-        account_pnl_pct = (account_pnl / baseline) * 100
+    if account_total is not None:
+        if net_deposits is not None and net_deposits > 0:
+            account_pnl = account_total - net_deposits
+            account_pnl_pct = (account_pnl / net_deposits) * 100
+        elif baseline is not None and baseline > 0:
+            account_pnl = account_total - baseline
+            account_pnl_pct = (account_pnl / baseline) * 100
     return {
         "account_total": float(account_total) if account_total is not None else None,
         "account_baseline_equity": float(baseline) if baseline is not None else None,
@@ -1525,10 +1560,12 @@ def _fetch_portfolio_live(user_id: int) -> dict:
     except (T212APIError, InvalidOperation, TypeError, KeyError):
         account_total = None
 
-    # Wpłaty/wypłaty od punktu odniesienia (patrz _net_deposits_since) - żeby
-    # "vs punkt startowy" na Aktywach nie liczyło realnych wpłat jako zysk.
-    baseline_at = _get_or_create_user_settings(user_id).account_baseline_at
-    net_deposits = _net_deposits_since(user_id, client, baseline_at) if baseline_at is not None else None
+    # Suma WSZYSTKICH wpłat/wypłat od zawsze (nie tylko od baseline - Adam,
+    # 2026-08-27: "wplaty masz pokazywac wszystkie wplaty gotowkowe zebym
+    # mogl latwo ocenic ile realnie zarobilem") - patrz _net_deposits_since,
+    # `_account_summary` liczy teraz account_pnl = account_total - net_deposits,
+    # bez baseline w tym równaniu w ogóle.
+    net_deposits = _net_deposits_since(user_id, client)
 
     tickers = [p.get("ticker") for p in raw_positions if p.get("ticker")]
     instruments_by_ticker = (

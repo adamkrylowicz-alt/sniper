@@ -66,14 +66,13 @@ function renderAccountSummary(data) {
 
     totalEl.dataset.real = data.account_total != null ? `${data.account_total.toFixed(2)} €` : "…";
 
-    const baselineNote = data.account_baseline_equity != null
-        ? ` (${Math.round(data.account_baseline_equity)}€${data.account_baseline_at ? ", " + data.account_baseline_at : ""})`
+    const depositsNote = data.account_net_deposits != null
+        ? ` (${t("wpłacono łącznie")}: ${data.account_net_deposits.toFixed(2)}€)`
         : "";
-    labelEl.textContent = `${t("vs punkt startowy")}${baselineNote}`;
+    labelEl.textContent = `${t("Realny zysk/strata")}${depositsNote}`;
 
     if (data.account_pnl != null) {
-        const depositsNote = data.account_net_deposits ? ` (${t("wpłaty")}: ${data.account_net_deposits >= 0 ? "+" : ""}${data.account_net_deposits.toFixed(2)} €)` : "";
-        pnlEl.dataset.real = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)${depositsNote}`;
+        pnlEl.dataset.real = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)`;
         pnlEl.className = `instrument-detail__position-value js-money ${pplClass(data.account_pnl)}`;
     } else {
         pnlEl.dataset.real = "…";
