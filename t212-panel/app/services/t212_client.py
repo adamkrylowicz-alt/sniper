@@ -110,6 +110,7 @@ _last_request_by_key: dict[str, float] = {}
 #   GET    /equity/portfolio              -> niedokumentowany, zmierzony jako 1 / 5s
 #   GET    /equity/metadata/instruments   -> 1 / 50s
 #   GET    /equity/history/orders         -> 6 / 60s
+#   GET    /equity/history/transactions   -> 6 / 60s
 DEFAULT_MIN_INTERVAL_SECONDS = 5.5  # bezpieczny fallback dla niewymienionych wprost
 
 
@@ -143,6 +144,8 @@ def _rate_limit_key_and_interval(method: str, path: str) -> tuple[str, float]:
         return "metadata/instruments", 50.5
     if method == "GET" and path == "/equity/history/orders":
         return "history/orders", 10.5
+    if method == "GET" and path == "/equity/history/transactions":
+        return "history/transactions", 10.5
     return f"{method} {path}", DEFAULT_MIN_INTERVAL_SECONDS
 
 # Cache dzielony MIĘDZY silnikami dla get_portfolio()/get_pending_orders()
@@ -684,6 +687,32 @@ class T212Client:
         if cursor:
             params["cursor"] = cursor
         return self._request("GET", "/equity/history/orders", params=params)
+
+    def get_cash_transactions(
+        self, time_from: str | None = None, limit: int = 50, cursor: str | None = None,
+    ) -> dict:
+        """
+        Historia wpłat/wypłat/opłat na koncie (GET /equity/history/transactions,
+        rate limit 6/min - NIE wołać z pętli tick, tylko rzadko/user-initiated,
+        patrz routes/scalping.py::_net_deposits_since). Zwraca
+        {"items": [{"amount","currency","dateTime","reference","type"}],
+        "nextPagePath": str|None} - type jedno z DEPOSIT/WITHDRAW/FEE/TRANSFER/
+        INTEREST_ON_FREE_CASH/LENDING_INTEREST. Wymaga scope'a
+        `history:transactions` na kluczu API - 403 gdy brak.
+
+        UWAGA `time_from`: zweryfikowane na żywo (2026-08-27) - T212 zwraca
+        400 "Both or none of cursorId and time must be provided" gdy podasz
+        SAM `time_from` bez `cursor` - nie da się nim przefiltrować pierwszej
+        strony. Zostaje w sygnaturze (dla ew. użycia razem z cursorem z
+        poprzedniej strony), ale `_net_deposits_since` go NIE używa - filtruje
+        po dacie lokalnie w Pythonie zamiast polegać na tym parametrze.
+        """
+        params: dict = {"limit": limit}
+        if time_from:
+            params["time"] = time_from
+        if cursor:
+            params["cursor"] = cursor
+        return self._request("GET", "/equity/history/transactions", params=params)
 
 
 # ---------------------------------------------------------------------------

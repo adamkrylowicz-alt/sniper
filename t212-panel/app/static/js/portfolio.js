@@ -72,7 +72,8 @@ function renderAccountSummary(data) {
     labelEl.textContent = `${t("vs punkt startowy")}${baselineNote}`;
 
     if (data.account_pnl != null) {
-        pnlEl.dataset.real = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)`;
+        const depositsNote = data.account_net_deposits ? ` (${t("wpłaty")}: ${data.account_net_deposits >= 0 ? "+" : ""}${data.account_net_deposits.toFixed(2)} €)` : "";
+        pnlEl.dataset.real = `${data.account_pnl >= 0 ? "+" : ""}${data.account_pnl.toFixed(2)} € (${data.account_pnl_pct >= 0 ? "+" : ""}${data.account_pnl_pct.toFixed(1)}%)${depositsNote}`;
         pnlEl.className = `instrument-detail__position-value js-money ${pplClass(data.account_pnl)}`;
     } else {
         pnlEl.dataset.real = "…";

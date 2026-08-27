@@ -1257,7 +1257,74 @@ def _get_or_create_user_settings(user_id: int):
     return settings
 
 
-def _account_summary(user_id: int, account_total: Decimal | None) -> dict:
+_NET_DEPOSITS_CACHE_TTL = 300  # 5 min - wpłaty/wypłaty zdarzają się rzadko, rate limit T212 (6/min) na tym endponcie jest ciasny
+_net_deposits_cache: dict[int, tuple[float, Decimal | None]] = {}  # user_id -> (timestamp, net_deposits)
+
+
+def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) -> Decimal | None:
+    """
+    Suma wpłat MINUS wypłat na koncie T212 od `since` (Adam, 2026-08-27: "nie
+    doliczaj do zysku wplat na konto realnych pieniedzy... mozesz je pokazac
+    w nawiasie jak pokazuje to trading212, ale nie licz ich jako zysk") -
+    GET /equity/history/transactions, sumuje WYŁĄCZNIE type DEPOSIT/WITHDRAW
+    (FEE/TRANSFER/INTEREST_ON_FREE_CASH/LENDING_INTEREST to realne
+    zdarzenia na koncie, nie zewnętrzny cash-flow, więc mają zostać częścią
+    P&L, nie być z niego odejmowane). Zwraca None przy jakimkolwiek
+    niepowodzeniu (klucz API bez scope'a `history:transactions` -> 403,
+    429 itp.) - fail-safe, `_account_summary` wtedy po prostu nie koryguje
+    (stare zachowanie: surowa różnica total-baseline).
+
+    Cache'owane per-user (5 min, moduł-level jak `_portfolio_cache`) - ten
+    endpoint ma rate limit 6/min na całym koncie, a strona Aktywa robi 2
+    odczyty na wizytę (render + odświeżenie JS z opóźnieniem), więc bez
+    cache'a łatwo zahamrować limit przy kilku odświeżeniach z rzędu.
+    Paginacja świadomie ograniczona do 10 stron (500 wpisów) - bezpiecznik,
+    nie oczekujemy tylu wpłat/wypłat między jednym resetem baseline a drugim.
+    """
+    now = dt.datetime.utcnow().timestamp()
+    cached = _net_deposits_cache.get(user_id)
+    if cached and (now - cached[0]) < _NET_DEPOSITS_CACHE_TTL:
+        return cached[1]
+
+    # WAŻNE: T212 (400 "Both or none of cursorId and time must be provided",
+    # zweryfikowane na żywo 2026-08-27) nie pozwala podać `time` bez cursora
+    # przy PIERWSZYM zapytaniu - więc filtr czasowy robimy sami, lokalnie:
+    # strony przychodzą od najnowszych, przerywamy pętlę jak tylko trafimy
+    # na wpis starszy niż `since` (reszta stron byłaby jeszcze starsza).
+    total = Decimal("0")
+    cursor = None
+    try:
+        for _ in range(10):
+            resp = client.get_cash_transactions(limit=50, cursor=cursor)
+            items = resp.get("items", [])
+            stop = False
+            for item in items:
+                raw_dt = item.get("dateTime", "")
+                try:
+                    item_dt = dt.datetime.fromisoformat(raw_dt.replace("Z", "+00:00")).replace(tzinfo=None)
+                except ValueError:
+                    continue
+                if item_dt < since:
+                    stop = True
+                    break
+                amount = Decimal(str(item.get("amount", 0)))
+                kind = item.get("type")
+                if kind == "DEPOSIT":
+                    total += amount
+                elif kind == "WITHDRAW":
+                    total -= amount
+            cursor = resp.get("nextPagePath")
+            if stop or not cursor or not items:
+                break
+    except (T212APIError, InvalidOperation, TypeError, KeyError):
+        _net_deposits_cache[user_id] = (now, None)
+        return None
+
+    _net_deposits_cache[user_id] = (now, total)
+    return total
+
+
+def _account_summary(user_id: int, account_total: Decimal | None, net_deposits: Decimal | None = None) -> dict:
     """
     "Całość konta" vs punkt odniesienia (Adam, 2026-08-05: "to demo bylo na
     start 5keuro... ile jest teraz i czy to zysk czy strata i w %") -
@@ -1266,6 +1333,13 @@ def _account_summary(user_id: int, account_total: Decimal | None) -> dict:
     baseline to ostatni zapisany punkt odniesienia (domyślnie zseedowany
     migracją na 5000€, ale Adam może go zresetować jednym klikiem po każdym
     ręcznym resecie konta demo - patrz account_baseline_equity w models.py).
+
+    net_deposits (2026-08-27) - już WYLICZONA (przez _net_deposits_since,
+    w _fetch_portfolio_live gdzie jest żywy klient) suma wpłat-wypłat od
+    baseline_at; None gdy nieznana (brak świeżego query - patrz portfolio_view
+    pierwszy render z samego cache) - wtedy account_pnl to stara, surowa
+    różnica bez korekty, żeby nie pokazywać fałszywego zera zamiast realnej
+    (choć nieskorygowanej) wartości.
     """
     settings = _get_or_create_user_settings(user_id)
     baseline = settings.account_baseline_equity
@@ -1273,7 +1347,8 @@ def _account_summary(user_id: int, account_total: Decimal | None) -> dict:
     account_pnl = None
     account_pnl_pct = None
     if account_total is not None and baseline is not None and baseline > 0:
-        account_pnl = account_total - baseline
+        raw_diff = account_total - baseline
+        account_pnl = raw_diff - net_deposits if net_deposits is not None else raw_diff
         account_pnl_pct = (account_pnl / baseline) * 100
     return {
         "account_total": float(account_total) if account_total is not None else None,
@@ -1281,10 +1356,11 @@ def _account_summary(user_id: int, account_total: Decimal | None) -> dict:
         "account_baseline_at": baseline_at.strftime("%Y-%m-%d") if baseline_at else None,
         "account_pnl": float(account_pnl) if account_pnl is not None else None,
         "account_pnl_pct": float(account_pnl_pct) if account_pnl_pct is not None else None,
+        "account_net_deposits": float(net_deposits) if net_deposits is not None else None,
     }
 
 
-def _serialize_portfolio(user_id: int, positions: list[dict], total_value, total_ppl, total_ppl_pct, account_total=None) -> dict:
+def _serialize_portfolio(user_id: int, positions: list[dict], total_value, total_ppl, total_ppl_pct, account_total=None, net_deposits=None) -> dict:
     """
     Forma JSON-owalna (Decimal -> float) dzielona przez initial_data (portfolio.html,
     embedowane do natychmiastowego re-renderu z zapamietanym sortem - patrz
@@ -1292,7 +1368,7 @@ def _serialize_portfolio(user_id: int, positions: list[dict], total_value, total
     IDENTYCZNY ksztalt danych, ktory renderPortfolio() w JS umie skonsumowac.
     """
     return {
-        **_account_summary(user_id, account_total),
+        **_account_summary(user_id, account_total, net_deposits),
         "positions": [
             {
                 "ticker": p["ticker"],
@@ -1355,14 +1431,14 @@ def portfolio_view():
         positions = _annotate_bot_state(user_id, cached["positions"])
         initial_data = _serialize_portfolio(
             user_id, positions, cached["total_value"], cached["total_ppl"], cached["total_ppl_pct"],
-            account_total=cached.get("account_total"),
+            account_total=cached.get("account_total"), net_deposits=cached.get("net_deposits"),
         )
         return render_template(
             "portfolio.html", positions=positions,
             total_value=cached["total_value"], total_ppl=cached["total_ppl"],
             total_ppl_pct=cached["total_ppl_pct"],
             error=None, has_cache=True, initial_data=initial_data,
-            account=_account_summary(user_id, cached.get("account_total")),
+            account=_account_summary(user_id, cached.get("account_total"), cached.get("net_deposits")),
         )
     return render_template(
         "portfolio.html", positions=[], total_value=None, total_ppl=None,
@@ -1395,6 +1471,11 @@ def _fetch_portfolio_live(user_id: int) -> dict:
         account_total = Decimal(str(client.get_cash()["total"]))
     except (T212APIError, InvalidOperation, TypeError, KeyError):
         account_total = None
+
+    # Wpłaty/wypłaty od punktu odniesienia (patrz _net_deposits_since) - żeby
+    # "vs punkt startowy" na Aktywach nie liczyło realnych wpłat jako zysk.
+    baseline_at = _get_or_create_user_settings(user_id).account_baseline_at
+    net_deposits = _net_deposits_since(user_id, client, baseline_at) if baseline_at is not None else None
 
     tickers = [p.get("ticker") for p in raw_positions if p.get("ticker")]
     instruments_by_ticker = (
@@ -1450,6 +1531,7 @@ def _fetch_portfolio_live(user_id: int) -> dict:
     result = {
         "positions": positions, "total_value": total_value, "total_ppl": total_ppl,
         "total_ppl_pct": total_ppl_pct, "account_total": account_total,
+        "net_deposits": net_deposits,
     }
     _portfolio_cache[user_id] = result
     return result
@@ -1481,7 +1563,7 @@ def portfolio_refresh():
         ok=True,
         **_serialize_portfolio(
             user_id, result["positions"], result["total_value"], result["total_ppl"], result["total_ppl_pct"],
-            account_total=result.get("account_total"),
+            account_total=result.get("account_total"), net_deposits=result.get("net_deposits"),
         ),
     )
 

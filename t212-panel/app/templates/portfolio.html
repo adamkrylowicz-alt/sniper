@@ -21,7 +21,7 @@
             </span>
             <span class="instrument-detail__position-value js-money{% if account.account_pnl is not none %} {{ 'focus-tile__pnl--profit' if account.account_pnl >= 0 else 'focus-tile__pnl--loss' }}{% endif %}" id="account-baseline-pnl">
                 {% if account.account_pnl is not none %}
-                {{ "+" if account.account_pnl >= 0 else "" }}{{ "%.2f"|format(account.account_pnl) }} € ({{ "+" if account.account_pnl_pct >= 0 else "" }}{{ "%.1f"|format(account.account_pnl_pct) }}%)
+                {{ "+" if account.account_pnl >= 0 else "" }}{{ "%.2f"|format(account.account_pnl) }} € ({{ "+" if account.account_pnl_pct >= 0 else "" }}{{ "%.1f"|format(account.account_pnl_pct) }}%){% if account.account_net_deposits and account.account_net_deposits != 0 %} ({{ t("wpłaty") }}: {{ "+" if account.account_net_deposits >= 0 else "" }}{{ "%.2f"|format(account.account_net_deposits) }} €){% endif %}
                 {% else %}
                 …
                 {% endif %}
