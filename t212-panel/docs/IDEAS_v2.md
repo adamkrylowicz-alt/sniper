@@ -1699,3 +1699,66 @@ dostępne poświadczenia -> `reconcile()` wychodzi natychmiast, zero wywołań
 włączony -> `reconcile()` normalnie dochodzi do `_auto_adopt_foreign_positions`,
 gate nie blokuje aktywnego bota. Zastosowane i zrestartowane na dev, czysty
 start (`curl` -> 302, brak tracebacku). Migracja na prod: patrz CLAUDE.md.
+
+## ZROBIONE (2026-08-27): "short zamiast long na sygnale" sprawdzone backtestem na Sygnale i Micro-Gridzie - NIE OPŁACA SIĘ, na żadnym progu RSI
+
+Adam (żartem, po tym jak dowiedział się że nowy tryb "RSI Hybrid" ma tylko
+~36-39% win rate w backteście Sygnału - patrz wpis 05.08 wyżej): "zastanawiam
+się żeby grać na krótko jak bot mówi kupuj". Sprawdzone dwoma osobnymi
+eksperymentami (ad-hoc skrypty, NIE w repo - jednorazowa ciekawość, nie
+narzędzie do utrzymania; dane wyłącznie z lokalnego cache `backtest/data/`,
+zero nowych zapytań API), zamiast zgadywać.
+
+**Metodologia**: ten sam selektor sygnału/kandydata co produkcja (RSI<próg+
+cena>SMA200 dla Sygnału; `bot_entry_filters.rank_candidates` bez zmian dla
+Micro-Gridu), ale kierunek pozycji odwrócony - sell-to-open zamiast buy,
+buy-to-cover zamiast sell, stop/trailing lustrzanie odbite nad ceną zamiast
+pod nią (trailing w dół zamiast w górę), ten sam slippage (0.05%/noga) po
+obu stronach.
+
+**Sygnał, sweep progu RSI (60 tickerów, 400 dni, SL=1.8×ATR, produkcyjne
+parametry)**:
+
+| Próg RSI< | LONG P&L | SHORT P&L |
+|---|---|---|
+| 25 | -35.65 | -66.50 |
+| 30 | -53.36 | -103.13 |
+| **35 (prod)** | **+101.77** | -160.46 |
+| 40 | +17.37 | -172.14 |
+| 45 | -24.42 | -259.11 |
+
+SHORT przegrywa na KAŻDYM progu (nie tylko 35) - im niższy próg, tym gorzej
+dla shorta. Przy okazji potwierdzenie wpisu z 05.08: LONG jest dodatni
+WYŁĄCZNIE przy 35 (dokładna wartość z produkcji) - 25/30/40/45 wszystkie na
+minusie albo w szumie, zgodnie z walk-forward grid searchem sprzed 3 tygodni
+(35 to jedyna wartość, która przeszła test out-of-sample, reszta to
+przeuczenie na treningu).
+
+**Micro-Grid (38 tickerów, portfolio-wide, domyślne parametry DCA/trailing
+- max_dca_levels=5, dca_trigger_pct=5%, take_profit_step_pct=0.3%,
+stop_loss_pct=2%)**:
+
+| | Transakcji | Win rate | Total P&L | Max DD |
+|---|---|---|---|---|
+| LONG (obecne) | 275 | 98.5% | **+217.08** | 2.55% |
+| SHORT (lustro) | 194 | 95.4% | **-206.29** | 3.70% |
+
+Inny mechanizm niż w Sygnale, ten sam wniosek: Micro-Grid ma bardzo wysoki
+win rate (ciasny take-profit-step=0.3%, wychodzi szybko z niemal wszystkiego
+na małym plusie), ale nieliczne przegrane (1.5%) są duże i dominują wynik.
+Po odwróceniu kierunku SHORT wciąż ma wysoki win rate (95.4%), ale te
+rzadkie duże straty przechodzą na jego stronę - drawdown rośnie (3.70% vs
+2.55%) i total P&L ląduje mocno na minusie mimo wysokiego win rate.
+
+**Wniosek (ustalona wiedza, do pamiętania przy każdej przyszłej dyskusji o
+"fejdowaniu" sygnałów)**: żadna z dwóch strategii nie ma "darmowego"
+lustrzanego bliźniaka po stronie short - to nie jest coin flip z odwróconym
+znakiem. RSI<próg+SMA200 (Sygnał) i range-position/trend-scoring
+(Micro-Grid) to realne, słabe, ale kierunkowe edge'e w stronę long; granie
+przeciwko nim traci na obu frontach (slippage/FX kosztują tak samo w obie
+strony, a strukturalna asymetria payoutu - rzadkie duże ruchy - działa
+przeciwko fejderowi niezależnie od kierunku). Dodatkowo: konto Trading212
+używane przez bota to Invest, `t212_client.py` explicite "bez shortowania i
+bez marginu" - short w ogóle nie jest dziś technicznie możliwy bez osobnego
+konta CFD, którego apka nie integruje. Temat zamknięty, nie wracać do niego
+bez nowych danych.
