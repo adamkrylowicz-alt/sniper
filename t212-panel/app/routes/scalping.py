@@ -1292,10 +1292,15 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
     # strony przychodzą od najnowszych, przerywamy pętlę jak tylko trafimy
     # na wpis starszy niż `since` (reszta stron byłaby jeszcze starsza).
     total = Decimal("0")
-    cursor = None
+    next_page_path = None
     try:
         for _ in range(10):
-            resp = client.get_cash_transactions(limit=50, cursor=cursor)
+            # nextPagePath (2. strona+) to PEŁNA ścieżka z wbudowanym query
+            # stringiem - get_next_page ją poprawnie parsuje. get_cash_transactions
+            # (bez cursora) TYLKO dla pierwszej strony - patrz bug 2026-08-27
+            # w get_next_page/T212Client (przekazywanie całej ścieżki jako
+            # wartości parametru `cursor` dawało błędne, zduplikowane dane).
+            resp = client.get_next_page(next_page_path) if next_page_path else client.get_cash_transactions(limit=50)
             items = resp.get("items", [])
             stop = False
             for item in items:
@@ -1307,14 +1312,20 @@ def _net_deposits_since(user_id: int, client: T212Client, since: dt.datetime) ->
                 if item_dt < since:
                     stop = True
                     break
-                amount = Decimal(str(item.get("amount", 0)))
+                # BUG znaleziony na żywo 2026-08-27 (real money): T212 zwraca
+                # WITHDRAW z JUŻ UJEMNYM `amount` (np. -1000.0, potwierdzone
+                # bezpośrednim zapytaniem) - `total -= amount` dawało wtedy
+                # `total += 1000`, odwracając znak wypłaty na "wpłatę".
+                # abs() + jawny znak per-typ - odporne niezależnie od tego,
+                # czy API akurat zwróci wartość dodatnią czy ujemną.
+                amount = abs(Decimal(str(item.get("amount", 0))))
                 kind = item.get("type")
                 if kind == "DEPOSIT":
                     total += amount
                 elif kind == "WITHDRAW":
                     total -= amount
-            cursor = resp.get("nextPagePath")
-            if stop or not cursor or not items:
+            next_page_path = resp.get("nextPagePath")
+            if stop or not next_page_path or not items:
                 break
     except (T212APIError, InvalidOperation, TypeError, KeyError):
         _net_deposits_cache[user_id] = (now, None)

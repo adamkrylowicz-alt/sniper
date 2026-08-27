@@ -47,6 +47,7 @@ import time
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any, Literal
+from urllib.parse import parse_qs, urlsplit
 
 import requests
 
@@ -713,6 +714,33 @@ class T212Client:
         if cursor:
             params["cursor"] = cursor
         return self._request("GET", "/equity/history/transactions", params=params)
+
+    def get_next_page(self, next_page_path: str) -> dict:
+        """
+        Kolejna strona paginacji dla get_order_history/get_cash_transactions.
+
+        BUG znaleziony na żywo (2026-08-27, real money) - `nextPagePath` w
+        odpowiedzi T212 to PEŁNA ŚCIEŻKA z już wbudowanym query stringiem
+        (np. "/api/v0/equity/history/transactions?limit=50&cursor=xxx&time=yyy"),
+        NIE sam token cursora - `_net_deposits_since` wcześniej przekazywał
+        ją WPROST jako wartość parametru `cursor` do get_cash_transactions(),
+        co dawało podwójnie zagnieżdżony, nieprawidłowy URL. Ta metoda robi
+        to poprawnie - woła `_request` z gotową ścieżką (bez dodatkowych
+        `params`, bo już są w środku stringu), tak jak sugerował już wcześniej
+        docstring get_order_history ("użyj wprost wartości nextPagePath").
+        Rozdzielamy ścieżkę i query string zamiast wołać z gotowym stringiem
+        wprost - inaczej `_rate_limit_key_and_interval` (dopasowuje po
+        DOKŁADNEJ ścieżce bez query) nie rozpoznałby endpointu i throttle
+        spadłby do luźniejszego domyślnego interwału zamiast właściwego
+        10.5s dla history/transactions.
+        """
+        parsed = urlsplit(next_page_path)
+        path = parsed.path
+        prefix = "/api/v0"
+        if path.startswith(prefix):
+            path = path[len(prefix):]
+        params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+        return self._request("GET", path, params=params)
 
 
 # ---------------------------------------------------------------------------
