@@ -1595,6 +1595,22 @@ def _fetch_portfolio_live(user_id: int) -> dict:
         value = quantity * current_price
 
         currency = instrument.currency_code if instrument else ""
+        # BUG znaleziony na żywo 2026-08-27 (real money, Adam: "i co tu sie
+        # zgadza wg ciebie??") - `value`/`cost_basis` są w WALUCIE INSTRUMENTU
+        # (USD/CHF/...), sumowane NOMINALNIE do total_value dawało zawyżone
+        # "Portfolio value" (potwierdzone: konto z połową portfela w USD miało
+        # sumę zawyżoną o ~220€). `ppl` NIE dotyczy tego buga - zweryfikowane
+        # osobno, że T212 zwraca je JUŻ przeliczone na EUR (suma ppl = dokładnie
+        # unrealizedProfitLoss z /equity/account/summary) - fx_rate stosujemy
+        # więc TYLKO do value/cost_basis, nie do ppl. Fallback na fx_rate=1
+        # (brak przeliczenia) gdy Yahoo zawiedzie - lepsze przybliżenie niż
+        # crash całej strony, ten sam duch co reszta fail-safe w tym pliku.
+        fx_rate = price_feed.get_fx_rate_to_eur(currency) if currency else Decimal("1")
+        if fx_rate is None:
+            fx_rate = Decimal("1")
+        value_eur = value * fx_rate
+        cost_basis_eur = cost_basis * fx_rate
+
         positions.append({
             "ticker": ticker,
             "display_ticker": ticker.split("_")[0],
@@ -1605,15 +1621,19 @@ def _fetch_portfolio_live(user_id: int) -> dict:
             "avg_price": avg_price,
             "current_price": current_price,
             "value": value,
+            # ppl_pct NIE dzieli EUR (ppl) przez walutę-instrumentu
+            # (cost_basis) jak poprzednio - liczymy czysty procent zmiany
+            # ceny w walucie instrumentu, matematycznie identyczny z
+            # "prawdziwym" zwrotem % niezależnie od waluty, bez potrzeby FX.
             "ppl": ppl,
-            "ppl_pct": (ppl / cost_basis * 100) if cost_basis else Decimal("0"),
+            "ppl_pct": ((current_price - avg_price) / avg_price * 100) if avg_price else Decimal("0"),
             "hue": avatar_hue(ticker),
             "initial": (name or ticker.split("_")[0])[0].upper(),
             "logo_filename": logo_cache.get_cached_logo_filename(current_app.static_folder, ticker),
         })
-        total_value += value
+        total_value += value_eur
         total_ppl += ppl
-        total_cost_basis += cost_basis
+        total_cost_basis += cost_basis_eur
 
     positions.sort(key=lambda x: x["value"], reverse=True)
 

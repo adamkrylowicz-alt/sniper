@@ -684,6 +684,52 @@ def _fetch_yahoo_quote(ticker: str) -> Decimal | None:
     return Decimal(str(price))
 
 
+_FX_RATE_CACHE_TTL = 3600  # 1h - kurs walut nie musi być aktualizowany częściej dla celu "ile warty jest portfel w EUR"
+_fx_rate_cache: dict[str, tuple[float, Decimal | None]] = {}
+
+
+def get_fx_rate_to_eur(currency: str) -> Decimal | None:
+    """
+    Kurs wymiany 1 jednostka `currency` -> EUR (Yahoo Finance Chart API,
+    ticker formatu "USDEUR=X", bez klucza - ten sam mechanizm/wzorzec co
+    _fetch_yahoo_quote). Zwraca None gdy się nie uda (fail-safe - caller ma
+    wtedy NIE przeliczać, nie zgadywać kursu 1.0).
+
+    Dodane 2026-08-27 (real money, Adam: "i co tu sie zgadza wg ciebie??") -
+    znaleziony bug: "Portfolio value" na Aktywach sumował wartości pozycji w
+    RÓŻNYCH walutach (EUR/USD/CHF) NOMINALNIE bez przeliczenia - konto z
+    połową portfela w USD miało "Portfolio value" zawyżone o ~220€ względem
+    prawdziwej wartości w EUR. Zweryfikowane osobno: `ppl` (Profit/loss) z
+    T212 API JEST już poprawnie przeliczone na EUR przez samego T212 (suma
+    ppl zgadzała się co do grosza z `unrealizedProfitLoss` z
+    /equity/account/summary) - TEN fix dotyczy WYŁĄCZNIE `value`/`cost_basis`
+    (i przez to total_value/total_ppl_pct), nie total_ppl.
+    """
+    if currency == "EUR":
+        return Decimal("1")
+    now = time.time()
+    cached = _fx_rate_cache.get(currency)
+    if cached and (now - cached[0]) < _FX_RATE_CACHE_TTL:
+        return cached[1]
+
+    symbol = f"{currency}EUR=X"
+    try:
+        resp = requests.get(
+            f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}",
+            params={"range": "1d", "interval": "1m"},
+            timeout=REQUEST_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        rate = Decimal(str(resp.json()["chart"]["result"][0]["meta"]["regularMarketPrice"]))
+    except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
+        logger.warning("FX rate %s->EUR: nie udało się pobrać kursu", currency)
+        _fx_rate_cache[currency] = (now, None)
+        return None
+
+    _fx_rate_cache[currency] = (now, rate)
+    return rate
+
+
 def _fetch_alpaca_quote(api_key: str, api_secret: str, ticker: str) -> Decimal | None:
     """
     Ostatnia zawarta transakcja (latest trade) z Alpaca Market Data API -
