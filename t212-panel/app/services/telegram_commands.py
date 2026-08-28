@@ -36,7 +36,7 @@ from ..models import (
 )
 from ..routes.api_keys import get_decrypted_credentials
 from ..utils import current_environment, humanize_ticker_prefix, telegram_env_tag, ticker_display_name as _display_name
-from . import bot_credentials, bot_engine, daily_summary, eod_engine, price_feed, signal_engine, telegram_notify, weekend_guard
+from . import bot_credentials, bot_engine, daily_summary, eod_engine, price_feed, signal_engine, telegram_notify, weekend_guard, yahoo_resolver
 from .market_data_keys import get_decrypted_market_data_keys
 from .t212_client import T212APIError, T212Client
 
@@ -89,6 +89,8 @@ tak - potwierdza ostatni /close (2 min na odpowiedź, potem wygasa)
 
 /slpause - zdejmuje SL ze wszystkich pozycji już teraz (auto: pt 21:00)
 /slresume - przywraca SL już teraz (auto: pon 11:00)
+
+/resolve TICKER tak|nie - potwierdza/odrzuca zaproponowany symbol Yahoo dla nowego tickera (patrz powiadomienie ❓)
 
 kupiłem - potwierdza ręczne kupno po sygnale, przekazuje botowi
 nie - odrzuca aktualnie sugerowany sygnał wejścia na 5 min
@@ -436,6 +438,26 @@ def poll_and_handle(app) -> None:
 
             elif text.lower() == "/slresume":
                 weekend_guard.restore_all(app)
+
+            elif text.lower().startswith("/resolve "):
+                # "/resolve TICKER tak|nie" (Adam, 2026-08-28, po incydencie
+                # Symrise/Bouygues - zla auto-rezolucja Yahoo wystawila limit-buy
+                # po 4-5x zlej cenie) - patrz yahoo_resolver.py::confirm_pending.
+                # Osobna komenda, NIE golie "tak"/"nie" (te juz zajete przez
+                # /close i odrzucenie sygnalu wyzej - kolizja identyczna z tym co
+                # bylo z native confirm(), patrz feedback_snajper_no_native_confirm).
+                parts = text.split(maxsplit=2)
+                if len(parts) != 3 or parts[2].lower() not in ("tak", "nie"):
+                    telegram_notify.send_telegram_message(token, chat_id, "Użycie: /resolve TICKER tak|nie")
+                    continue
+                ticker, decision = parts[1], parts[2].lower()
+                symbol = yahoo_resolver.confirm_pending(ticker, accepted=(decision == "tak"))
+                if decision == "tak" and symbol:
+                    telegram_notify.send_telegram_message(token, chat_id, f"✅ {ticker} -> {symbol} zapisane.")
+                elif decision == "nie":
+                    telegram_notify.send_telegram_message(token, chat_id, f"OK, {ticker} zostaje bez ceny Yahoo.")
+                else:
+                    telegram_notify.send_telegram_message(token, chat_id, f"Nie było nic oczekującego na potwierdzenie dla {ticker}.")
 
             elif text.lower() in ("kupiłem", "kupilem", "kupiłam", "kupilam"):
                 # Potwierdzenie ręcznego kupna po sygnale (Adam, 2026-08-07:
