@@ -47,7 +47,7 @@ REQUEST_TIMEOUT = 6
 # kolumny na "pending" stan - restart procesu zgubi oczekujacy wpis, appka
 # po prostu zapyta ponownie przy kolejnej probie, nic straconego poza
 # duplikatem powiadomienia).
-_pending: dict[str, tuple[str, str]] = {}
+_pending: dict[str, tuple[str, str, str]] = {}
 _pending_notified_at: dict[str, float] = {}
 _RENOTIFY_SECONDS = 3600  # nie spamuj Telegrama co tick bota, raz na godzine wystarczy
 HEADERS = {"User-Agent": "Mozilla/5.0"}
@@ -97,8 +97,18 @@ def _search_candidates(company_name: str, currency_code: str | None) -> list[str
     return [q["symbol"] for q in quotes][:MAX_CANDIDATES_TRIED]
 
 
-def _verify_symbol_has_data(symbol: str) -> bool:
-    """Samo trafienie w wyszukiwarce nie wystarcza - sprawdz ze Yahoo faktycznie ma dla niego notowania."""
+def _verify_symbol_has_data(symbol: str) -> str | None:
+    """
+    Samo trafienie w wyszukiwarce nie wystarcza - sprawdz ze Yahoo faktycznie
+    ma dla niego notowania. Zwraca prawdziwa nazwe spolki z Yahoo (meta.longName/
+    shortName) gdy tak, None gdy brak danych - 2026-08-28, incydent Unilever
+    (UNIAa_EQ -> UTG.F = "PT Unilever Indonesia Tbk", inna spolka, sam fakt
+    "ma dane" tego by nie zlapal). Celowo NIE porownujemy tej nazwy automatycznie
+    z instrument.name tutaj (dopasowywanie "Unilever" w obu stringach i tak by
+    przeszlo - podmiot-zaleznosc dokladnie tak samo zawiera nazwe matki) - zamiast
+    zgadywac algorytmem, pokazujemy te nazwe Adamowi w powiadomieniu Telegram
+    (patrz _notify_pending), zeby on ocenil na oko, czy to na pewno ta sama spolka.
+    """
     try:
         resp = requests.get(
             CHART_URL_TMPL.format(symbol=symbol),
@@ -107,11 +117,14 @@ def _verify_symbol_has_data(symbol: str) -> bool:
             timeout=REQUEST_TIMEOUT,
         )
         if resp.status_code != 200:
-            return False
+            return None
         result = resp.json()["chart"]["result"]
-        return bool(result and result[0].get("indicators", {}).get("quote"))
+        if not result or not result[0].get("indicators", {}).get("quote"):
+            return None
+        meta = result[0].get("meta", {})
+        return meta.get("longName") or meta.get("shortName") or symbol
     except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
-        return False
+        return None
 
 
 def resolve(t212_ticker: str) -> str | None:
@@ -136,8 +149,10 @@ def resolve(t212_ticker: str) -> str | None:
     currency_code = instrument.currency_code if instrument else None
 
     resolved_symbol = None
+    yahoo_company_name = None
     for candidate in _search_candidates(company_name, currency_code):
-        if _verify_symbol_has_data(candidate):
+        yahoo_company_name = _verify_symbol_has_data(candidate)
+        if yahoo_company_name is not None:
             resolved_symbol = candidate
             break
 
@@ -146,7 +161,7 @@ def resolve(t212_ticker: str) -> str | None:
         db.session.commit()
         return None
 
-    _pending[t212_ticker] = (company_name, resolved_symbol)
+    _pending[t212_ticker] = (company_name, resolved_symbol, yahoo_company_name)
     _notify_pending(t212_ticker)
     return None
 
@@ -162,11 +177,12 @@ def _notify_pending(t212_ticker: str) -> None:
 
     from . import telegram_notify
 
-    company_name, candidate = _pending[t212_ticker]
+    company_name, candidate, yahoo_company_name = _pending[t212_ticker]
     telegram_notify.send_telegram_message(
         current_app.config.get("TELEGRAM_BOT_TOKEN"), current_app.config.get("TELEGRAM_CHAT_ID"),
         f"❓ Nowy ticker bez mapowania cen: {company_name} ({t212_ticker})\n"
-        f"Znaleziony kandydat: {candidate}\n\n"
+        f"Znaleziony kandydat: {candidate} - Yahoo mówi że to: \"{yahoo_company_name}\"\n"
+        f"Sprawdź czy to na pewno TA SAMA spółka, nie spółka-córka/inny podmiot o podobnej nazwie.\n\n"
         f"Odpowiedz: /resolve {t212_ticker} tak (albo: /resolve {t212_ticker} nie)",
     )
 
@@ -181,7 +197,7 @@ def confirm_pending(t212_ticker: str, accepted: bool) -> str | None:
     _pending_notified_at.pop(t212_ticker, None)
     if pending is None:
         return None
-    _, candidate = pending
+    _, candidate, _ = pending
     symbol = candidate if accepted else None
     db.session.add(YahooSymbolMap(ticker=t212_ticker, yahoo_symbol=symbol))
     db.session.commit()
