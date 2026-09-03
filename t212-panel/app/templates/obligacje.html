@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t("Obligacje") }} — Snajper{% endblock %}
+
+{% block content %}
+<div class="history-box" id="obligacje-panel">
+    <h1 class="auth-box__title">{{ t("OBLIGACJE") }}</h1>
+    <p class="auth-box__hint">
+        {{ t("Portfel obligacyjnych ETF-ów (VGOV/IERC/IHYE) — cel alokacji 80% akcje / 20% obligacje, kupon liczony pro-rata YTD.") }}
+    </p>
+
+    <!-- Sekcja 1: Alokacja 80/20 -->
+    <h2 class="section-heading">{{ t("Alokacja portfela") }}</h2>
+    <div class="instrument-detail__position">
+        <div class="instrument-detail__position-grid">
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("Akcje") }}</span>
+                <span class="instrument-detail__position-value" id="stocks-pct">80.0%</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("Obligacje") }}</span>
+                <span class="instrument-detail__position-value" id="bonds-pct">20.0%</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("Cel") }}</span>
+                <span class="instrument-detail__position-value">80/20</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sekcja 2: Portfel 3 ETF-ów -->
+    <h2 class="section-heading">{{ t("Portfel obligacji") }}</h2>
+    <div class="table-scroll">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>{{ t("Ticker") }}</th>
+                    <th>{{ t("Ilość") }}</th>
+                    <th>{{ t("Cena śr.") }}</th>
+                    <th>{{ t("Cena bieżąca") }}</th>
+                    <th>{{ t("Wartość EUR") }}</th>
+                    <th>{{ t("% portfela") }}</th>
+                    <th>{{ t("Kupon rocznie") }}</th>
+                </tr>
+            </thead>
+            <tbody id="portfolio-tbody">
+                <tr><td colspan="7" style="text-align:center; padding:16px; color:var(--text-muted)">{{ t("Ładowanie...") }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Sekcja 3: Kupon YTD -->
+    <h2 class="section-heading">{{ t("Kupon YTD") }}</h2>
+    <div class="instrument-detail__position">
+        <div class="instrument-detail__position-grid">
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("Kwota EUR") }}</span>
+                <span class="instrument-detail__position-value" id="coupon-eur">0.00€</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("% całorocznej stopy") }}</span>
+                <span class="instrument-detail__position-value" id="coupon-pct">0.0%</span>
+            </div>
+        </div>
+        <div style="margin-top:12px; height:6px; border-radius:3px; background:var(--hairline); overflow:hidden;">
+            <div id="coupon-bar" style="height:100%; width:0%; background:var(--accent-amber); transition:width 0.3s ease;"></div>
+        </div>
+        <p class="auth-box__hint">{{ t("Progress do pełnego roku") }}</p>
+    </div>
+
+    <!-- Sekcja 4: Kursy live -->
+    <h2 class="section-heading">{{ t("Kursy live (EUR)") }}</h2>
+    <div class="table-scroll">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>{{ t("Ticker") }}</th>
+                    <th>{{ t("Cena") }}</th>
+                    <th>{{ t("Zmiana") }}</th>
+                </tr>
+            </thead>
+            <tbody id="quotes-tbody">
+                <tr><td colspan="3" style="text-align:center; padding:16px; color:var(--text-muted)">{{ t("Ładowanie...") }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Sekcja 5: Performance vs S&P500 -->
+    <h2 class="section-heading">{{ t("Performance vs S&P500 (30 dni)") }}</h2>
+    <div class="instrument-detail__position">
+        <div class="instrument-detail__position-grid">
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("Obligacje") }}</span>
+                <span class="instrument-detail__position-value" id="bonds-return">+0.0%</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("S&P500") }}</span>
+                <span class="instrument-detail__position-value" id="spy-return">+0.0%</span>
+            </div>
+            <div class="instrument-detail__position-cell">
+                <span class="instrument-detail__position-label">{{ t("Przewaga") }}</span>
+                <span class="instrument-detail__position-value" id="outperformance">0.0%</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sekcja 6: Sugestia rebalancingu -->
+    <div class="pie-fx-banner pie-fx-banner--hidden" id="rebalance-section">
+        <strong>{{ t("Sugestia rebalancingu") }}:</strong>
+        <span id="rebalance-text"></span>
+        <button class="auth-form__submit" id="buy-rebalance-btn" style="width: auto; margin-top: 8px;">{{ t("Kup") }}</button>
+        <p id="rebalance-result" style="margin-top:8px; font-size:13px;"></p>
+    </div>
+
+    <!-- Sekcja 7: Historia kupów -->
+    <h2 class="section-heading">{{ t("Historia") }}</h2>
+    <div class="table-scroll">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>{{ t("Data") }}</th>
+                    <th>{{ t("Ticker") }}</th>
+                    <th>{{ t("Typ") }}</th>
+                    <th>{{ t("Ilość") }}</th>
+                    <th>{{ t("Cena") }}</th>
+                    <th>{{ t("Razem") }}</th>
+                </tr>
+            </thead>
+            <tbody id="historia-tbody">
+                <tr><td colspan="6" style="text-align:center; padding:16px; color:var(--text-muted)">{{ t("Brak historii") }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Sekcja 8: Lista obligacji do ręcznego kupienia -->
+    <h2 class="section-heading">{{ t("Lista obligacji") }}</h2>
+    <p class="auth-box__hint">
+        {{ t("Wybierz kwotę i kliknij Kup przy dowolnym funduszu - ilość sztuk liczona automatycznie z żywej ceny.") }}
+    </p>
+    <div class="table-scroll">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>{{ t("Kategoria") }}</th>
+                    <th>{{ t("Nazwa") }}</th>
+                    <th>{{ t("Cena") }}</th>
+                    <th>{{ t("Zmiana") }}</th>
+                    <th>{{ t("Kwota EUR") }}</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody id="universe-tbody">
+                <tr><td colspan="6" style="text-align:center; padding:16px; color:var(--text-muted)">{{ t("Ładowanie...") }}</td></tr>
+            </tbody>
+        </table>
+    </div>
+    <p id="universe-result" style="margin-top:8px; font-size:13px;"></p>
+</div>
+
+<script src="{{ url_for('static', filename='js/obligacje.js') }}"></script>
+{% endblock %}

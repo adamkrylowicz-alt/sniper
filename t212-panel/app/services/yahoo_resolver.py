@@ -31,6 +31,7 @@ ma czego potwierdzac.
 
 from __future__ import annotations
 
+import re
 import time
 
 import requests
@@ -69,11 +70,19 @@ EXCHANGE_TO_CURRENCIES = {
 }
 
 
+_TRAILING_PAREN_RE = re.compile(r"\s*\([^)]*\)\s*$")
+
+
 def _search_candidates(company_name: str, currency_code: str | None) -> list[str]:
+    # Wyszukiwarka Yahoo nie radzi sobie z dopiskiem na końcu nazwy funduszu
+    # ("(Acc)"/"(Dist)" itp.) - 2026-09-03, incydent obligacje (X15Ed_EQ =
+    # "Xtrackers II Eurozone Government Bond 15-30 (Acc)") - z dopiskiem
+    # zapytanie zwracało ZERO wyników, bez niego trafiało od razu.
+    query = _TRAILING_PAREN_RE.sub("", company_name)
     try:
         resp = requests.get(
             SEARCH_URL,
-            params={"q": company_name, "quotesCount": 8, "newsCount": 0},
+            params={"q": query, "quotesCount": 8, "newsCount": 0},
             headers=HEADERS,
             timeout=REQUEST_TIMEOUT,
         )
@@ -81,7 +90,7 @@ def _search_candidates(company_name: str, currency_code: str | None) -> list[str
             return []
         quotes = [
             q for q in resp.json().get("quotes", [])
-            if q.get("quoteType") == "EQUITY" and q.get("symbol")
+            if q.get("quoteType") in ("EQUITY", "ETF") and q.get("symbol")
         ]
     except (requests.RequestException, ValueError):
         return []
@@ -135,6 +144,21 @@ def resolve(t212_ticker: str) -> str | None:
     potwierdzenie Adama przez Telegram (patrz modul docstring/_notify_pending
     /confirm_pending). W obu przypadkach wolajacy dostaje po prostu "brak
     ceny" i pomija ten tick - dokladnie jak przy prawdziwym braku pokrycia.
+
+    2026-09-03: rozważany był tu wyjątek auto-accept bez pytania Adama dla
+    BOND_UNIVERSE (Adam: "wyjeb te potwierdzenia z telegrama sa uciazliwe")
+    - WYCOFANY tego samego dnia po realnym teście: 5 z 9 funduszy dostało
+    ZŁY wariant (np. DBXNd_EQ o mało nie dostał funduszu 1-3-letniego
+    zamiast całego rynku, VAGFd_EQ - wariantu Dist zamiast Acc) - fuzzy
+    dopasowanie po nazwie zawodzi systematycznie właśnie tam, gdzie ten sam
+    emitent ma kilkanaście funduszy o niemal identycznych nazwach różniących
+    się tylko zakresem dat zapadalności/Acc-Dist. Potwierdza to dokładnie,
+    po co jest cały ten mechanizm - patrz incydent Symrise/Unilever
+    Indonesia (28.08) w CLAUDE.md. Wszystkie 10 funduszy z tej listy mają
+    już ręcznie zweryfikowane, poprawne wpisy w `YahooSymbolMap` (patrz
+    CLAUDE.md, wpis 2026-09-03) - Adam nie dostanie już próśb o potwierdzenie
+    dla TYCH konkretnych 10, ale każdy PRZYSZŁY nowy fundusz nadal przejdzie
+    normalną ścieżkę z potwierdzeniem.
     """
     cached = YahooSymbolMap.query.get(t212_ticker)
     if cached is not None:

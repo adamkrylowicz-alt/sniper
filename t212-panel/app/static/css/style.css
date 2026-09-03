@@ -1281,6 +1281,15 @@ img.tile__logo {
     flex-shrink: 0;
 }
 
+.icon-info {
+    display: inline-flex;
+    vertical-align: middle;
+    color: var(--text-muted);
+    cursor: help;
+    margin-left: 4px;
+}
+.icon-info:hover { color: var(--accent-amber); }
+
 /* --- Pasek konta (saldo, odśwież, anuluj wszystkie) --- */
 .account-bar {
     max-width: 620px;

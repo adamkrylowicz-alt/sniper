@@ -319,6 +319,7 @@ def _register_blueprints(app: Flask) -> None:
     from .routes.settings import settings_bp
     from .routes.report import report_bp
     from .routes.pie import pie_bp
+    from .routes.obligacje import obligacje_bp
     from .routes.bot import bot_bp
     from .routes.instrument import instrument_bp
     from .routes.signal import signal_bp
@@ -332,6 +333,7 @@ def _register_blueprints(app: Flask) -> None:
     app.register_blueprint(settings_bp)
     app.register_blueprint(report_bp)
     app.register_blueprint(pie_bp)
+    app.register_blueprint(obligacje_bp)
     app.register_blueprint(bot_bp)
     app.register_blueprint(instrument_bp)
     app.register_blueprint(signal_bp)

@@ -127,6 +127,7 @@ def compute_trailing_stop(
     atr_distance: Decimal | None,
     stop_loss_pct: Decimal,
     min_requote_fraction: Decimal,
+    atr_trail_distance: Decimal | None = None,
 ) -> Decimal | None:
     """
     Wyciągnięte z `_manage_trailing_exit()` (Faza 1) w bot_engine.py.
@@ -140,6 +141,12 @@ def compute_trailing_stop(
     `is_first_arm=False`: już uzbrojony - czysty ciągły trailing względem
     WŁASNEGO poprzedniego poziomu (nigdy w dół), z progiem min. requote
     (`existing_stop_target` MUSI być podane, nie może być `None`).
+
+    `atr_trail_distance` (dodane 2026-08-27, RSI Hybrid) - domyślnie `None` =
+    STARE zachowanie (`current_price*(1-step)`). Gdy podany (tylko w
+    `is_first_arm=False`), zastępuje stały % dystansem
+    `current_price - atr_trail_distance` - ten sam mnożnik ATR co floor
+    pierwszego uzbrojenia, zero rozjazdu między testowaną a żywą logiką.
     """
     if is_first_arm:
         floor_anchor = max(ref_price, current_price)
@@ -151,7 +158,10 @@ def compute_trailing_stop(
         return max(floor_candidate, tight_target_now)
 
     assert existing_stop_target is not None, "already-armed trade must have a stop_target_price"
-    continuous_target = (current_price * (1 - step)).quantize(Decimal("0.0001"))
+    if atr_trail_distance is not None:
+        continuous_target = (current_price - atr_trail_distance).quantize(Decimal("0.0001"))
+    else:
+        continuous_target = (current_price * (1 - step)).quantize(Decimal("0.0001"))
     candidate_stop = max(existing_stop_target, continuous_target)
 
     min_requote_threshold = existing_stop_target * (1 + step * min_requote_fraction)

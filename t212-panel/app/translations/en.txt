@@ -634,3 +634,37 @@ Cofnąć tę pozycję spod zarządzania|||Release this position from
 ? Udziały ZOSTAJĄ na koncie - tylko bot przestaje ich pilnować (trailing STOP zostanie anulowany).|||? Shares STAY in the account - the bot just stops watching them (trailing STOP will be cancelled).
 Nie udało się cofnąć pozycji|||Failed to release position
 Błąd sieci przy cofaniu pozycji.|||Network error while releasing position.
+Obligacje|||Bonds
+Alokacja portfela|||Portfolio Allocation
+Akcje|||Stocks
+Portfel obligacji|||Bond Portfolio
+Ticker|||Ticker
+Ilość|||Quantity
+Cena śr.|||Avg Price
+Cena bieżąca|||Current Price
+Wartość EUR|||Value EUR
+% portfela|||% of Portfolio
+Kupon rocznie|||Annual Coupon
+Kupon YTD|||YTD Coupon
+Kwota EUR|||EUR Amount
+% całorocznej stopy|||% of Annual Rate
+Progress do pełnego roku|||Progress to full year
+Kursy live (EUR)|||Live Prices (EUR)
+Cena|||Price
+Zmiana|||Change
+Ładowanie...|||Loading...
+Performance vs S&P500 (30 dni)|||Performance vs S&P500 (30 days)
+Obligacje|||Bonds
+S&P500|||S&P500
+Przewaga|||Outperformance
+Sugestia rebalancingu|||Rebalancing Suggestion
+Kup|||Buy
+Historia|||History
+Data|||Date
+Typ|||Type
+Kupno|||Purchase
+Sprzedaż|||Sale
+Razem|||Total
+Brak obligacji|||No bonds
+Brak historii|||No history
+Target|||Target

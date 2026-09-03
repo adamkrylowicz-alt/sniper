@@ -38,6 +38,10 @@
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 1 0 10 10h-10z"/><path d="M12 2v10"/></svg>
                 Virtual Pie
             </a>
+            <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'obligacje' }}" href="{{ url_for('obligacje.view') }}">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 4h12v10H6z"/><path d="M9 4v10M15 4v10M6 14h12"/></svg>
+                {{ t("Obligacje") }}
+            </a>
             <a class="topbar__link {{ 'topbar__link--active' if request.blueprint == 'bot' }}" href="{{ url_for('bot.view') }}">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M9 4h6"/><path d="M9 18h6"/><circle cx="9" cy="14" r="1.1" fill="currentColor" stroke="none"/><circle cx="15" cy="14" r="1.1" fill="currentColor" stroke="none"/></svg>
                 Bot
